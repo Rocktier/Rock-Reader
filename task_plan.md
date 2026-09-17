@@ -58,7 +58,7 @@ Phase 1
 ### Phase 7: 打包与交付
 - [ ] `.github/workflows/build.yml`：Linux + `hvigorw assembleHap`
 - [ ] 签名走 Secrets，产物上传 Artifacts
-- [ ] 两套 `build-profile.json5`：`compatibleSdkVersion` 10（HarmonyOS 4.x）与 ≥20（HarmonyOS 6.x）
+- [ ] 单份 `build-profile.json5`：`compatibleSdkVersion = 20`、`targetSdkVersion = 24`（已放弃 HarmonyOS 4，不再出双包）
 - [ ] 党哥下令后 push + tag + Release（挂 HAP）
 - **Status:** pending
 
@@ -69,7 +69,7 @@ Phase 1
 ## Key Questions
 1. 首版格式范围：**只做 TXT**，还是 TXT + EPUB 一起上？（建议先 TXT）
 2. 阅读器要不要支持 PDF？（PDF 是另一套渲染，建议不做）
-3. 远端仓库名：`Rocktier/RockReader`？（待党哥确认后再建）
+3. ~~远端仓库名？~~ → **已定 `Rocktier/Rock-Reader`**（PUBLIC；已本地 init + remote，首次 push 待党哥下令）
 
 ## Decisions Made
 | Decision | Rationale |
@@ -80,6 +80,7 @@ Phase 1
 | 大文件不整体读入，走字节偏移索引 + 随机读 | 避免 OOM；几十 MB TXT 也能秒开 |
 | 优先不引三方库（zip / 编码必要时自己写最小实现） | 铁律 2：HAP ≤5MB |
 | 解析、分页走 `taskpool` | 铁律 1：UI 线程不干活 |
+| **只支持 HarmonyOS 6+**（`compatibleSdkVersion = 20` / `targetSdkVersion = 24`），放弃 HarmonyOS 4 | 党哥 2026-09-18 定：4.x 存量 <1%；单包更小、无 API 差异分支，贴合铁律 1、2 |
 | 家族命名前缀 **Rock**（中文 Rock阅读 / 英文 RockReader） | 党哥 2026-09-18 定 |
 | **本机不搭鸿蒙环境**，只写代码；工程文件手写，不用 DevEco 向导 | 党哥 2026-09-18 定；构建与校验全靠 CI |
 | 三个 spike 改为"文档调研 + 防御式实现"，实测等首次 CI 构建 / 真机 | 本机无编译与运行能力，不能本地实测 |

@@ -4,7 +4,7 @@
 
 - 中文名：Rock阅读 ｜ 英文名：RockReader ｜ 包名规划：`com.rocktier.rockreader`
 - 首版格式：**TXT**，跑通后再上 **EPUB**；不做 PDF。
-- 目标系统：HarmonyOS 4（API 10，双框架）与 HarmonyOS 6（API ≥20，单框架），出两个包。
+- 目标系统：**HarmonyOS 6+（单框架）**，`compatibleSdkVersion = 20` / `targetSdkVersion = 24`。HarmonyOS 4 及更早已放弃（存量 <1%），单包发布。
 
 ## 设计铁律（家族统一）
 
