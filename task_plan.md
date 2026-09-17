@@ -11,18 +11,22 @@ Phase 1
 
 ## Phases
 
-### Phase 1: 技术 spike（消除不确定性）
-- [ ] `@ohos.measure` 文本测量与分页可行性 / 精度
-- [ ] `util.TextDecoder` 是否支持 GBK / GB18030（中文 TXT 大头）
-- [ ] `@ohos.zlib` 能否直接处理 zip（EPUB 用，决定要不要自己写）
-- [ ] 大文件按 offset 随机读（`fs.read`）实测吞吐
+### Phase 1: 技术调研 + 防御式实现（本机无环境，不能实测）
+> 本机不装 DevEco / SDK，**没有本地编译与运行能力**。所以 spike 降级为：查官方文档确认 API 能力 → 代码里做能力探测与降级路径 → **真机/CI 构建后再回填实测结果**。
+- [ ] `@ohos.measure` 文本测量与分页：查文档确认可用性与精度；代码留"测量失败则退化为按字符数分页"的兜底
+- [ ] `util.TextDecoder` 是否支持 GBK / GB18030：查文档；不支持则自实现 GBK 映射（或先支持 UTF-8 + 手动选编码）
+- [ ] `@ohos.zlib` 能否直接处理 zip：查文档；**默认按"不支持 zip 归档"设计**，先写好最小 zip 解析 + raw inflate
+- [ ] `fs.read` 按 offset 随机读：查文档确认 API 语义
+- [ ] 真机 / 首次 CI 构建成功后，回填 `findings.md` 的「spike 结果」表
 - **Status:** pending
 
-### Phase 2: 工程骨架
-- [ ] 建 `f:\AI\HarmonyOS\RockReader\` + 独立 git 仓库
-- [ ] DevEco 新建 Empty Ability（ArkTS / Stage 模型）
-- [ ] 目录结构与包命名（`com.rocktier.rockreader`）
+### Phase 2: 工程骨架（手写，不用 DevEco 向导）
+- [x] 建 `f:\AI\HarmonyOS\RockReader\` + 独立 git 仓库（远端 `Rocktier/Rock-Reader`）
+- [ ] 手写 hvigor 工程文件：`build-profile.json5` / `oh-package.json5` / `hvigorfile.ts`
+- [ ] 手写 `AppScope/` + `entry/`（`module.json5`、`main_pages.json`、`EntryAbility.ets`、`Index.ets`）
+- [ ] 包命名 `com.rocktier.rockreader`
 - [ ] `module.json5` **不声明** `ohos.permission.INTERNET`
+- [ ] 推到仓库触发 CI，验证"空工程也能构建通过"（这是本机唯一的编译校验手段）
 - **Status:** pending
 
 ### Phase 3: 导入与书架
@@ -77,6 +81,8 @@ Phase 1
 | 优先不引三方库（zip / 编码必要时自己写最小实现） | 铁律 2：HAP ≤5MB |
 | 解析、分页走 `taskpool` | 铁律 1：UI 线程不干活 |
 | 家族命名前缀 **Rock**（中文 Rock阅读 / 英文 RockReader） | 党哥 2026-09-18 定 |
+| **本机不搭鸿蒙环境**，只写代码；工程文件手写，不用 DevEco 向导 | 党哥 2026-09-18 定；构建与校验全靠 CI |
+| 三个 spike 改为"文档调研 + 防御式实现"，实测等首次 CI 构建 / 真机 | 本机无编译与运行能力，不能本地实测 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
