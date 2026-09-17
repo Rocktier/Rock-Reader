@@ -1,0 +1,32 @@
+# 依赖
+node_modules/
+oh_modules/
+
+# 构建产物
+build/
+.hvigor/
+.cxx/
+**/build/
+**/.hvigor/
+**/.cxx/
+**/oh_modules/
+
+# 签名与密钥（绝不入库）
+*.p12
+*.cer
+*.p7b
+*.keystore
+*.jks
+*.key
+**/signing/
+**/signingConfigs/
+
+# 本地配置
+local.properties
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
