@@ -377,3 +377,54 @@ ArkUI 的 `registerFont` **只作用于渲染端**，不保证 `graphics.text` �
 |-------|------------|
 | 家族台账 push 被拒（远端有新提交） | 先看 `git log HEAD..origin/main` 确认是党哥在 Windows 侧推的进展 → `git pull --rebase` 后推送 |
 - **M7**：Ads Kit 广告模块（默认联网呈现、无开关、无引导、断网静默降级、绝不出现在阅读页）
+
+---
+
+## Session: 2026-09-19（Windows 侧：本机编译校验打通 + 预览器可用）
+
+### Current Status
+- **Phase:** 8 真机验证进行中；本机新增三项能力：**编译校验 + 单测 + 预览器**
+- 仓库：本地 = 远端（`7fdcaa0`）
+
+### Actions Taken
+
+**一、纠正一个过期认知（重要）**
+- 新版 DevEco Studio **把 HarmonyOS SDK 内置在 IDE 里**：`<IDE>\sdk`，**apiVersion 26 / platformVersion 26.0.0 / Release / 26.0.0.105**
+- 因此"打开 SDK 管理器 → 勾选 API 20 → 下载"那套**旧流程作废**；本机也不需要再下载任何 SDK
+
+**二、本机命令行构建打通（IDE 自带工具链，不额外装东西）**
+
+| 组件 | 路径 |
+|---|---|
+| node | `<IDE>\tools\node\node.exe`（v24.14.1） |
+| ohpm | `<IDE>\tools\ohpm\bin` |
+| hvigor | `<IDE>\tools\hvigor\bin\hvigorw.js`（6.26.4） |
+| JDK | `<IDE>\jbr`（打包必需） |
+
+- `assembleHap -p product=default -p buildMode=debug` → **BUILD SUCCESSFUL**（3.3s）
+- 产物：`entry/build/default/outputs/default/entry-default-unsigned.hap` **436 KB**
+- 意义：**本机有了本地编译校验**，小改动不必等 CI
+
+**三、本机单测跑通**：`npm test` → **57/57 全绿**（约 205ms）
+
+**四、预览器可用**：党哥在 DevEco 里成功打开预览器（一次只能看一个页面 —— 属正常，页面取数依赖路由参数/数据库/沙箱文件）
+
+**五、其它**
+- 目录联接 `%LOCALAPPDATA%\Huawei\Sdk → G:\HarmonyOS\Sdk` 已建（内置 SDK 模式下用不上，保留无害）
+- 迁移 IDE 内置 SDK 到 G 盘的提权脚本两次执行失败（UAC/安全软件拦截），脚本留在 `G:\HarmonyOS\move-sdk-to-g.ps1` 待人工以管理员身份运行
+- 已拉取 macOS 侧进展：字体改 **GB2312 子集**（楷 3.27MB / 宋 2.91MB）+ 独立 `fonts` 分支 + 多源 CDN + 每源 SHA256
+
+### Test Results
+| Test | Expected | Actual | Status |
+|------|----------|--------|--------|
+| 本机纯逻辑单测 | 全绿 | 57/57（205ms） | ✅ |
+| 本机 hvigor 构建（product=default） | 产出 HAP | BUILD SUCCESSFUL，436 KB | ✅ |
+| DevEco 预览器 | 能渲染页面 | 打开成功（单页） | ✅ |
+| 真机运行时（冷启动/掉帧/断行一致性） | — | 仍无设备 | ⏳ |
+
+### Errors
+| Error | Resolution |
+|-------|------------|
+| `PackageHap` 报 `spawn java ENOENT` | PATH 里没有 java → 加上 IDE 自带的 `<IDE>\jbr\bin` |
+| 提权执行迁移脚本两次失败（退出码 1、日志未生成） | UAC / 火绒拦截静默提权 → 改为人工以管理员身份运行脚本 |
+| **更正上一节的措辞** | 上节写"本地 default 产物 436 KB，**可装手机**"缺了前提：未配签名时产物是 `entry-default-unsigned.hap`，**装不上手机**。`docs/device-test.md` 表格里"调试签名 ✅"的写法才准确 |

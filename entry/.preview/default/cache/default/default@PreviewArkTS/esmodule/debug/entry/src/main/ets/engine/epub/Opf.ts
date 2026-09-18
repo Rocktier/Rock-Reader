@@ -1,0 +1,239 @@
+import { attrOf, decodeEntities, findTags, firstElementText, localNameOf, scanTags, stripProlog, stripTags } from "@bundle:com.rocktier.rockreader/entry/ets/engine/epub/Xml";
+import type { TagToken } from "@bundle:com.rocktier.rockreader/entry/ets/engine/epub/Xml";
+export interface ManifestItem {
+    id: string;
+    href: string;
+    mediaType: string;
+    properties: string;
+}
+export interface EpubPackage {
+    title: string;
+    author: string;
+    /** OPF 所在目录（'' 或 'OEBPS/'），用于把 href 解析成 zip 内路径 */
+    opfDir: string;
+    items: ManifestItem[];
+    /** spine 的 idref 顺序 */
+    spine: string[];
+    coverHref: string;
+    navItemHref: string;
+    ncxHref: string;
+}
+/** container.xml → OPF 的 zip 内路径 */
+export function parseContainer(xml: string): string {
+    const tags: string[] = findTags(xml, 'rootfile');
+    for (let i: number = 0; i < tags.length; i++) {
+        const full: string = attrOf(tags[i], 'full-path');
+        if (full.length > 0) {
+            return normalizePath(full);
+        }
+    }
+    throw new Error('EPUB_BAD_CONTAINER');
+}
+export function dirOf(path: string): string {
+    const i: number = path.lastIndexOf('/');
+    return i < 0 ? '' : path.substring(0, i + 1);
+}
+function baseNameOf(path: string): string {
+    const i: number = path.lastIndexOf('/');
+    return i < 0 ? path : path.substring(i + 1);
+}
+/** 剥掉 #fragment，并做一次 percent-decode（有些 epub 的 href 里是 %20） */
+export function normalizeHref(href: string): string {
+    const hash: number = href.indexOf('#');
+    const cut: string = hash >= 0 ? href.substring(0, hash) : href;
+    try {
+        return decodeURIComponent(cut);
+    }
+    catch (e) {
+        return cut;
+    }
+}
+/** 规范化 zip 内路径：合并 //、消掉 ./ 与 ../ */
+export function normalizePath(path: string): string {
+    const parts: string[] = path.split('/');
+    const stack: string[] = [];
+    for (let i: number = 0; i < parts.length; i++) {
+        const part: string = parts[i];
+        if (part.length === 0 || part === '.') {
+            continue;
+        }
+        if (part === '..') {
+            if (stack.length > 0) {
+                stack.pop();
+            }
+            continue;
+        }
+        stack.push(part);
+    }
+    return stack.join('/');
+}
+/** href 相对 baseDir 解析成 zip 内路径（baseDir 已含结尾 '/'） */
+export function resolveHref(baseDir: string, href: string): string {
+    return normalizePath(baseDir + normalizeHref(href));
+}
+export function parseOpf(xml: string, opfDir: string): EpubPackage {
+    const clean: string = stripProlog(xml);
+    const items: ManifestItem[] = [];
+    const itemTags: string[] = findTags(clean, 'item');
+    for (let i: number = 0; i < itemTags.length; i++) {
+        const tag: string = itemTags[i];
+        const id: string = attrOf(tag, 'id');
+        const href: string = attrOf(tag, 'href');
+        if (id.length === 0 || href.length === 0) {
+            continue;
+        }
+        const item: ManifestItem = {
+            id: id,
+            href: href,
+            mediaType: attrOf(tag, 'media-type'),
+            properties: attrOf(tag, 'properties')
+        };
+        items.push(item);
+    }
+    const spine: string[] = [];
+    const spineTags: string[] = findTags(clean, 'itemref');
+    for (let i: number = 0; i < spineTags.length; i++) {
+        const idref: string = attrOf(spineTags[i], 'idref');
+        if (idref.length > 0) {
+            spine.push(idref);
+        }
+    }
+    if (spine.length === 0) {
+        throw new Error('EPUB_BAD_SPINE');
+    }
+    // 封面：① manifest 里 properties 含 cover-image ② meta name="cover" 指向的 item id
+    let coverHref: string = '';
+    let navItemHref: string = '';
+    let ncxHref: string = '';
+    for (let i: number = 0; i < items.length; i++) {
+        const item: ManifestItem = items[i];
+        if (item.properties.indexOf('cover-image') >= 0) {
+            coverHref = resolveHref(opfDir, item.href);
+        }
+        if (item.properties.indexOf('nav') >= 0) {
+            navItemHref = resolveHref(opfDir, item.href);
+        }
+        if (item.mediaType === 'application/x-dtbncx+xml') {
+            ncxHref = resolveHref(opfDir, item.href);
+        }
+    }
+    if (coverHref.length === 0) {
+        const metaTags: string[] = findTags(clean, 'meta');
+        for (let i: number = 0; i < metaTags.length; i++) {
+            if (attrOf(metaTags[i], 'name').toLowerCase() === 'cover') {
+                const coverId: string = attrOf(metaTags[i], 'content');
+                for (let k: number = 0; k < items.length; k++) {
+                    if (items[k].id === coverId) {
+                        coverHref = resolveHref(opfDir, items[k].href);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    return {
+        title: firstElementText(clean, 'title').trim(),
+        author: firstElementText(clean, 'creator').trim(),
+        opfDir: opfDir,
+        items: items,
+        spine: spine,
+        coverHref: coverHref,
+        navItemHref: navItemHref,
+        ncxHref: ncxHref
+    };
+}
+/** 章节标题映射：zip 内路径 → 标题 */
+export type TitleMap = Map<string, string>;
+interface NcxContext {
+    label: string;
+    src: string;
+}
+/**
+ * NCX（EPUB2）→ 标题映射（zip 内路径 → 标题）。
+ *
+ * ⚠️ 必须按**结构**配对，不能按"text 与 content 的出现顺序"配对：
+ *   calibre 生成的 NCX 里 navPoint 是嵌套的，父节点常常**有 navLabel 但没有自己的 content**，
+ *   一旦按顺序配对，整本目录会错位一章（真实出版书实测踩到，已写成回归测试）。
+ * 做法：用栈跟踪当前最内层 navPoint，把它的 navLabel 文本与自己的 content 配成一对。
+ */
+export function parseNcx(xml: string, baseDir: string): TitleMap {
+    const clean: string = stripProlog(xml);
+    const tokens: TagToken[] = scanTags(clean);
+    const map: TitleMap = new Map<string, string>();
+    /** 带 #fragment 的条目（小节标题）先存这里：章级标题优先，避免小节标题盖住章标题 */
+    const sectionMap: TitleMap = new Map<string, string>();
+    const stack: NcxContext[] = [];
+    for (let i: number = 0; i < tokens.length; i++) {
+        const token: TagToken = tokens[i];
+        const local: string = localNameOf(token.name);
+        if (local === 'navpoint') {
+            if (token.closing) {
+                const done: NcxContext | undefined = stack.pop();
+                if (done !== undefined && done.src.length > 0 && done.label.length > 0) {
+                    const path: string = resolveHref(baseDir, done.src);
+                    if (path.length > 0) {
+                        const isSection: boolean = done.src.indexOf('#') >= 0;
+                        const target: TitleMap = isSection ? sectionMap : map;
+                        if (!target.has(path)) {
+                            target.set(path, done.label);
+                        }
+                    }
+                }
+            }
+            else {
+                stack.push({ label: '', src: '' });
+            }
+            continue;
+        }
+        if (stack.length === 0) {
+            continue;
+        }
+        const top: NcxContext = stack[stack.length - 1];
+        if (local === 'text' && !token.closing && top.label.length === 0) {
+            top.label = decodeEntities(stripTags(token.innerText)).trim();
+        }
+        else if (local === 'content' && !token.closing && top.src.length === 0) {
+            top.src = attrOf(token.text, 'src');
+        }
+    }
+    // 只有"该文件没有任何章级标题"时，才退回小节标题
+    sectionMap.forEach((label: string, path: string) => {
+        if (!map.has(path)) {
+            map.set(path, label);
+        }
+    });
+    return map;
+}
+/** nav.xhtml（EPUB3）→ 标题映射；取每个 <a href> 与其内部文本 */
+export function parseNav(xhtml: string, baseDir: string): TitleMap {
+    const clean: string = stripProlog(xhtml);
+    const map: TitleMap = new Map<string, string>();
+    // 用 exec 循环（而不是 indexOf 找标签原文）：同名标签出现多次时 indexOf 会全部落到第一处
+    const openRe: RegExp = new RegExp('<(?:[A-Za-z_][\\w.-]*:)?a\\b[^>]*>', 'gi');
+    let m: RegExpExecArray | null = openRe.exec(clean);
+    while (m !== null) {
+        const tag: string = m[0];
+        const href: string = attrOf(tag, 'href');
+        if (href.length > 0) {
+            const rest: string = clean.substring(m.index + tag.length);
+            const closeIdx: number = rest.indexOf('</a>');
+            if (closeIdx >= 0) {
+                const label: string = decodeEntities(rest.substring(0, closeIdx).replace(/<[^>]*>/g, '')).trim();
+                const path: string = resolveHref(baseDir, href);
+                if (path.length > 0 && label.length > 0 && !map.has(path)) {
+                    map.set(path, label);
+                }
+            }
+        }
+        m = openRe.exec(clean);
+    }
+    return map;
+}
+/** 章标题兜底：用文件名（去扩展名），保证目录里不出现空标题 */
+export function fallbackTitleOf(zipPath: string): string {
+    const name: string = baseNameOf(zipPath);
+    const dot: number = name.lastIndexOf('.');
+    const raw: string = dot > 0 ? name.substring(0, dot) : name;
+    return raw.length > 0 ? raw : '正文';
+}
