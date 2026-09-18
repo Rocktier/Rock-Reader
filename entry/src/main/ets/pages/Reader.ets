@@ -24,6 +24,7 @@ import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableB
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { applyThemeToSystem } from '../common/SystemBar';
 
 interface ReaderParams {
   bookId: string;
@@ -73,6 +74,8 @@ struct Reader {
   @State fontSizeFp: number = 18;
   @State lineHeightVp: number = 34.2;
   @State marginVp: number = 20;
+  /** '' = 系统默认字体；非空时渲染与测量都必须用同一个族名 */
+  @State fontFamily: string = '';
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
@@ -87,6 +90,9 @@ struct Reader {
   private currentKey: string = '';
   private viewWidthVp: number = 0;
   private viewHeightVp: number = 0;
+  /** 上一次排版时的视口（vp）；用于识别"旋转/分屏/字号缩放"导致的尺寸变化 */
+  private laidOutWidthVp: number = 0;
+  private laidOutHeightVp: number = 0;
   private areaReady: boolean = false;
   /** 首屏：拿到视口尺寸后再排版 */
   private pendingChapter: number = 0;
@@ -105,10 +111,13 @@ struct Reader {
     if (theme !== this.theme) {
       this.theme = theme;
       this.palette = paletteOf(theme);
+      applyThemeToSystem(getContext(this) as Context, theme);
     }
+    this.fontFamily = this.prefs.getFontFamily();
     if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
       return;
     }
+    // 档位 / 字体 / 视口任一变化都要重排；位置按字符偏移复原（切档位不跳页）
     const next: string = this.boxOf(this.prefs.getLevels()).signature;
     if (next !== this.currentKey) {
       const keep: number = this.pages.length > 0 ? this.pages[this.pageIndex].start : 0;
@@ -150,6 +159,7 @@ struct Reader {
       this.title = book.title;
       this.source = createBookSource(book);
 
+      this.fontFamily = this.prefs.getFontFamily();
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
       if (this.chapterCount === 0) {
@@ -183,7 +193,8 @@ struct Reader {
       lineHeightPx: lineHeightPx,
       widthPx: widthPx,
       heightPx: heightPx,
-      signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx)
+      fontFamily: this.fontFamily,
+      signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx, this.fontFamily)
     };
   }
 
@@ -539,6 +550,7 @@ struct Reader {
           Text(this.pageText)
             .fontSize(this.fontSizeFp)
             .lineHeight(this.lineHeightVp)
+            .fontFamily(this.fontFamily)      // '' = 系统默认；必须与 TextPaginator 测量时一致
             .fontColor(this.palette.text)
             .width('100%')
             .textAlign(TextAlign.Start)
@@ -557,12 +569,32 @@ struct Reader {
       .opacity(this.pageOpacity)
       .translate({ x: this.shiftX })
       .onAreaChange((oldValue: Area, newValue: Area) => {
-        this.viewWidthVp = newValue.width as number;
-        this.viewHeightVp = newValue.height as number;
-        if (!this.areaReady && this.viewWidthVp > 0 && this.viewHeightVp > 0) {
+        const width: number = newValue.width as number;
+        const height: number = newValue.height as number;
+        this.viewWidthVp = width;
+        this.viewHeightVp = height;
+        if (width <= 0 || height <= 0) {
+          return;
+        }
+        if (!this.areaReady) {
           this.areaReady = true;
+          this.laidOutWidthVp = width;
+          this.laidOutHeightVp = height;
           if (this.chapterCount > 0) {
             this.openChapter(this.pendingChapter, this.pendingOffset);
+          }
+          return;
+        }
+        // 尺寸变了（旋转 / 分屏 / 系统字号缩放）→ 旧页表作废，按字符偏移原地重排。
+        // 不做这一步的话，页表还是旧视口的，页面会overflow（最后一行被裁）。
+        if (Math.abs(width - this.laidOutWidthVp) > 1 || Math.abs(height - this.laidOutHeightVp) > 1) {
+          this.laidOutWidthVp = width;
+          this.laidOutHeightVp = height;
+          if (this.chapterCount > 0 && this.book !== null) {
+            const keep: number = this.pages.length > 0 && this.pageIndex < this.pages.length
+              ? this.pages[this.pageIndex].start
+              : 0;
+            this.openChapter(this.chapterIndex, keep);
           }
         }
       })

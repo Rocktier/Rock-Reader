@@ -10,6 +10,7 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookImporter, ImportResult } from '../engine/importer/BookImporter';
 import { BookRecord, ReadingProgress } from '../common/Types';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { applyThemeToSystem } from '../common/SystemBar';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -64,6 +65,8 @@ struct Index {
     if (theme !== this.theme) {
       this.theme = theme;
       this.palette = paletteOf(theme);
+      // 主题变了必须同步系统层（状态栏文字颜色 + 系统深色模式），否则浅色下白字白底看不见
+      applyThemeToSystem(getContext(this) as Context, theme);
     }
   }
 

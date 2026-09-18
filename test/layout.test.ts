@@ -35,18 +35,22 @@ test('档位越界与非法值都被夹到合法区间（不许出现 0 档或 9
   assert.equal(clampLevel(Number.NaN), 3, 'NaN 必须回落默认档，否则排版会算出 0 宽度');
 });
 
-test('layoutKey：档位、实际 px、可用宽度任一变化都必须变（否则错用旧页表）', () => {
+test('layoutKey：档位、实际 px、可用宽度、字体任一变化都必须变（否则错用旧页表）', () => {
   const lv = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3 };
-  const base = layoutKey(lv, 54, 102.6, 900);
-  assert.equal(base, layoutKey(lv, 54, 102.6, 900));
+  const base = layoutKey(lv, 54, 102.6, 900, '');
+  assert.equal(base, layoutKey(lv, 54, 102.6, 900, ''));
 
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 4, lineHeightLevel: 3, marginLevel: 3 }, 54, 102.6, 900));
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 4, marginLevel: 3 }, 54, 102.6, 900));
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 4 }, 54, 102.6, 900));
-  assert.notEqual(base, layoutKey(lv, 60, 102.6, 900));
-  assert.notEqual(base, layoutKey(lv, 54, 120, 900));
-  assert.notEqual(base, layoutKey(lv, 54, 102.6, 860));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 4, lineHeightLevel: 3, marginLevel: 3 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 4, marginLevel: 3 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 4 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey(lv, 60, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey(lv, 54, 120, 900, ''));
+  assert.notEqual(base, layoutKey(lv, 54, 102.6, 860, ''));
 
   // 系统字体缩放变化 → 档位不变但 px 变：这一条正是 layoutKey 比纯档位签名强的地方
-  assert.notEqual(base, layoutKey(lv, 58, 110, 900));
+  assert.notEqual(base, layoutKey(lv, 58, 110, 900, ''));
+
+  // 换字体会改断行 → 必须进签名
+  assert.notEqual(base, layoutKey(lv, 54, 102.6, 900, 'HarmonyOS Sans'));
+  assert.equal(layoutKey(lv, 54, 102.6, 900, ''), layoutKey(lv, 54, 102.6, 900, ''), '空字体 = 系统默认，同 key');
 });

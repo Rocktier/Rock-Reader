@@ -26,7 +26,12 @@ import { PageTable, buildPageTable, linesPerPage } from './PageTableBuilder';
  * 一次排版，拿到每行的结束字符下标（不含）。
  * 返回数组为单调不减序列；末项补齐到正文末尾，保证最后一页不漏字。
  */
-export function measureLineEnds(content: string, fontSizePx: number, widthPx: number): number[] {
+export function measureLineEnds(
+  content: string,
+  fontSizePx: number,
+  widthPx: number,
+  fontFamily: string = ''
+): number[] {
   const ends: number[] = [];
   if (content.length === 0 || widthPx <= 0 || fontSizePx <= 0) {
     return ends;
@@ -34,6 +39,10 @@ export function measureLineEnds(content: string, fontSizePx: number, widthPx: nu
 
   const collection: text.FontCollection = text.FontCollection.getGlobalInstance();
   const textStyle: text.TextStyle = { fontSize: fontSizePx };
+  if (fontFamily.length > 0) {
+    // 必须与渲染字体一致，否则断行不同 → 页面会溢出
+    textStyle.fontFamilies = [fontFamily];
+  }
   const paragraphStyle: text.ParagraphStyle = { textStyle: textStyle };
 
   const builder: text.ParagraphBuilder = new text.ParagraphBuilder(paragraphStyle, collection);
@@ -63,7 +72,7 @@ export function measureLineEnds(content: string, fontSizePx: number, widthPx: nu
 
 export class TextPaginator implements Paginator {
   paginate(content: string, box: LayoutBox): PageTable {
-    const ends: number[] = measureLineEnds(content, box.fontSizePx, box.widthPx);
+    const ends: number[] = measureLineEnds(content, box.fontSizePx, box.widthPx, box.fontFamily);
     const perPage: number = linesPerPage(box.heightPx, box.lineHeightPx);
     const table: PageTable = buildPageTable(ends, perPage, content.length);
     table.signature = box.signature;

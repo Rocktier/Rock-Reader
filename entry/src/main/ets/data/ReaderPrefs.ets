@@ -18,6 +18,8 @@ const KEY_FONT: string = 'font_level';
 const KEY_LINE: string = 'line_level';
 const KEY_MARGIN: string = 'margin_level';
 const KEY_THEME: string = 'theme';
+/** 字体族；'' = 系统默认（体积为 0：只列系统已装字体，不内置字体文件） */
+const KEY_FAMILY: string = 'font_family';
 
 export class ReaderPrefs {
   private store: preferences.Preferences | null = null;
@@ -27,6 +29,7 @@ export class ReaderPrefs {
     marginLevel: DEFAULT_LEVELS.marginLevel
   };
   private theme: ThemeName = THEME_DARK;
+  private fontFamily: string = '';
 
   /** 幂等：重复调用直接返回 */
   open(ctx: Context): void {
@@ -42,6 +45,7 @@ export class ReaderPrefs {
         marginLevel: this.readLevel(store, KEY_MARGIN)
       };
       this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
+      this.fontFamily = this.readText(store, KEY_FAMILY, '');
     } catch (e) {
       // 读不到就用默认档位（3/3/3 + 深色）—— 绝不因为偏好读取失败而读不了书
       hilog.error(DOMAIN, TAG, 'prefs open failed: %{public}s', JSON.stringify(e));
@@ -80,6 +84,7 @@ export class ReaderPrefs {
       marginLevel: this.readLevel(store, KEY_MARGIN)
     };
     this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
+    this.fontFamily = this.readText(store, KEY_FAMILY, '');
   }
 
   getLevels(): LayoutLevels {
@@ -88,6 +93,17 @@ export class ReaderPrefs {
 
   getTheme(): ThemeName {
     return this.theme;
+  }
+
+  /** '' = 系统默认字体 */
+  getFontFamily(): string {
+    return this.fontFamily;
+  }
+
+  saveFontFamily(family: string): void {
+    this.fontFamily = family;
+    this.put(KEY_FAMILY, family);
+    this.flush();
   }
 
   saveLevels(levels: LayoutLevels): void {

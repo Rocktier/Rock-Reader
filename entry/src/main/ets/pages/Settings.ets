@@ -9,12 +9,19 @@
  * 从阅读页进来：返回时阅读页会按字符偏移复原位置（切档位不跳页）。
  */
 import { router } from '@kit.ArkUI';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { clampLevel, LayoutLevels, LEVEL_MAX, LEVEL_MIN } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
+import { applyThemeToSystem } from '../common/SystemBar';
+
+const DOMAIN: number = 0x0000;
+const TAG: string = 'RockReader';
 
 const CHIP_SIZE: number = 44;
 const CHIP_HEIGHT: number = 34;
+/** 系统字体列表最多显示多少项（有些设备会返回几十项，取够用的量） */
+const MAX_FONT_ITEMS: number = 40;
 
 @Entry
 @Component
@@ -22,6 +29,9 @@ struct Settings {
   @State palette: Palette = paletteOf(THEME_DARK);
   @State levels: LayoutLevels = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3 };
   @State theme: ThemeName = THEME_DARK;
+  /** '' = 系统默认 */
+  @State fontFamily: string = '';
+  @State fontFamilies: string[] = [];
 
   private prefs: ReaderPrefs = new ReaderPrefs();
 
@@ -29,7 +39,44 @@ struct Settings {
     this.prefs.open(getContext(this) as Context);
     this.levels = this.prefs.getLevels();
     this.theme = this.prefs.getTheme();
+    this.fontFamily = this.prefs.getFontFamily();
     this.palette = paletteOf(this.theme);
+    this.loadSystemFonts();
+  }
+
+  onPageShow(): void {
+    this.loadSystemFonts();
+  }
+
+  /**
+   * 列系统已装字体（**不内置字体文件 → 体积 0**）。
+   * 用户若在系统里装了喜欢的字体（主题字体等），这里就能直接选到。
+   * 用 UIContext 上的 Font（`@ohos.font` 的全局函数已废弃）。
+   */
+  private loadSystemFonts(): void {
+    if (this.fontFamilies.length > 0) {
+      return;
+    }
+    try {
+      const list: string[] = this.getUIContext().getFont().getSystemFontList();
+      const picked: string[] = [];
+      for (let i: number = 0; i < list.length && picked.length < MAX_FONT_ITEMS; i++) {
+        const name: string = list[i];
+        if (name.length > 0 && name !== this.fontFamily) {
+          picked.push(name);
+        }
+      }
+      this.fontFamilies = picked;
+    } catch (e) {
+      // 取不到就只显示「系统默认」—— 字体选择不是读书的必要条件，绝不因此报错
+      hilog.warn(DOMAIN, TAG, 'getSystemFontList failed: %{public}s', JSON.stringify(e));
+      this.fontFamilies = [];
+    }
+  }
+
+  private pickFont(family: string): void {
+    this.fontFamily = family;
+    this.prefs.saveFontFamily(family);
   }
 
   /** row: 'font' | 'line' | 'margin'；n: 档位序号 */
@@ -48,6 +95,9 @@ struct Settings {
     this.theme = theme;
     this.palette = paletteOf(theme);
     this.prefs.saveTheme(theme);
+    // 同步系统层：浅色主题下必须把状态栏文字改成黑色，否则白底白字
+    applyThemeToSystem(getContext(this) as Context, theme);
+    this.loadSystemFonts();
   }
 
   private currentOf(row: string): number {
@@ -88,6 +138,64 @@ struct Settings {
             .onClick(() => this.pick(row, n))
         }, (n: number) => row + n)
       }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 16, bottom: 16 })
+  }
+
+  @Builder
+  fontChip(label: string, family: string) {
+    Text(label)
+      .fontFamily(family)                  // 用该字体本身渲染，直接看效果
+      .fontSize(13)
+      .fontColor(this.fontFamily === family ? this.palette.bg : this.palette.text2)
+      .backgroundColor(this.fontFamily === family ? this.palette.text : this.palette.card)
+      .border({ width: 1, color: this.fontFamily === family ? this.palette.text : this.palette.line })
+      .borderRadius(0)
+      .height(CHIP_HEIGHT)
+      .padding({ left: 14, right: 14 })
+      .onClick(() => this.pickFont(family))
+  }
+
+  /** 字体：横向芯片列表（系统已装字体，**不内置字体文件 → 体积 0**） */
+  @Builder
+  fontSection() {
+    Column() {
+      Row() {
+        Text('字体')
+          .fontSize(13.5)
+          .fontColor(this.palette.text)
+        Blank()
+        Text(this.fontFamily.length > 0 ? `${this.fontFamilies.length} 款可选` : '系统默认')
+          .fontSize(9.5)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .margin({ bottom: 9 })
+
+      // 预览：直接看这套字体在正文里的样子
+      Text('思维力是孩子学习力的基础 ABC 123')
+        .fontFamily(this.fontFamily)
+        .fontSize(15)
+        .fontColor(this.palette.text2)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .padding({ bottom: 12 })
+
+      Scroll() {
+        Row({ space: 8 }) {
+          this.fontChip('系统默认', '')
+          ForEach(this.fontFamilies, (family: string) => {
+            this.fontChip(family, family)
+          }, (family: string) => 'fam' + family)
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
       .width('100%')
     }
     .width('100%')
@@ -142,6 +250,8 @@ struct Settings {
         this.levelRow('字号', 'font', `${this.levels.fontSizeLevel}/${LEVEL_MAX}`)
         this.levelRow('行距', 'line', `${this.levels.lineHeightLevel}/${LEVEL_MAX}`)
         this.levelRow('页边距', 'margin', `${this.levels.marginLevel}/${LEVEL_MAX}`)
+
+        this.fontSection()
 
         Divider()
           .color(this.palette.lineSoft)

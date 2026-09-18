@@ -4,8 +4,10 @@
 
 - 中文名：**Rock阅读** ｜ 英文名：**RockReader** ｜ 包名：`com.rocktier.rockreader`
 - 格式：**TXT + EPUB**（不打算做 PDF —— 那是另一套渲染）
-- 目标系统：**HarmonyOS 6+**（`compatibleSdkVersion = 20` / `targetSdkVersion = 24`），单框架单包
+- 目标系统：**HarmonyOS 5.0.4（API 16）及以上**，`targetSdkVersion = 6.0.0(API 20)`，单框架单包
+  （CI 另有一个 `ci` 产物用 OpenHarmony SDK 只做编译校验 —— 所以**CI 的 HAP 装不上手机**）
 - 阅读内核**自研**（见下文"为什么自研"），官方 Reader Kit 只留可插拔适配器位
+- 字体：**不内置字体文件**，只列系统已装字体供选择（`getSystemFontList`，体积 0，不联网下载）
 
 ## 三条铁律（家族统一）
 

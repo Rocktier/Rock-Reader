@@ -16,6 +16,8 @@ export interface LayoutBox {
   widthPx: number;
   /** 正文可用高度（px，已扣掉页眉页脚） */
   heightPx: number;
+  /** 字体族；'' = 系统默认 */
+  fontFamily: string;
   /** 缓存键，见 common/LayoutStyle.layoutKey */
   signature: string;
 }

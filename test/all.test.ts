@@ -5,4 +5,5 @@ import './paginator.test.ts';
 import './layout.test.ts';
 import './zip.test.ts';
 import './epub.test.ts';
+import './flow.test.ts';
 import './realfile.test.ts';

@@ -24,7 +24,8 @@
 | EPUB 解析 | zip 解包 → `container.xml` → OPF → NCX/Nav → XHTML → **段落模型** |
 | 排版分页 | `@ohos.graphics.text` 一次 `layoutSync` 取全部行区间 → 页表 |
 | 阅读页 | 横滑翻页 + 淡化、字号/行距/边距档位、夜间模式、目录跳转、进度持久化 |
-| 设置 | 预设档位**芯片**（**无滑块**）、主题、翻页模式 |
+| 设置 | 预设档位**芯片**（**无滑块**）、**字体（列系统已装字体）**、主题 |
+| 字体策略 | **不内置字体文件**：列出系统已装字体供选（`getSystemFontList`，体积 0）。理由与体积测算见 `findings.md`「字体决策」—— 一款中文字体最小 11MB，内置三款会直接撞碎铁律 2（HAP ≤5MB） |
 | **广告** | Ads Kit **激励视频**（用户主动触发换增值）+ 书架/设置 **原生卡片**；**默认联网呈现**；**不设广告开关、不做应用内引导**；断网时静默消失 |
 
 ### 1.2 v1 明确不做
@@ -39,7 +40,10 @@
 
 ### 1.3 平台
 
-- **只支持 HarmonyOS 6+（单框架）**：`compatibleSdkVersion = 20`、`targetSdkVersion = 24`，单包发布
+- **兼容 HarmonyOS 5.0.4（API 16）及以上**：`compatibleSdkVersion = 5.0.4(16)`、`targetSdkVersion = 6.0.0(20)`，单框架单包
+  （用到的能力都在 API 16 以内：`@ohos.graphics.text` API 12+、`getSystemFontList` API 10+）
+- CI 另立 `ci` 产物（`runtimeOS = OpenHarmony`、`compileSdkVersion = 20`）**只做编译校验**
+  —— HarmonyOS SDK 下载需要登录华为账号，CI 拿不到，所以 CI 的 HAP 装不上手机（见 `device-test.md` §7）
 - 包名 `com.rocktier.rockreader`；应用名 中文「Rock阅读」/ 英文「RockReader」
 
 ---

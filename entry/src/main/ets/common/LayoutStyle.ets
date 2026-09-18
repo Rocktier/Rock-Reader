@@ -75,12 +75,15 @@ export function layoutKey(
   levels: LayoutLevels,
   fontSizePx: number,
   lineHeightPx: number,
-  widthPx: number
+  widthPx: number,
+  fontFamily: string
 ): string {
   return 'f' + clampLevel(levels.fontSizeLevel) +
     '-l' + clampLevel(levels.lineHeightLevel) +
     '-m' + clampLevel(levels.marginLevel) +
     '-fs' + Math.round(fontSizePx) +
     '-lh' + Math.round(lineHeightPx) +
-    '-w' + Math.round(widthPx);
+    '-w' + Math.round(widthPx) +
+    // 字体必须进签名：换字体会改断行，沿用旧页表会切错页（'sys' = 系统默认）
+    '-ff' + (fontFamily.length > 0 ? fontFamily : 'sys');
 }
