@@ -1,17 +1,17 @@
 /**
  * 可下载字体目录（**内置字体 = 0，全部按需下载**）
  *
- * 党哥 2026-09-18 决定：**避免增加软件体积** → 字体走下载。
- * 由此带来的三条硬约束（改动本文件时务必保住）：
+ * 党哥 2026-09-18 定的三条：① 用开源字体 ② 国内下载要快 ③ 尽量官方源。
+ * 由此定下的做法（改本文件时务必保住）：
  *
- *  1. **只列开源可再分发的字体**（OFL），且**不修改字体文件**（原样托管），
- *     这样无需按 OFL 的 Reserved Font Name 规则改名，也不必处理衍生作品的授权。
- *  2. **下载后必须校验 SHA256** 才能注册 —— 字体文件来自网络，这是唯一的完整性防线；
- *     校验失败就删掉重下，绝不能拿一个半截文件去注册（会渲染出错乱字形）。
- *  3. **下载失败 / 无网络时静默**：不弹错、不拦路，字体区只是少一项，阅读不受任何影响。
- *
- * 托管：本仓库自己的 Release 资产（`fonts-v1`）—— 不依赖上游链接的稳定性，
- * 且将来换成更小的子集包时**文件名与 URL 不变**。
+ *  1. **只列 SIL OFL 等开源授权的字体**；
+ *  2. **做成 GB2312 子集（6763 字）**——原字体 13.3MB / 24MB 在国内网络下一次下载太慢，
+ *     子集后 **楷 3.27MB / 宋 2.91MB**，日常书与绝大多数人名都够用，
+ *     极罕见的字回退系统字体（只影响那一两个字的字型，不影响阅读）；
+ *  3. **按 OFL 的 Reserved Font Name 规则改名**（子集属"修改"，不得沿用原名），
+ *     归属声明写在字体文件内部的 copyright 字段里（可审计，见 fonts 分支的 NOTICE.md）；
+ *  4. **多源下载 + 每个源都校验 SHA256** —— 首选 jsDelivr CDN（国内可达的官方 CDN），
+ *     GitHub Release 与 raw 兜底。任一源被替换/损坏都会被拒绝启用。
  */
 export interface FontEntry {
   /** 稳定 id（存偏好用） */
@@ -20,11 +20,11 @@ export interface FontEntry {
   displayName: string;
   /** 注册进系统的字体族名（渲染 + 测量共用同一个名字） */
   familyName: string;
-  /** 沙箱内的文件名 */
+  /** 沙箱内的文件名（与托管分支里的文件名一致） */
   fileName: string;
   /** 体积（字节）：下载前要明示给用户 */
   sizeBytes: number;
-  /** SHA256：下载完必须比对 */
+  /** SHA256：下载完必须比对（**与从哪个源下载无关**） */
   sha256: string;
   /** 一句话描述（界面副标题） */
   desc: string;
@@ -32,34 +32,41 @@ export interface FontEntry {
   license: string;
 }
 
-const RELEASE_BASE: string = 'https://github.com/Rocktier/Rock-Reader/releases/download/fonts-v1/';
+const JSDelivrBase: string = 'https://cdn.jsdelivr.net/gh/Rocktier/Rock-Reader@fonts-v1/fonts/';
+const ReleaseBase: string = 'https://github.com/Rocktier/Rock-Reader/releases/download/fonts-v1/';
+const RawBase: string = 'https://raw.githubusercontent.com/Rocktier/Rock-Reader/fonts-v1/fonts/';
 
-/** 目录：加一款字体 = 加一条记录（其余逻辑不用改） */
+/** 下载源顺序：CDN（国内可达）→ Release 附件 → raw。加一款字体 = 加一条记录。 */
 export const FONT_CATALOG: FontEntry[] = [
   {
-    id: 'lxgw-wenkai-lite',
-    displayName: '霞鹜文楷 Lite',
-    familyName: 'LXGW WenKai Lite',
-    fileName: 'LXGWWenKaiLite-Regular.ttf',
-    sizeBytes: 13926340,
-    sha256: 'e560b1cda5167a1c8a6dc784b079732601bd47e6c11b602f5a4cedb36cd8ba20',
-    desc: '楷体风格 · 中文长文阅读口碑最好之一 · 已含 GB2312 全部汉字',
+    id: 'rockreader-kai',
+    displayName: '楷体 RockReader Kai',
+    familyName: 'RockReader Kai',
+    fileName: 'RockReaderKai.ttf',
+    sizeBytes: 3427912,
+    sha256: '701bc84dcf0df09c5716108edeac61c11109ddbad81769777d29de3735e5ecc7',
+    desc: '基于霞鹜文楷 Lite 的 GB2312 子集 · 中文长文阅读口碑最好之一',
     license: 'SIL OFL 1.1'
   },
   {
-    id: 'noto-serif-sc',
-    displayName: '思源宋体 SC',
-    familyName: 'Noto Serif SC',
-    fileName: 'NotoSerifSC-VF.ttf',
-    sizeBytes: 25125512,
-    sha256: '050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9',
-    desc: '衬线（宋体）· 最经典的中文正文字体 · 可变字重',
+    id: 'rockreader-song',
+    displayName: '宋体 RockReader Song',
+    familyName: 'RockReader Song',
+    fileName: 'RockReaderSong.ttf',
+    sizeBytes: 3051864,
+    sha256: '03afa46899bbc3bff6329e5680b85acd0f270f02b75c31997c843f3702eceafb',
+    desc: '基于 Noto Serif SC（思源宋体同源）的 GB2312 子集 · 最经典的中文正文字体',
     license: 'SIL OFL 1.1'
   }
 ];
 
-export function fontUrlOf(entry: FontEntry): string {
-  return RELEASE_BASE + entry.fileName;
+/** 按顺序尝试的下载源；调用方逐个试，任一成功即止 */
+export function fontUrlsOf(entry: FontEntry): string[] {
+  return [
+    JSDelivrBase + entry.fileName,
+    ReleaseBase + entry.fileName,
+    RawBase + entry.fileName
+  ];
 }
 
 export function sizeTextOf(bytes: number): string {

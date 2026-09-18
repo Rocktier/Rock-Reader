@@ -313,4 +313,33 @@ ArkUI 的 `registerFont` **只作用于渲染端**，不保证 `graphics.text` �
 | Error | Resolution |
 |-------|------------|
 | `Property 'TRUNCATE' does not exist on type 'typeof OpenMode'` | 枚举名是 **`TRUNC`**（不是 TRUNCATE）；查 `@ohos.file.fs.d.ts` 枚举确认 |
+
+### 补充（同日）：字体源按「开源 + 国内快 + 官方源」重做
+
+党哥追加两条约束：① 用开源字体 ② 国内下载要快，尽量官方源。
+
+**实测过的路（都没走通，值得记下来免得重复试）**
+
+| 尝试 | 结果 |
+|---|---|
+| 清华 TUNA / 中科大 USTC / 南大 的 `github-release` 镜像 | **404** —— 这类镜像是**申请制**，我们仓库没入库 |
+| jsDelivr 直连上游大仓库（lxgw、adobe-fonts） | **403** —— 仓库过大/超限 |
+| npm（阿里云镜像）上的字体包 | 只有 woff2 网页字体（Fontsource），不适合本地注册 |
+| Gitee 上字体作者的官方仓库 | 本机网络连不上，无法确认 |
+
+**最终方案：把字体做小（这才是"国内快"的根本解）+ 官方 CDN 加速**
+
+1. **子集化**：用 fonttools 按 **GB2312 全集（6763 字）** 切子集
+   - 霞鹜文楷 Lite 13.28MB → **3.27MB**
+   - Noto Serif SC 24.0MB → 先 `varLib.instancer` 定字重 wght=400 → 再子集 → **2.91MB**
+   - 极罕见字回退系统字体（只影响个别字的字型）
+2. **按 OFL 规则改名**：子集属"修改"，不得沿用 Reserved Font Name →
+   `RockReader Kai` / `RockReader Song`，归属写进字体文件内部的 copyright 字段
+3. **托管与分发**：字体放在**独立分支 `fonts` + tag `fonts-v1`**（不污染 main），
+   应用按 **jsDelivr CDN → GitHub Release → GitHub raw** 顺序尝试，
+   **每个源都校验 SHA256**（实测 jsDelivr 下发的字节与预期 sha256 完全一致）
+4. 代码：`FontCatalog` 改多源；`FontStore` 逐个源尝试
+
+**操作失误与修正**：`git switch --orphan fonts` 失败但管道让后续 `&&` 继续，
+字体被误提交到 main（本地未推送）→ `git reset --hard origin/main` 撤销，字体保留在独立分支。
 - **M7**：Ads Kit 广告模块（默认联网呈现、无开关、无引导、断网静默降级、绝不出现在阅读页）

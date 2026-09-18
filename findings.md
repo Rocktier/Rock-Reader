@@ -278,7 +278,29 @@
 
 ### 4.2b 下载方案的实现要点（已落地）
 
-- **托管**：本仓库自己的 Release 资产（`fonts-v1`），不依赖上游链接；将来换成更小的子集包时 URL 不变
+**体积：先子集化，这是"国内下载要快"的根本解**
+
+| 字体 | 原体积 | GB2312 子集后 | 覆盖 |
+|---|---|---|---|
+| 霞鹜文楷 Lite → **RockReader Kai** | 13.28 MB | **3.27 MB** | GB2312 全部 6763 字 |
+| Noto Serif SC → **RockReader Song** | 24.0 MB | **2.91 MB**（先定字重 wght=400 再子集） | 同上 |
+
+极罕见的字回退系统字体（只影响个别字的字型，不影响阅读）。
+子集属"修改"，因此按 **OFL 的 Reserved Font Name 规则改名**，并把归属写进字体文件内部的 copyright 字段
+（复现步骤见 `fonts` 分支的 `NOTICE.md`，可审计）。
+
+**下载源（按顺序，每个源都校验 SHA256）**
+
+1. **jsDelivr CDN**：`cdn.jsdelivr.net/gh/Rocktier/Rock-Reader@fonts-v1/fonts/<file>` —— 国内可达的官方 CDN
+2. GitHub Release 附件（兜底）
+3. GitHub raw（兜底）
+
+> 试过但不可用：清华 TUNA / 中科大 USTC / 南大的 `github-release` 镜像是**申请制**（我们仓库没入库 → 404）；
+> jsDelivr 对上游大仓库（lxgw、adobe-fonts）返回 403；npm 镜像上只有 woff2 网页字体，不适合本地注册。
+> 所以最终是"自己托管子集 + 官方 CDN 加速"——文件小了，网络差也能很快下完。
+
+**其它**
+
 - **完整性**：下载 → 比对字节数 → **比对 SHA256** → 校验通过才 `rename` 上位（`.part` 临时文件，中断不留半截）
 - **测量与渲染必须同源**（关键）：ArkUI 的 `registerFont` 只作用于渲染端；
   测量端要额外 `FontCollection.getGlobalInstance().loadFontSync(族名, 文件路径)`

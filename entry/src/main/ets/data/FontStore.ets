@@ -15,7 +15,7 @@
 import { http } from '@kit.NetworkKit';
 import { fileIo as fs, hash } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { FONT_CATALOG, FontEntry, fontUrlOf } from '../common/FontCatalog';
+import { FONT_CATALOG, FontEntry, fontUrlsOf } from '../common/FontCatalog';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -72,9 +72,22 @@ export class FontStore {
 
   /**
    * 下载并落盘（含校验）。成功返回 true。
+   * **逐个尝试多个源**（CDN → Release → raw），任一成功即止；每个源都要过同一套校验。
    * 只做"下载 + 校验"，**不注册**（注册需要 UIContext，由页面在启动时统一做）。
    */
   async download(entry: FontEntry): Promise<boolean> {
+    const urls: string[] = fontUrlsOf(entry);
+    for (let i: number = 0; i < urls.length; i++) {
+      const ok: boolean = await this.tryDownload(entry, urls[i]);
+      if (ok) {
+        return true;
+      }
+      hilog.warn(DOMAIN, TAG, 'font source failed, try next: %{public}s', urls[i]);
+    }
+    return false;
+  }
+
+  private async tryDownload(entry: FontEntry, url: string): Promise<boolean> {
     const finalPath: string = this.pathOf(entry);
     const tmpPath: string = finalPath + '.part';
     try {
@@ -88,7 +101,7 @@ export class FontStore {
       const request: http.HttpRequest = http.createHttp();
       let written: boolean = false;
       try {
-        const response: http.HttpResponse = await request.request(fontUrlOf(entry), {
+        const response: http.HttpResponse = await request.request(url, {
           method: http.RequestMethod.GET,
           expectDataType: http.HttpDataType.ARRAY_BUFFER,
           connectTimeout: 15000,
