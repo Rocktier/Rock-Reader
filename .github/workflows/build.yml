@@ -2,18 +2,23 @@ name: build
 
 # 家族准则第十四章：所有构建一律走 GitHub Actions（本机不装鸿蒙工具链）
 # 本仓库是 PUBLIC，不消耗私有仓库的 Actions 配额
+#
+# 触发：
+#   - push main / PR        → 编译校验 + 单测（日常）
+#   - push tag v*           → 上述之外，**额外把产物挂到 GitHub Release**（发版走这里）
 on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # 需要写权限才能在 tag 触发时创建 Release
 
 env:
-  # 公开可下载的 OpenHarmony SDK（编译校验用；HarmonyOS SDK 下载需登录华为账号）
   OHOS_SDK_VER: 6.0.0.2-Release
   SDK_ROOT: ${{ github.workspace }}/.ohos-sdk
   # hvigor 通过 npm 从华为源安装；不用仓库里的 hvigorw 包装器（它不执行构建，会假绿）
@@ -43,7 +48,7 @@ jobs:
           fi
 
   # ---------------------------------------------------------------
-  # 作业 2：ArkTS 编译校验 → HAP
+  # 作业 2：ArkTS 编译校验 → HAP（tag 触发时同时发 Release）
   # ---------------------------------------------------------------
   build-hap:
     name: ArkTS 编译校验 → HAP
@@ -86,10 +91,6 @@ jobs:
           echo "node: $(node -v)  java: $(java -version 2>&1 | head -1)"
           echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
           ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head
-          echo "--- SDK 里的 syscap 定义（诊断用） ---"
-          find "${DEVECO_SDK_HOME}" -iname '*syscap*' 2>/dev/null | head -15
-          echo "--- API 20 组件顶层 ---"
-          ls "${DEVECO_SDK_HOME}/20" 2>/dev/null
           node node_modules/@ohos/hvigor/bin/hvigor.js version
 
       - name: 构建 HAP（product=ci）
@@ -118,12 +119,22 @@ jobs:
             echo "::error::构建命令退出成功，但没有产出任何 HAP —— 视为失败"
             exit 1
           fi
-          ls -lh "${HAP}"
-          echo "HAP_SIZE=$(stat -c%s "${HAP}")" >> "$GITHUB_ENV"
           mkdir -p /tmp/artifacts
           cp "${HAP}" /tmp/artifacts/
+          ls -lh /tmp/artifacts/
+          # 产物指纹：写进 job summary，Release 说明里也会带上
+          (cd /tmp/artifacts && sha256sum *.hap > SHA256SUMS && cat SHA256SUMS)
+          {
+            echo "### 构建产物"
+            echo ""
+            echo "| 文件 | 大小 | SHA256 |"
+            echo "|---|---|---|"
+            for f in /tmp/artifacts/*.hap; do
+              echo "| $(basename "$f") | $(stat -c%s "$f") bytes | $(sha256sum "$f" | cut -d' ' -f1) |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 上传 HAP
+      - name: 上传 HAP（Artifacts）
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -131,3 +142,45 @@ jobs:
           path: /tmp/artifacts
           if-no-files-found: warn
           retention-days: 14
+
+      # tag v* 才会走到这里：打 tag = 发版，产物挂 Release
+      # 注意：产物是 product=ci（OpenHarmony）+ 未签名 → 只能做编译校验，**不能装到鸿蒙手机**
+      - name: 发布 Release（仅 tag v* 触发）
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          TAG="${GITHUB_REF_NAME}"
+          ls -lh /tmp/artifacts/
+
+          PRE=""
+          case "$TAG" in *-*) PRE="--prerelease";; esac   # 带 - 的（如 v0.1.0-alpha.1）标记为预发布
+
+          cat > /tmp/release-notes.md <<'EOF'
+          ## 产物说明（务必先读）
+
+          - **来源**：GitHub Actions 构建，product = `ci`（runtimeOS = **OpenHarmony**），**未签名**
+          - **用途**：验证 ArkTS/ArkUI 代码可编译通过（编译校验）
+          - ⚠️ **不能安装到鸿蒙手机**：正式包需要 HarmonyOS SDK + AGC 签名（签名绑定设备 UDID）
+          - 校验和见随附的 `SHA256SUMS`
+
+          ## 构建信息
+
+          EOF
+          {
+            echo "- commit: \`${GITHUB_SHA}\`"
+            echo "- workflow run: [#${GITHUB_RUN_NUMBER}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo ""
+            echo "## 产物指纹"
+            echo ""
+            echo '```'
+            cat /tmp/artifacts/SHA256SUMS
+            echo '```'
+          } >> /tmp/release-notes.md
+
+          gh release create "$TAG" /tmp/artifacts/*.hap /tmp/artifacts/SHA256SUMS \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "RockReader ${TAG}" \
+            --notes-file /tmp/release-notes.md \
+            $PRE
