@@ -4,10 +4,11 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
+    // MVP 只声明 phone / tablet：2in1(PC) 在 OpenHarmony SDK 里没有对应 syscap 集合，
+    // 会让 hvigor 报 00303060（多设备 syscap 交集为空）。等真要支持 PC 时再单独处理。
     "deviceTypes": [
       "phone",
-      "tablet",
-      "2in1"
+      "tablet"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
