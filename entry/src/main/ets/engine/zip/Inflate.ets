@@ -207,7 +207,7 @@ export function inflateRaw(input: Uint8Array): Uint8Array {
       size *= 2;
     }
     const grown: Uint8Array = new Uint8Array(size);
-    grown.set(out.subarray(0, outLen), 0);
+    grown.set(out.slice(0, outLen), 0);
     out = grown;
   };
 

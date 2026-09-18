@@ -22,7 +22,11 @@ const SQL_BOOKS = 'CREATE TABLE IF NOT EXISTS books(' +
 const SQL_CHAPTERS = 'CREATE TABLE IF NOT EXISTS chapters(' +
   'book_id TEXT NOT NULL, idx INTEGER NOT NULL, title TEXT, ' +
   'start_char INTEGER, end_char INTEGER, start_byte INTEGER, end_byte INTEGER, ' +
+  'href TEXT, ' +
   'PRIMARY KEY(book_id, idx))';
+
+/** href 是 M4（EPUB）新增列；老库需要补列（无发布版本，仍做一次兜底迁移） */
+const SQL_CHAPTERS_ADD_HREF = 'ALTER TABLE chapters ADD COLUMN href TEXT';
 
 const SQL_PROGRESS = 'CREATE TABLE IF NOT EXISTS progress(' +
   'book_id TEXT PRIMARY KEY, chapter_index INTEGER, char_offset INTEGER, percent REAL, updated_at INTEGER)';
@@ -42,6 +46,12 @@ export class BookDb {
     await store.executeSql(SQL_BOOKS);
     await store.executeSql(SQL_CHAPTERS);
     await store.executeSql(SQL_PROGRESS);
+    try {
+      // 已存在该列时会报错，属预期（幂等迁移）
+      await store.executeSql(SQL_CHAPTERS_ADD_HREF);
+    } catch (e) {
+      // 忽略：列已存在
+    }
     this.store = store;
   }
 
@@ -125,7 +135,8 @@ export class BookDb {
         'start_char': c.startChar,
         'end_char': c.endChar,
         'start_byte': c.startByte,
-        'end_byte': c.endByte
+        'end_byte': c.endByte,
+        'href': c.href
       };
       return b;
     });
@@ -134,10 +145,11 @@ export class BookDb {
 
   async listChapters(bookId: string): Promise<ChapterRow[]> {
     const rs = await this.ready().querySql(
-      'SELECT idx, title, start_char, end_char, start_byte, end_byte FROM chapters ' +
+      'SELECT idx, title, start_char, end_char, start_byte, end_byte, href FROM chapters ' +
       'WHERE book_id = ? ORDER BY idx ASC', [bookId]);
     const out: ChapterRow[] = [];
     while (rs.goToNextRow()) {
+      const href: string = rs.getString(rs.getColumnIndex('href'));
       out.push({
         bookId: bookId,
         index: rs.getLong(rs.getColumnIndex('idx')),
@@ -145,7 +157,8 @@ export class BookDb {
         startChar: rs.getLong(rs.getColumnIndex('start_char')),
         endChar: rs.getLong(rs.getColumnIndex('end_char')),
         startByte: rs.getLong(rs.getColumnIndex('start_byte')),
-        endByte: rs.getLong(rs.getColumnIndex('end_byte'))
+        endByte: rs.getLong(rs.getColumnIndex('end_byte')),
+        href: href === null ? '' : href
       });
     }
     rs.close();

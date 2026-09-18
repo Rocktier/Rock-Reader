@@ -19,7 +19,8 @@ export interface TxtParseResult {
   chapters: ChapterRow[];
 }
 
-function readAllBytes(path: string): Uint8Array {
+/** 读整个文件到内存（同步）。导出给 EPUB 解析复用；超过上限抛 FILE_TOO_LARGE */
+export function readAllBytes(path: string): Uint8Array {
   const stat = fs.statSync(path);
   if (stat.size <= 0) {
     throw new Error('EMPTY_FILE');
@@ -75,7 +76,8 @@ export function parseTxtSync(path: string): TxtParseResult {
       startChar: c.startChar,
       endChar: c.endChar,
       startByte: c.startByte,
-      endByte: c.endByte
+      endByte: c.endByte,
+      href: ''
     };
     return row;
   });

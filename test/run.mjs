@@ -21,6 +21,9 @@ await build({
   target: 'node18',
   outfile,
   loader: { '.ets': 'ts' },
+  // 引擎源码内部是无扩展名导入（ArkTS 写法，如 './PageTableBuilder'）；
+  // 必须显式把 .ets 放进解析顺序，否则 esbuild 只找 .ts/.js → Could not resolve。
+  resolveExtensions: ['.ets', '.ts', '.mjs', '.js', '.json'],
   logLevel: 'warning'
 });
 

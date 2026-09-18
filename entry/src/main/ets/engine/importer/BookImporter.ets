@@ -12,6 +12,7 @@ import { util } from '@kit.ArkTS';
 import { BookDb } from '../../data/BookDb';
 import { BookRecord } from '../../common/Types';
 import { parseTxtSync, MAX_TXT_BYTES } from '../parser/TxtParser';
+import { parseEpub, MAX_EPUB_BYTES } from '../parser/EpubParser';
 
 /** 单文件上限（与官方示例一致 300MB；但 TXT 解析另有 100MB 上限） */
 const MAX_FILE_BYTES: number = 300 * 1024 * 1024;
@@ -98,6 +99,9 @@ export class BookImporter {
     if (ext === 'txt' && srcSize > MAX_TXT_BYTES) {
       return { ok: false, reason: 'TOO_LARGE', book: null };
     }
+    if (ext === 'epub' && srcSize > MAX_EPUB_BYTES) {
+      return { ok: false, reason: 'TOO_LARGE', book: null };
+    }
 
     // 拷进沙箱：filesDir/books/<id>/<原名>
     const id = 'b_' + util.generateRandomUUID(true);
@@ -113,7 +117,7 @@ export class BookImporter {
     }
 
     const now = Date.now();
-    const book: BookRecord = {
+    let book: BookRecord = {
       id: id,
       title: baseName(srcName),
       author: '',
@@ -130,6 +134,25 @@ export class BookImporter {
         await this.db.addChapters(id, parsed.chapters);
       } catch (e) {
         // 解析失败也要把书留下（能打开但没目录），不丢用户文件
+        await this.db.addBook(book);
+        return { ok: false, reason: 'PARSE_FAILED', book: book };
+      }
+    } else if (ext === 'epub') {
+      try {
+        const parsed = parseEpub(dstPath);
+        // 用 OPF 里的书名/作者（比文件名的可读性好得多）
+        book = {
+          id: id,
+          title: parsed.title.length > 0 ? parsed.title : book.title,
+          author: parsed.author,
+          format: ext,
+          path: dstPath,
+          size: srcSize,
+          addedAt: now,
+          lastReadAt: now
+        };
+        await this.db.addChapters(id, parsed.chapters);
+      } catch (e) {
         await this.db.addBook(book);
         return { ok: false, reason: 'PARSE_FAILED', book: book };
       }

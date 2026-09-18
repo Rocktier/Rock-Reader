@@ -30,8 +30,12 @@ export interface ChapterRow {
   bookId: string;
   index: number;
   title: string;
+  /** TXT：该章在全文中的字符区间（EPUB 不用，置 0） */
   startChar: number;
   endChar: number;
+  /** TXT：UTF-8 字节偏移（EPUB 不用，置 0） */
   startByte: number;
   endByte: number;
+  /** EPUB：该章在 zip 内的路径；TXT 为空串 */
+  href: string;
 }
