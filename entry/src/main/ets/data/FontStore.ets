@@ -149,7 +149,8 @@ export class FontStore {
   }
 
   private writeBytes(path: string, bytes: ArrayBuffer): void {
-    const file: fs.File = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNCATE);
+    // 注：枚举是 OpenMode.TRUNC（不是 TRUNCATE）
+    const file: fs.File = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
     try {
       fs.writeSync(file.fd, bytes);
     } finally {
