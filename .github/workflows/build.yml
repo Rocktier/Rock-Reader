@@ -15,12 +15,13 @@ permissions:
 env:
   # 公开可下载的 OpenHarmony SDK（编译校验用；HarmonyOS SDK 下载需登录华为账号）
   OHOS_SDK_VER: 6.0.0.2-Release
-  # 首次下载 3.2GB 很慢，靠 actions/cache 之后不再重复下载
   SDK_ROOT: ${{ github.workspace }}/.ohos-sdk
+  # hvigor 通过 npm 从华为源安装；不用仓库里的 hvigorw 包装器（它不执行构建，会假绿）
+  HVIGOR_VER: 6.0.6
 
 jobs:
   # ---------------------------------------------------------------
-  # 作业 1：纯逻辑单测 —— 不依赖鸿蒙 SDK，M2 起随功能一起长大
+  # 作业 1：纯逻辑单测 —— 不依赖鸿蒙 SDK
   # ---------------------------------------------------------------
   unit-test:
     name: 纯逻辑单测
@@ -38,7 +39,7 @@ jobs:
             npm install --no-audit --no-fund --registry=https://registry.npmmirror.com
             npm test
           else
-            echo "尚未引入纯 TS 单测（M2 起生效）"
+            echo "尚未引入纯 TS 单测"
           fi
 
   # ---------------------------------------------------------------
@@ -47,7 +48,6 @@ jobs:
   build-hap:
     name: ArkTS 编译校验 → HAP
     runs-on: ubuntu-latest
-    # 首次（无缓存）要下 3.2GB SDK，40 分钟不够；有缓存后本作业约 3~5 分钟
     timeout-minutes: 180
     env:
       DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
@@ -60,10 +60,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 磁盘与缓存自检
-        run: |
-          df -h / | tail -1
-          ls -d "${SDK_ROOT}" 2>/dev/null && du -sh "${SDK_ROOT}" || echo "无 SDK 缓存"
+      - name: 安装 JDK（打包工具需要）
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: 缓存 OpenHarmony SDK
         uses: actions/cache@v4
@@ -74,27 +75,38 @@ jobs:
       - name: 准备 OpenHarmony SDK
         run: bash .github/scripts/setup-ohos-sdk.sh "${OHOS_SDK_VER}"
 
+      - name: 安装 hvigor 构建链
+        run: |
+          npm install --no-audit --no-fund --no-save \
+            "@ohos/hvigor@${HVIGOR_VER}" "@ohos/hvigor-ohos-plugin@${HVIGOR_VER}" \
+            --registry=https://registry.npmmirror.com
+
       - name: 环境自检
         run: |
-          echo "node: $(node -v)"
+          echo "node: $(node -v)  java: $(java -version 2>&1 | head -1)"
           echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
-          ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head -20
-          du -sh "${DEVECO_SDK_HOME}" 2>/dev/null || true
-          df -h / | tail -1
+          ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head
+          node node_modules/@ohos/hvigor/bin/hvigor.js version
 
       - name: 构建 HAP（product=ci）
         run: |
-          ./hvigorw clean --no-daemon || true
-          ./hvigorw assembleHap --mode module -p product=ci -p buildMode=debug --no-daemon
+          node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap \
+            --mode module -p product=ci -p buildMode=debug --no-daemon --stacktrace
 
-      - name: 整理产物
-        if: always()
+      - name: 校验 HAP 真的产出了（防止假绿）
         run: |
-          echo "=== 搜索产物 ==="
-          find entry/build -name '*.hap' -o -name '*.app' 2>/dev/null | head -20 || true
+          set -e
+          echo "=== entry/build 下的产物 ==="
+          find entry/build -type f \( -name '*.hap' -o -name '*.app' \) 2>/dev/null || true
+          HAP="$(find entry/build -name '*.hap' -type f | head -1 || true)"
+          if [ -z "${HAP}" ]; then
+            echo "::error::构建命令退出成功，但没有产出任何 HAP —— 视为失败"
+            exit 1
+          fi
+          ls -lh "${HAP}"
+          echo "HAP_SIZE=$(stat -c%s "${HAP}")" >> "$GITHUB_ENV"
           mkdir -p /tmp/artifacts
-          find entry/build -name '*.hap' -exec cp {} /tmp/artifacts/ \; 2>/dev/null || true
-          ls -lh /tmp/artifacts 2>/dev/null || true
+          cp "${HAP}" /tmp/artifacts/
 
       - name: 上传 HAP
         if: always()
