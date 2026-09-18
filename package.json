@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "private": true,
   "description": "Rock阅读 / RockReader — 纯本地、核心数据不联网的 HarmonyOS 电子书阅读器（本 package.json 只服务于纯逻辑单测，不参与 HAP 构建）",
-  "type": "module",
   "scripts": {
     "test": "node test/run.mjs"
   },
