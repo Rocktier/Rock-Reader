@@ -14,8 +14,17 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
-    // 铁律 3（核心数据不联网）：此处**不声明** ohos.permission.INTERNET
-    // 广告（M7）接入时才追加，且用途已登记在家族 findings §8
+    // 铁律 3「核心数据不联网」：**本应用不上传任何数据**。
+    // 声明 INTERNET 只用于两件"用户可感知、且可自行拒绝"的事：
+    //   ① 字体包下载（用户点「下载」才发起，见 common/FontCatalog.ets）
+    //   ② 广告素材（M7，尚未接入）
+    // 用途已在家族 findings §8（网络权限申请记录）登记。
+    // 断网 / 用户在系统里掐掉联网权限 → 两者都静默缺席，阅读功能完全不受影响。
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.INTERNET"
+      }
+    ],
     "abilities": [
       {
         "name": "EntryAbility",

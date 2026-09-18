@@ -18,6 +18,8 @@ export interface LayoutBox {
   heightPx: number;
   /** 字体族；'' = 系统默认 */
   fontFamily: string;
+  /** 该字体在沙箱里的文件路径（**下载字体**才有）；'' = 系统字体，无需加载 */
+  fontPath: string;
   /** 缓存键，见 common/LayoutStyle.layoutKey */
   signature: string;
 }

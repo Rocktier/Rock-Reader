@@ -14,6 +14,8 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { clampLevel, LayoutLevels, LEVEL_MAX, LEVEL_MIN } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
+import { FontStore } from '../data/FontStore';
+import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -32,15 +34,24 @@ struct Settings {
   /** '' = 系统默认 */
   @State fontFamily: string = '';
   @State fontFamilies: string[] = [];
+  /** 已下载的字体 id */
+  @State downloadedIds: string[] = [];
+  /** 正在下载的字体 id（'' = 空闲） */
+  @State busyFontId: string = '';
+  @State fontNote: string = '';
 
   private prefs: ReaderPrefs = new ReaderPrefs();
+  private fontStore: FontStore | null = null;
 
   aboutToAppear(): void {
     this.prefs.open(getContext(this) as Context);
+    this.fontStore = new FontStore(getContext(this) as Context);
     this.levels = this.prefs.getLevels();
     this.theme = this.prefs.getTheme();
     this.fontFamily = this.prefs.getFontFamily();
     this.palette = paletteOf(this.theme);
+    this.refreshFontState();
+    this.registerLocalFonts();
     this.loadSystemFonts();
   }
 
@@ -61,9 +72,8 @@ struct Settings {
       const list: string[] = this.getUIContext().getFont().getSystemFontList();
       const picked: string[] = [];
       for (let i: number = 0; i < list.length && picked.length < MAX_FONT_ITEMS; i++) {
-        const name: string = list[i];
-        if (name.length > 0 && name !== this.fontFamily) {
-          picked.push(name);
+        if (list[i].length > 0) {
+          picked.push(list[i]);
         }
       }
       this.fontFamilies = picked;
@@ -74,9 +84,81 @@ struct Settings {
     }
   }
 
+  /** 已下载字体状态刷新 + 注册（registerFont 只在进程内存活，每次进页面都要确认一次） */
+  private refreshFontState(): void {
+    if (this.fontStore === null) {
+      return;
+    }
+    const store: FontStore = this.fontStore;
+    const list: FontEntry[] = store.downloaded();
+    const ids: string[] = [];
+    for (let i: number = 0; i < list.length; i++) {
+      ids.push(list[i].id);
+    }
+    this.downloadedIds = ids;
+  }
+
+  private registerLocalFonts(): void {
+    if (this.fontStore === null) {
+      return;
+    }
+    const store: FontStore = this.fontStore;
+    const list: FontEntry[] = store.downloaded();
+    for (let i: number = 0; i < list.length; i++) {
+      try {
+        this.getUIContext().getFont().registerFont({
+          familyName: list[i].familyName,
+          familySrc: store.pathOf(list[i])
+        });
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'registerFont failed: %{public}s', JSON.stringify(e));
+      }
+    }
+  }
+
   private pickFont(family: string): void {
     this.fontFamily = family;
     this.prefs.saveFontFamily(family);
+    this.fontNote = '';
+  }
+
+  /**
+   * 下载一款字体（**用户主动点击**才联网）。
+   * 失败一律静默：只把状态写在字体区里，不弹窗、不拦路。
+   */
+  private async downloadFont(entry: FontEntry): Promise<void> {
+    if (this.fontStore === null || this.busyFontId.length > 0) {
+      return;
+    }
+    this.busyFontId = entry.id;
+    this.fontNote = `正在下载 ${entry.displayName}（${sizeTextOf(entry.sizeBytes)}）…`;
+    const store: FontStore = this.fontStore;
+    const ok: boolean = await store.download(entry);
+    if (ok) {
+      this.refreshFontState();
+      this.registerLocalFonts();
+      this.pickFont(entry.familyName);
+      this.fontNote = `${entry.displayName} 已就绪`;
+    } else {
+      this.fontNote = '下载未完成，可稍后再试';
+    }
+    this.busyFontId = '';
+  }
+
+  private removeFont(entry: FontEntry): void {
+    if (this.fontStore === null) {
+      return;
+    }
+    this.fontStore.remove(entry);
+    if (this.fontFamily === entry.familyName) {
+      this.pickFont('');
+    }
+    this.refreshFontState();
+    this.fontNote = '';
+  }
+
+  private isDownloaded(id: string): boolean {
+    return this.downloadedIds.indexOf(id) >= 0;
   }
 
   /** row: 'font' | 'line' | 'margin'；n: 档位序号 */
@@ -192,15 +274,96 @@ struct Settings {
           ForEach(this.fontFamilies, (family: string) => {
             this.fontChip(family, family)
           }, (family: string) => 'fam' + family)
+          ForEach(FONT_CATALOG, (entry: FontEntry) => {
+            if (this.isDownloaded(entry.id)) {
+              this.fontChip(entry.displayName, entry.familyName)
+            }
+          }, (entry: FontEntry) => 'own' + entry.id)
         }
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .width('100%')
+
+      // ---- 更多字体（按需下载，不占安装包体积）----
+      Column() {
+        Text('更多字体 · 下载后存本机')
+          .fontSize(10.5)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+          .margin({ top: 16, bottom: 4 })
+
+        ForEach(FONT_CATALOG, (entry: FontEntry) => {
+          Row() {
+            Column() {
+              Text(entry.displayName)
+                .fontSize(13)
+                .fontColor(this.palette.text)
+              Text(entry.desc)
+                .fontSize(10)
+                .fontColor(this.palette.text3)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(`${sizeTextOf(entry.sizeBytes)} · ${entry.license}`)
+                .fontSize(9)
+                .fontFamily('monospace')
+                .fontColor(this.palette.text3)
+                .margin({ top: 4 })
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            Text(this.fontActionText(entry))
+              .fontSize(12)
+              .fontColor(this.isDownloaded(entry.id) ? this.palette.text3 : this.palette.text)
+              .padding({ left: 12, right: 12 })
+              .height(30)
+              .border({ width: 1, color: this.palette.line })
+              .onClick(() => {
+                if (this.isDownloaded(entry.id)) {
+                  this.removeFont(entry);
+                } else {
+                  this.downloadFont(entry);
+                }
+              })
+          }
+          .width('100%')
+          .padding({ top: 12, bottom: 12 })
+          .border({ width: { top: 1 }, color: this.palette.lineSoft })
+
+          if (this.fontNote.length > 0 && this.busyFontId === entry.id) {
+            Text(this.fontNote)
+              .fontSize(10)
+              .fontColor(this.palette.text3)
+              .margin({ bottom: 8 })
+          }
+        }, (entry: FontEntry) => 'dl' + entry.id)
+
+        if (this.fontNote.length > 0 && this.busyFontId.length === 0) {
+          Text(this.fontNote)
+            .fontSize(10)
+            .fontColor(this.palette.text3)
+            .margin({ top: 8 })
+        }
+
+        Text('字体需联网下载一次；下载后存本机，不占安装包体积。断网时本节为空，不影响阅读。')
+          .fontSize(9)
+          .fontColor(this.palette.text3)
+          .margin({ top: 10 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding({ top: 16, bottom: 16 })
+  }
+
+  private fontActionText(entry: FontEntry): string {
+    if (this.busyFontId === entry.id) {
+      return '下载中…';
+    }
+    return this.isDownloaded(entry.id) ? '移除' : '下载';
   }
 
   @Builder
@@ -239,13 +402,15 @@ struct Settings {
       .padding({ left: 12, right: 18, top: 10, bottom: 12 })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
-      Column() {
-        Text('排版')
-          .fontSize(11)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-          .width('100%')
-          .margin({ bottom: 4 })
+      // 内容可能超过一屏（尤其加了字体下载区之后）→ 整段可滚动
+      Scroll() {
+        Column() {
+          Text('排版')
+            .fontSize(11)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .width('100%')
+            .margin({ bottom: 4 })
 
         this.levelRow('字号', 'font', `${this.levels.fontSizeLevel}/${LEVEL_MAX}`)
         this.levelRow('行距', 'line', `${this.levels.lineHeightLevel}/${LEVEL_MAX}`)
@@ -264,16 +429,19 @@ struct Settings {
           .width('100%')
           .margin({ bottom: 12 })
 
-        Row({ space: 10 }) {
-          this.themeChip('深色', THEME_DARK)
-          this.themeChip('浅色', THEME_LIGHT)
+          Row({ space: 10 }) {
+            this.themeChip('深色', THEME_DARK)
+            this.themeChip('浅色', THEME_LIGHT)
+          }
+          .width('100%')
         }
         .width('100%')
+        .padding({ left: 22, right: 22, top: 18, bottom: 8 })
+        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%')
       .layoutWeight(1)
-      .padding({ left: 22, right: 22, top: 18 })
-      .alignItems(HorizontalAlign.Start)
+      .scrollBar(BarState.Off)
+      .align(Alignment.TopStart)
 
       Column() {
         Text('核心数据不联网')

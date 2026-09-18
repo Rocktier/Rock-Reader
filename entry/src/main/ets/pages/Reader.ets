@@ -22,6 +22,8 @@ import { BookSource, createBookSource } from '../engine/parser/BookSource';
 import { fontSizeFpOf, layoutKey, LayoutLevels, lineHeightRatioOf, marginVpOf } from '../common/LayoutStyle';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
+import { FontStore } from '../data/FontStore';
+import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
@@ -84,6 +86,9 @@ struct Reader {
   private source: BookSource | null = null;
   private chapterText: string = '';
   private pages: PageRange[] = [];
+  private fontStore: FontStore | null = null;
+  /** 当前字体（下载字体）在沙箱里的路径；系统字体为 '' */
+  private fontPath: string = '';
   private paginator: Paginator = new TextPaginator();
   private cache: PageCache = new PageCache(4);
   private theme: ThemeName = THEME_DARK;
@@ -100,7 +105,26 @@ struct Reader {
   private pagesSincePersist: number = 0;
 
   aboutToAppear(): void {
+    // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
+    const store: FontStore = new FontStore(getContext(this) as Context);
+    this.fontStore = store;
+    this.registerLocalFonts(store);
     this.init();
+  }
+
+  /** 把已下载字体注册进 ArkUI（渲染用）；测量端由 TextPaginator 用文件路径单独挂 */
+  private registerLocalFonts(store: FontStore): void {
+    const list: FontEntry[] = store.downloaded();
+    for (let i: number = 0; i < list.length; i++) {
+      try {
+        this.getUIContext().getFont().registerFont({
+          familyName: list[i].familyName,
+          familySrc: store.pathOf(list[i])
+        });
+      } catch (e) {
+        hilog.warn(DOMAIN, TAG, 'registerFont failed: %{public}s', JSON.stringify(e));
+      }
+    }
   }
 
   onPageShow(): void {
@@ -114,6 +138,7 @@ struct Reader {
       applyThemeToSystem(getContext(this) as Context, theme);
     }
     this.fontFamily = this.prefs.getFontFamily();
+    this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(this.fontFamily);
     if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
       return;
     }
@@ -160,6 +185,7 @@ struct Reader {
       this.source = createBookSource(book);
 
       this.fontFamily = this.prefs.getFontFamily();
+      this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(this.fontFamily);
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
       if (this.chapterCount === 0) {
@@ -194,6 +220,7 @@ struct Reader {
       widthPx: widthPx,
       heightPx: heightPx,
       fontFamily: this.fontFamily,
+      fontPath: this.fontPath,
       signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx, this.fontFamily)
     };
   }
