@@ -86,6 +86,10 @@ jobs:
           echo "node: $(node -v)  java: $(java -version 2>&1 | head -1)"
           echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
           ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head
+          echo "--- SDK 里的 syscap 定义（诊断用） ---"
+          find "${DEVECO_SDK_HOME}" -iname '*syscap*' 2>/dev/null | head -15
+          echo "--- API 20 组件顶层 ---"
+          ls "${DEVECO_SDK_HOME}/20" 2>/dev/null
           node node_modules/@ohos/hvigor/bin/hvigor.js version
 
       - name: 构建 HAP（product=ci）
