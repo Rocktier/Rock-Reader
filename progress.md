@@ -428,3 +428,4 @@ ArkUI 的 `registerFont` **只作用于渲染端**，不保证 `graphics.text` �
 | `PackageHap` 报 `spawn java ENOENT` | PATH 里没有 java → 加上 IDE 自带的 `<IDE>\jbr\bin` |
 | 提权执行迁移脚本两次失败（退出码 1、日志未生成） | UAC / 火绒拦截静默提权 → 改为人工以管理员身份运行脚本 |
 | **更正上一节的措辞** | 上节写"本地 default 产物 436 KB，**可装手机**"缺了前提：未配签名时产物是 `entry-default-unsigned.hap`，**装不上手机**。`docs/device-test.md` 表格里"调试签名 ✅"的写法才准确 |
+| **误把 98 个 `entry/.preview/` 中间产物提交进仓库**（预览器打开后生成，`.gitignore` 没覆盖） | `git rm -r --cached entry/.preview` + `.gitignore` 加 `.preview/` 与 `**/.preview/`（提交 `aac6f01`）；教训：**DevEco 预览器会在工程里生成 `.preview/`，必须提前 ignore** |
