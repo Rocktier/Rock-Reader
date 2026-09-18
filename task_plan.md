@@ -33,25 +33,29 @@ Phase 1
 - **Status:** done
 - 配方与 7 个坑：家族 `findings.md` §13（全家族复用）；CI 文件 `.github/workflows/build.yml`
 
-### Phase 3: 导入与书架
-- [ ] `filePicker` 选书 → 拷进沙箱 `filesDir/books/`
-- [ ] 书架列表（`LazyForEach`）+ 封面/进度/最后阅读时间
-- [ ] 删除、重命名、分组（分组可后置）
-- **Status:** pending
+### Phase 3: 导入与书架 —— ✅ 2026-09-18 完成（MVP 级）
+- [x] `filePicker`（`DocumentViewPicker`）选书 → 拷进沙箱 `filesDir/books/<id>/`
+- [x] 书架列表（3 列网格）+ 继续阅读卡片（按 `last_read_at` 取最近一本）
+- [x] 删除（长按 → 确认弹窗，只删库与沙箱副本，不动原文件）
+- [x] 空态（不放营销文案）
+- [ ] 分组/重命名、封面上显示单本进度（后置：M5 打磨）
+- **Status:** done
+- 实现：`data/BookDb.ets`、`engine/importer/BookImporter.ets`、`pages/Index.ets`
 
-### Phase 4: 解析与索引
-- [ ] TXT：编码识别（BOM / UTF-8 / GBK）+ 章节正则
-- [ ] 首次导入建"章节 → 字节偏移"索引，落关系型数据库
-- [ ] 分页：measure 逐段测量 → 页偏移表，缓存当前 ±2 页
-- [ ] 全部解析走 `taskpool`，UI 线程只渲染
-- **Status:** pending
+### Phase 4: 解析与索引 —— ✅ TXT 完成；EPUB 属 M4
+- [x] TXT：编码识别（BOM → UTF-8 严格校验 → GB18030 兜底）+ 章节正则 + 兜底切章
+- [x] 导入时建章节索引落 relationalStore（字符偏移 + UTF-8 字节偏移都存）
+- [x] 取章：按**字符偏移**（GBK 场景字节偏移对不上，见 findings）
+- [ ] EPUB：zip + container.xml + OPF + XHTML → 段落模型（M4）
+- [ ] 解析/分页移入 `taskpool`（当前同步执行，**待办**；导入单本书耗时在百毫秒级，真机实测再决定优先级）
+- **Status:** in_progress
 
 ### Phase 5: 阅读页
-- [ ] 排版：字号/行距/段距/字重/简繁（逐步加）
-- [ ] 翻页：滚动 + 覆盖翻页（先滚动，仿真后置）
-- [ ] 目录跳转、进度条、夜间模式
-- [ ] 阅读进度实时落库
-- **Status:** pending
+- [x] 滚动模式阅读 + 上一章/下一章 + 点屏浮出细栏 + 页脚等宽数码
+- [x] 进度落库（切章落一次；书架继续阅读卡片读它）
+- [ ] **横滑分页（默认模式）**——`PageTableBuilder` 已就绪，差接 `graphics.text` 的 `LineMetrics`（下一步）
+- [ ] 目录跳转、字号/行距档位切换、夜间/昼间主题、滚动位置恢复
+- **Status:** in_progress
 
 ### Phase 6: EPUB（**已并入 v1**，党哥 2026-09-18 拍板）
 - [ ] zip 解析（优先 `@ohos.zlib`，不行自己写中央目录 + raw inflate）

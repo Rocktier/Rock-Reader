@@ -171,3 +171,44 @@
 2. `split('\n')` 尾部空元素导致字符偏移虚增 1 → 按剩余长度夹紧。
 
 **遗留**：正式 HarmonyOS 包（`default` product）仍需一次性用华为账号下载 command-line-tools 才能在 CI 出；且拿到真机前也装不了（签名要绑定 UDID，见家族 findings §10）。
+
+---
+
+# M2 / M3 结果（2026-09-18，同日）
+
+## 许可证审查（党哥要求：借鉴前先查、规避法律风险）
+
+| 来源 | 许可证 | 结论 |
+|---|---|---|
+| 华为官方 `readerkit_samplecode_arkts` | **Apache-2.0** | ✅ 可借鉴（保留版权声明 + 标注修改）。已用于 `fileIo` 用法：`openSync` / `copyFile(fd, dst)` / `statSync` |
+| `johnfactotum/foliate-js` | **MIT** | ✅ 可借鉴（EPUB 解析参考，M4 用） |
+| `waylau/harmonyos-tutorial` | **无 LICENSE = 保留所有权利** | ❌ **只看 API 形态，一行代码不抄** |
+| KOReader / Legado / Readest | GPL-3.0 / GPL-3.0 / AGPL-3.0 | ❌ 传染性许可，只借鉴设计 |
+
+## 本批次抓到的真实缺陷
+
+**GBK 文件的字节偏移对不上磁盘字节**：`ChapterSplitter` 的 `startByte/endByte` 是按「解码后按 UTF-8 重编码」的长度累加的；GBK 中文 2 字节而 UTF-8 中文 3 字节 → 按字节取章会取错段落（书还能打开，但内容错位，极难排查）。
+修法：取章改按**字符偏移**（`readChapterTextByChars`，UTF-8 / GBK 都正确），并写了一条「设计决策守卫」测试把这个坑钉死。
+
+## 交付物
+
+| 模块 | 文件 |
+|---|---|
+| 本地库（三表 books / chapters / progress） | `data/BookDb.ets` |
+| 导入（picker → 沙箱拷贝 → 建章节索引 → 落库） | `engine/importer/BookImporter.ets` |
+| TXT 解析（探测/解码/切章/取章 + 全文缓存） | `engine/parser/TxtParser.ets` |
+| 书架页（继续阅读卡片 + 3 列网格 + 长按删除 + 空态） | `pages/Index.ets` |
+| 阅读页（滚动模式 + 章节切换 + 进度落库 + 点屏浮出细栏） | `pages/Reader.ets` |
+| 测试 | **20/20 绿**，新增真实编码字节回归（UTF-8 / GB18030） |
+
+**CI 结果**：一次性通过，HAP **209 KB**（骨架时 90 KB），仍远低于 5 MB 预算。
+
+## ponytail 简化记录（都留了升级路径）
+
+| 简化 | 代价 | 何时升级 |
+|---|---|---|
+| 不做「页表缓存表」 | 每次进章重算页表（10ms 级） | 真机实测卡顿再加 |
+| 不做 sha256 去重 | 重复导入同一本书会产生两条记录 | 有用户反馈再加 |
+| 全文缓存在内存（只缓存当前书） | 大文件占内存（JS 字符串约为原字节 2 倍） | 大文件实测后改「按真实字节扫描建索引 + 随机读」 |
+| 解析未走 `taskpool` | 导入时可能短暂卡 UI | 与分页一起搬进 taskpool |
+| 阅读页先只做滚动模式 | 横滑分页未上 | 下一步（`PageTableBuilder` 已就绪） |

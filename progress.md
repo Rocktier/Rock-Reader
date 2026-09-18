@@ -99,3 +99,31 @@
 | workflow 0 job 被拒 | GitHub 不允许 `HTTP_PROXY`/`http_proxy` 大小写同名 env 键 → 改用 shell export |
 | `Unable to find the following components: native/previewer` | 五个组件必须全解压（纯 ArkTS 也一样） |
 | `00303060 多设备 syscap 交集为空` | OpenHarmony 手机侧设备类型是 `default` 不是 `phone` |
+
+---
+
+## Session: 2026-09-18（M2 完成 + M3 第一版）
+
+### Current Status
+- **Phase:** M2 ✅ / M3 进行中（滚动模式能读书；横滑分页下一步）
+- 党哥放入一本真实 EPUB（4MB）到 `~/Downloads/rockreader-samples/` —— **仅本地实测用，绝不进仓库**
+
+### Actions Taken
+- **借鉴前的许可证审查**（按党哥新规矩）：官方 ReaderKit 示例 **Apache-2.0** ✅ 可借鉴；foliate-js **MIT** ✅；`waylau/harmonyos-tutorial` **无 LICENSE** ❌ 只看 API 不抄代码；KOReader/Legado/Readest 为 GPL/AGPL ❌ 只借鉴设计
+- **M2**：`BookDb`（relationalStore 三表）+ `BookImporter`（picker → 沙箱 → 建索引 → 落库）+ 书架页做成真数据（继续阅读卡片 / 3 列网格 / 长按移除 / 空态）
+- **M3 第一版**：`TxtParser`（探测 → 解码 → 切章 → 取章）+ 阅读页（滚动阅读 / 上一章下一章 / 进度落库 / 点屏浮出细栏 / 页脚等宽数码）
+- 新增真实编码回归样本（自写文本，UTF-8 与 GB18030 各一份）→ 单测 **20/20 绿**
+- 抓到一个真实缺陷：**GBK 文件的 UTF-8 字节偏移与磁盘字节不一致** → 取章改按字符偏移，并加守卫测试
+
+### Test Results
+| Test | Expected | Actual | Status |
+|------|----------|--------|--------|
+| 单测（本地 + CI） | 全绿 | 20/20 | ✅ |
+| CI 编译（新增 relationalStore/picker/Grid/手势） | 通过 | 一次通过，HAP 209 KB | ✅ |
+
+### Errors
+| Error | Resolution |
+|-------|------------|
+| 真实样本测试期望 3 章、实际 4 章 | 是**我的期望写错**：样本开头有书名/作者，按设计应成「前言」章 → 修正期望为「前言 + 3 章」 |
+| TxtParser 里从 `@kit.ArkTS` 重复 import | 合并为一行（去掉未用的 `taskpool`） |
+| 书架用了 `rd_card`/`rd_g100` 两个未定义色值 | 补进 `color.json`（`#08FFFFFF` / `#1A1A1A`） |
