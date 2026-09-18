@@ -36,3 +36,11 @@ local.properties
 .DS_Store
 Thumbs.db
 *.log
+
+# 台账与设计真源：已迁到私有仓 harmony-docs/apps/RockReader/
+# （经验、决策、踩坑记录、真机验收清单不进公开仓库）
+/task_plan.md
+/findings.md
+/progress.md
+/docs/v1-design.md
+/docs/device-test.md

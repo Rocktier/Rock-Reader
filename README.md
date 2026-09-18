@@ -110,13 +110,17 @@ git tag v1.0.0 && git push origin v1.0.0     # ⚠️ 发版时机由党哥下�
 | 华为官方 ReaderKit 示例 | Apache-2.0 | 可参考/借鉴（`fileIo` 用法已注明来源） |
 | `waylau/harmonyos-tutorial` | 无 LICENSE | **只看 API 形态，不借鉴代码** |
 
-## 文档
+## 本仓库放什么（与私有仓的分工）
 
-| 文件 | 作用 |
+| 内容 | 位置 |
 |---|---|
-| `docs/v1-design.md` | **v1 唯一设计真源**（改动先改它） |
-| `docs/ui-mockup-v2.html` | UI 复审稿（浏览器直接打开；1:1 还原已实现的界面） |
-| `docs/device-test.md` | 真机测试手册（DevEco 打开/签名/跑真机 + A~D 验收清单） |
-| `task_plan.md` | 阶段计划、决策表、错误表（含踩过的 ArkTS 坑） |
-| `findings.md` | 调研结论（Reader Kit / 自研排版 / 开源项目对比 / UI 方向） |
-| `progress.md` | 每次会话做了什么 |
+| 源码、单测、CI workflow | ✅ 本仓库（公开） |
+| 字体资产（`fonts` 分支） | ✅ 本仓库（jsDelivr CDN 只服务公开仓库） |
+| UI 稿 `docs/ui-mockup-v1/v2.html` | ✅ 本仓库 |
+| **设计真源 `v1-design.md`** | 🔒 私有仓 `Rocktier/harmony-docs` → `apps/RockReader/docs/` |
+| **真机验收手册 `device-test.md`** | 🔒 同上 |
+| **台账三件套 `task_plan` / `findings` / `progress`** | 🔒 私有仓 `apps/RockReader/` |
+
+> 2026-09-19 起：**经验类文档（设计真源、验收清单、阶段计划与踩坑记录）迁到私有仓**，
+> 本仓库只保留代码与资产。设计改动与真机验收一律以私有仓版本为准。
+> 这几个文件已加入本仓库 `.gitignore`，防止再次误提交。
