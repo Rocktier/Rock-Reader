@@ -77,9 +77,12 @@
   - Release 说明里写明产物真相（product=ci / OpenHarmony / 未签名 / **不能装鸿蒙手机**），防止被误当可安装包分发
   - 验证方式：临时 tag `v0.0.1-compile-check` 端到端跑通后已删除（仓库当前无 tag / 无 release）
   - ⚠️ 发版时机仍遵守家族规矩：**党哥下令才打 tag**（准则第九章）
-- [ ] **正式 HarmonyOS 包**（`default` product）：需党哥用华为账号下载 command-line-tools（Linux x64，登录门禁）→ 给我国内可访问直链 → 接进 CI
-- [ ] **已签名可安装包**：需 AGC 调试证书（.p12/.cer/.p7b）+ **每台测试机注册 UDID**
-- **Status:** in_progress（发布流程已通；正式包待 SDK）
+- [x] ~~正式包需 command-line-tools 直链~~ → **已不需要**：新版 DevEco Studio **自带 HarmonyOS SDK（API 26）**，
+  党哥 2026-09-18 在本机**直接 Build 成功**（`default` 产物，436 KB）
+  （纠正了早先"HarmonyOS SDK 必须登录下载"的判断——那是命令行工具的情况，IDE 自带）
+- [x] **已签名可安装包**：DevEco 的 **Automatically generate signature** 会自动生成调试证书并注册手机 UDID（见 `docs/device-test.md` §2）
+- [ ] 发布证书（上架用）：走 AGC，流程更长，上架前再单开
+- **Status:** done（调试签名与本机构建已通；发布证书待上架前）
 
 ### Phase 8: 真机验证（**M6 的剩余部分，本机做不到**）
 - [x] 党哥在 Windows 上装 DevEco Studio；华为开发者账号已注册并认证；验收清单已交付（`docs/device-test.md`）

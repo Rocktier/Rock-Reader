@@ -342,4 +342,38 @@ ArkUI 的 `registerFont` **只作用于渲染端**，不保证 `graphics.text` �
 
 **操作失误与修正**：`git switch --orphan fonts` 失败但管道让后续 `&&` 继续，
 字体被误提交到 main（本地未推送）→ `git reset --hard origin/main` 撤销，字体保留在独立分支。
+
+---
+
+## Session: 2026-09-19（台账同步）
+
+### Current Status
+- 应用 `97a63a8`、家族台账 `1888286`，**两侧本地与远端一致**
+
+### Actions Taken
+- **应用台账**：补 Phase 9（字体模块，已 done）、Phase 8 标记 in_progress、
+  Current Phase 改为 Phase 8（真机验证）；修正三处**过期决策**
+  （"零联网/不申请 INTERNET" → 核心数据不联网且已声明 INTERNET；
+   "解析分页走 taskpool" → 实测后改为按章主线程执行；
+   "只支持 HarmonyOS 6+ 20/24" → 实际配置是 5.0.4(16)/6.0.0(20)）
+- **家族台账**：Phase 1~4 置为 done、Phase 5（真机验证）in_progress；应用登记表状态更新；
+  决策表 +5 条（自研优先、真实素材立刻验证、字体按需下载、大二进制不进 main）；
+  错误表 +8 条（ArkTS 坑、NCX、OpenMode、误提交、国内镜像等）；新增本次会话记录
+- **同步党哥 Windows 侧的进展**（远端 3 个新提交，已 rebase 合并）：
+  ① 新版 DevEco **自带 HarmonyOS SDK（API 26）**，打开工程直接 Build 成功 →
+     **早期"正式包需 command-line-tools 直链"的判断作废**，Phase 7 相应更新
+  ② SDK 目录联接（`LOCALAPPDATA\Huawei\Sdk → G:\HarmonyOS\Sdk`）
+  ③ 本地 `default` 产物 436 KB，可装手机；CI 的 `ci` 产物 135.7 KB 只做编译校验 →
+     已在 `docs/device-test.md` 加对照表，避免混淆
+
+### Test Results
+| Test | Expected | Actual | Status |
+|------|----------|--------|--------|
+| 单测 | 全绿 | 57/57（本轮只改文档） | ✅ |
+| CI 编译 | 通过 | 见下方 | ⏳ |
+
+### Errors
+| Error | Resolution |
+|-------|------------|
+| 家族台账 push 被拒（远端有新提交） | 先看 `git log HEAD..origin/main` 确认是党哥在 Windows 侧推的进展 → `git pull --rebase` 后推送 |
 - **M7**：Ads Kit 广告模块（默认联网呈现、无开关、无引导、断网静默降级、绝不出现在阅读页）

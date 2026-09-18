@@ -10,9 +10,14 @@
 1. DevEco Studio → **Open** → 选中目录 `Rock-Reader`（**选仓库根目录**，不要用向导新建工程）。
 2. 首次打开会提示同步 / 安装依赖 → 同意。它可能自动补 `hvigor-config.json5` 里的版本信息，
    **这类本地改动不要提交**（见第 6 节）。
-3. ⚠️ 若提示缺少 **HarmonyOS 5.0.4(16)** SDK：在 `build-profile.json5` 的 `default` 产物里
-   把 `compatibleSdkVersion` 临时改成 `"6.0.0(20)"`（只改本地），或直接按提示下载该 SDK。
+3. ✅ **实测结论（党哥 2026-09-18）**：新版 DevEco Studio **自带 HarmonyOS SDK（API 26）**，
+   打开工程后**直接 Build 就能成功**，不需要另外下载 command-line-tools。
+   （SDK 目录若做了联接 `LOCALAPPDATA\Huawei\Sdk → G:\HarmonyOS\Sdk`，记录见家族台账）
+4. ⚠️ 若仍提示缺少 **HarmonyOS 5.0.4(16)** SDK：在 `build-profile.json5` 的 `default` 产物里
+   把 `compatibleSdkVersion` 临时改成 `"6.0.0(20)"`（只改本地），或按提示下载该 SDK。
    （仓库里保持 16 是为了让 5.0.4 以上的机器都能装，见第 7 节）
+5. 不需要真机也能先看 UI：**Previewer**（DevEco 右侧）可以预览页面；
+   但**字体注册、文件选择器、graphics.text 排版**这类能力以真机为准。
 
 ## 2. 配置签名（必须，否则装不进手机）
 
@@ -108,5 +113,14 @@ DevEco 打开工程后会自动改这些文件（都很正常，但**不该进�
 - `ci` 产物（只做编译校验）：`compileSdkVersion = 20`、`runtimeOS = OpenHarmony`
 
 含义：**HarmonyOS 5.0.4 及以上的机器都能装**（覆盖面更大），代码只用 API 16 以下就有的能力
-（`graphics.text` API 12+、`getSystemFontList` API 10+，都够）。CI 无法用 HarmonyOS SDK（下载要登录），
-所以另立 `ci` 产物做编译校验 —— 这也是为什么 **CI 的 HAP 不能装手机**。
+（`graphics.text` API 12+、`getSystemFontList` API 10+，都够）。另立 `ci` 产物做 CI 编译校验
+（CI 拿不到 HarmonyOS SDK，只能用公开的 OpenHarmony SDK）—— 这也是为什么 **CI 的 HAP 不能装手机**。
+
+**两个产物别混淆**（都有用，用途不同）：
+
+| 产物 | 谁产出 | 体积 | 能装手机吗 |
+|---|---|---|---|
+| `ci`（OpenHarmony，未签名） | **GitHub Actions** | 135.7 KB | ❌ 只做编译校验 |
+| `default`（HarmonyOS，调试签名） | **DevEco Studio（本机）** | 实测 436 KB | ✅ 装你自己的手机 |
+
+真机测试一律用 DevEco 构建的那个。
