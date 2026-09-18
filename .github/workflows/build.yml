@@ -89,17 +89,18 @@ jobs:
           node node_modules/@ohos/hvigor/bin/hvigor.js version
 
       - name: 构建 HAP（product=ci）
-        # 只在这一步断网：hvigor 会联网拉 SDK 许可证文本，与 <SDK>/licenses/<id>.sha256 比对；
-        # CI 里没人点"同意" → 报 'The SDK license agreement is not accepted.'。
-        # 该检查在网络异常时返回空表从而放行（OhLicenseManager.retrieveLicenses 的 catch 分支）。
-        # SDK 与 hvigor 都已本地就绪，编译本身不需要联网。
-        # 说明：不发许可证内容、不自动接受任何协议。
-        env:
-          HTTP_PROXY: http://127.0.0.1:9
-          HTTPS_PROXY: http://127.0.0.1:9
-          http_proxy: http://127.0.0.1:9
-          https_proxy: http://127.0.0.1:9
         run: |
+          # 只在这一步断网：hvigor 会联网拉 SDK 许可证文本，与 <SDK>/licenses/<id>.sha256 比对；
+          # CI 里没人点"同意" → 报 'The SDK license agreement is not accepted.'。
+          # 该检查在网络异常时返回空表从而放行（OhLicenseManager.retrieveLicenses 的 catch 分支）。
+          # SDK 与 hvigor 都已本地就绪，编译本身不需要联网。
+          # 说明：不发许可证内容、不自动接受任何协议。
+          # （不写进 env 映射：GitHub 校验器不允许 HTTP_PROXY 与 http_proxy 这类大小写同名键）
+          export http_proxy=http://127.0.0.1:9
+          export https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=http://127.0.0.1:9
+          export HTTPS_PROXY=http://127.0.0.1:9
+
           node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap \
             --mode module -p product=ci -p buildMode=debug --no-daemon --stacktrace
 
