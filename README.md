@@ -7,7 +7,9 @@
 - 目标系统：**HarmonyOS 5.0.4（API 16）及以上**，`targetSdkVersion = 6.0.0(API 20)`，单框架单包
   （CI 另有一个 `ci` 产物用 OpenHarmony SDK 只做编译校验 —— 所以**CI 的 HAP 装不上手机**）
 - 阅读内核**自研**（见下文"为什么自研"），官方 Reader Kit 只留可插拔适配器位
-- 字体：**不内置字体文件**，只列系统已装字体供选择（`getSystemFontList`，体积 0，不联网下载）
+- 字体：**不内置字体文件**（一款覆盖通用中文的字体就要 9~11MB，会撞碎铁律 2）
+  —— 列出系统已装字体供选择（`getSystemFontList`，0 体积）
+  + 可选下载开源字体 **GB2312 子集**（楷 3.27MB / 宋 2.91MB，自托管于 `fonts` 分支，多源 CDN + 每源校验 SHA256）
 
 ## 三条铁律（家族统一）
 
@@ -15,7 +17,7 @@
 2. **极致小** —— HAP **115 KB**（预算 ≤5MB）；**0 个三方库**（zip、inflate、XML、UTF-8 解码全部自研）
 3. **核心数据不联网** —— 书、进度、设置**永不出设备**；断网时功能 100% 完整；联网只为广告变现（M7，且广告绝不出现在阅读页，用户可用系统联网权限自行选择"无广告"）
 
-## 当前状态（2026-09-18）
+## 当前状态（2026-09-19）
 
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
@@ -27,18 +29,18 @@
 | M6 | 打磨 + 真机验证 | 🔶 打磨完成，**真机项待设备** |
 | M7 | 广告（Ads Kit，可选模块） | ⬜ 未开始 |
 
-**已验证的**：CI 每轮全绿；纯逻辑单测 **52 个用例**；真实出版 EPUB（3.4MB / 103 条目 / 11.7 万字）解析 7ms、全文转文本 22ms；HAP 115 KB。
-**还没验证的**：真机运行时的一切（冷启动、翻页掉帧、字体缩放下排版一致性）—— 本机没有鸿蒙环境，详见 `task_plan.md` Phase 8。
+**已验证的**：CI 每轮全绿；纯逻辑单测 **57 个用例**；真实出版 EPUB（3.4MB / 103 条目 / 11.7 万字）解析 7ms、全文转文本 22ms；HAP 115 KB；
+本机（Windows + DevEco 自带工具链）构建 `product=default` 产出 **436 KB** 未签名 HAP。
+**还没验证的**：真机运行时的一切（冷启动、翻页掉帧、字体缩放下排版一致性）—— 详见 `task_plan.md` Phase 8。
 
 ## 为什么把引擎写成"纯 TS"
 
-本机不搭鸿蒙环境，构建与校验全走 CI（家族准则第十四章）。设备 API 在这里等于"上真机碰运气"。
-所以 zip 解包、DEFLATE 解压、XML/OPF/NCX 解析、UTF-8 解码**全部自研且不 import 任何 `@ohos`**，
-于是它们能在 Node 里被真实数据测穿（`test/`）：
+zip 解包、DEFLATE 解压、XML/OPF/NCX 解析、UTF-8 解码**全部自研且不 import 任何 `@ohos`**，
+于是它们能在 Node 里被真实数据测穿（`test/`），不必等真机：
 
 ```
 pages/       Index（书架）│ Reader（阅读）│ Settings（设置）
-data/        BookDb（relationalStore）│ ReaderPrefs（Preferences）
+data/        BookDb（relationalStore）│ ReaderPrefs（Preferences）│ FontStore（字体下载）
 engine/      ← 纯 TS，零 ArkUI / 零设备 API，可 CI 单测
   parser/    TxtParser │ EpubParser │ BookSource（抽象：TXT/EPUB 对阅读页透明）
   paginator/ PageTableBuilder（纯算法）│ TextPaginator（graphics.text）│ PageCache
@@ -46,16 +48,16 @@ engine/      ← 纯 TS，零 ArkUI / 零设备 API，可 CI 单测
   epub/      Xml（含结构级 scanTags）│ Opf │ Xhtml │ EpubParse
   text/      Encoding（探测）│ ChapterSplitter │ Utf8Decode
   importer/  BookImporter（选择器 → 沙箱 → 索引 → 落库）
-common/      LayoutStyle（**档位唯一真源**）│ Theme（运行时色板）│ Types
+common/      LayoutStyle（**档位唯一真源**）│ Theme（运行时色板）│ FontCatalog │ Types
 ```
 
 **关键纪律**：测量与渲染必须共用同一套参数（`common/LayoutStyle.ets` 的档位表是唯一真源，UI 只写序号）。
 
-## 本地验证怎么做（本机无鸿蒙环境）
+## 本地验证怎么做
 
 ```bash
 npm install          # 只为单测装 esbuild
-npm test             # 52 个纯逻辑用例（编码/切章/分页/zip/EPUB/XHTML）
+npm test             # 57 个纯逻辑用例（编码/切章/分页/zip/EPUB/XHTML/全流程不变量）
 ```
 
 对**真实书**的验证（不进仓库，避免版权与体积问题）：
@@ -67,7 +69,7 @@ npx esbuild <临时脚本>.ts --bundle --platform=node --format=esm \
 node /tmp/x.mjs /path/to/real-book.epub
 ```
 
-ArkTS 编译校验只在 CI 做（本机不装 SDK）；单测可以在本机跑，两边用同一套用例。
+ArkTS 编译校验：CI 每次 push 都做；本机装了 DevEco Studio 后也可用其自带工具链本地构建（更快）。
 
 ## 构建与发布
 
@@ -80,11 +82,25 @@ ArkTS 编译校验只在 CI 做（本机不装 SDK）；单测可以在本机跑
 git tag v1.0.0 && git push origin v1.0.0     # ⚠️ 发版时机由党哥下令（家族准则第九章）
 ```
 
-⚠️ **当前 CI 产物不能装到鸿蒙手机**：它是 `product=ci`（runtimeOS = OpenHarmony）且**未签名**，只用于编译校验。
-要出可安装包需两步（都需要党哥操作）：① 用华为账号下载 command-line-tools 并给国内可访问直链；
-② AGC 调试证书 + 注册测试机 UDID。
+⚠️ **CI 产物不能装到鸿蒙手机**：它是 `product=ci`（runtimeOS = OpenHarmony）且**未签名**，只用于编译校验。
 
-## 许可证与借鉴红线
+可安装包由 **DevEco Studio 本机构建**（`product=default`）。新版 DevEco **自带 HarmonyOS SDK**，
+无需额外下载；装真机前需在 **文件 → 项目结构 → 签名配置** 勾选 **自动生成签名**
+（会生成调试证书并把测试机 UDID 注册到 AGC）。
+**未配签名时本地产物是 `entry-default-unsigned.hap`，同样装不上手机。**
+
+## 版权与许可（本仓库自身）
+
+**Copyright © 2026 Rocktier. 保留所有权利（All rights reserved）。**
+
+本仓库**未提供开源许可证**，因此：
+
+- 可以阅读、fork，用于学习和了解；
+- **未经书面许可，不得再分发、发布修改版、商用或用于衍生产品**。
+
+将来若决定开源，会在此处明确许可证。
+
+## 第三方借鉴红线
 
 | 项目 | 许可 | 我们怎么对待 |
 |---|---|---|
@@ -100,6 +116,7 @@ git tag v1.0.0 && git push origin v1.0.0     # ⚠️ 发版时机由党哥下�
 |---|---|
 | `docs/v1-design.md` | **v1 唯一设计真源**（改动先改它） |
 | `docs/ui-mockup-v2.html` | UI 复审稿（浏览器直接打开；1:1 还原已实现的界面） |
+| `docs/device-test.md` | 真机测试手册（DevEco 打开/签名/跑真机 + A~D 验收清单） |
 | `task_plan.md` | 阶段计划、决策表、错误表（含踩过的 ArkTS 坑） |
 | `findings.md` | 调研结论（Reader Kit / 自研排版 / 开源项目对比 / UI 方向） |
 | `progress.md` | 每次会话做了什么 |
