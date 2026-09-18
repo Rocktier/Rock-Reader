@@ -429,3 +429,20 @@ ArkUI 的 `registerFont` **只作用于渲染端**，不保证 `graphics.text` �
 | 提权执行迁移脚本两次失败（退出码 1、日志未生成） | UAC / 火绒拦截静默提权 → 改为人工以管理员身份运行脚本 |
 | **更正上一节的措辞** | 上节写"本地 default 产物 436 KB，**可装手机**"缺了前提：未配签名时产物是 `entry-default-unsigned.hap`，**装不上手机**。`docs/device-test.md` 表格里"调试签名 ✅"的写法才准确 |
 | **误把 98 个 `entry/.preview/` 中间产物提交进仓库**（预览器打开后生成，`.gitignore` 没覆盖） | `git rm -r --cached entry/.preview` + `.gitignore` 加 `.preview/` 与 `**/.preview/`（提交 `aac6f01`）；教训：**DevEco 预览器会在工程里生成 `.preview/`，必须提前 ignore** |
+
+### 补充：发现仓库被 fork（2026-09-19）
+
+**事实**
+- `Rocktier/Rock-Reader` 被 **`EylinSir/Rock-Reader`** fork
+- 仓库当前 **PUBLIC**、**无 LICENSE**（默认 = 保留所有权利）、分支 `main` + `fonts`
+
+**关键限制：改私有不能回收已存在的 fork**
+- GitHub 规则：把 public 仓库改为 private 后，其 public fork **会作为独立公开仓库保留**，不会自动删除/转私有
+- 要移除只能：联系 GitHub Support 申请，或让 fork 者自行删除
+
+**若改私有，两个连带影响**
+1. **Actions 免费额度**：public 无限 → private **2000 分钟/月**（免费账户）
+2. **字体下载链路会失效**：应用按 jsDelivr CDN → GitHub Release → GitHub raw 取字体，而 **jsDelivr 只服务公开仓库**、私有仓库的 Release 资产下载需带 token
+   → 需把字体资产拆到**独立的公开小仓库**（如 `Rocktier/rock-fonts`），主仓库保持私有
+
+**决策**：待党哥定（见家族台账同记）
