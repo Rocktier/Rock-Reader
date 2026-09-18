@@ -50,6 +50,9 @@ struct Index {
   aboutToAppear(): void {
     this.prefs.open(getContext(this) as Context);
     this.applyTheme();
+    // 启动时也同步一次系统层：默认深色时状态栏内容色就是白的，但显式设一次可保证
+    // "上次退出时是浅色"的情况下状态栏文字块也是黑的（EntryAbility 设了 colorMode，这里兜一道底）
+    applyThemeToSystem(getContext(this) as Context, this.theme);
     this.load();
   }
 

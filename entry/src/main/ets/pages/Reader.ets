@@ -198,6 +198,20 @@ struct Reader {
     };
   }
 
+  /**
+   * 单章失败时的统一善后：**必须清掉上一章的残留**。
+   * 不清的话会出现最难查的一类现象：章名/页码已换成新章，正文却还是上一章的内容，
+   * 而且还能继续翻页（页表是旧的）。
+   */
+  private failChapter(message: string): void {
+    this.hint = message;
+    this.pages = [];
+    this.pageCount = 0;
+    this.pageText = '';
+    this.pageIndex = 0;
+    this.pagePercent = 0;
+  }
+
   /** 打开某章并定位到某个字符偏移（内部会按签名查缓存，命中则不重排） */
   private openChapter(index: number, charOffset: number): void {
     if (this.source === null || index < 0 || index >= this.chapters.length) {
@@ -207,12 +221,13 @@ struct Reader {
     const box: LayoutBox = this.boxOf(levels);
     const chapter: ChapterRow = this.chapters[index];
 
+    this.hint = '';
     let text: string = '';
     try {
       text = this.source.chapterText(chapter);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'read chapter failed: %{public}s', JSON.stringify(e));
-      this.hint = '这一章读取失败';
+      this.failChapter('这一章读取失败');
       return;
     }
 
@@ -232,7 +247,7 @@ struct Reader {
         built = this.paginator.paginate(text, box);
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'paginate failed: %{public}s', JSON.stringify(e));
-        this.hint = '这一章排版失败';
+        this.failChapter('这一章排版失败');
         return;
       }
       this.cache.put(cacheKey, built);
