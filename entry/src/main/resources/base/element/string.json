@@ -1,0 +1,32 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "RockReader main module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "RockReader"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "RockReader"
+    },
+    {
+      "name": "shelf_title",
+      "value": "Shelf"
+    },
+    {
+      "name": "shelf_empty_hint",
+      "value": "No books yet"
+    },
+    {
+      "name": "shelf_import",
+      "value": "Import"
+    },
+    {
+      "name": "reader_placeholder",
+      "value": "Reader"
+    }
+  ]
+}

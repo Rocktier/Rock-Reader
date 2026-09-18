@@ -1,0 +1,6 @@
+# RockReader 混淆规则
+# 铁律 2：release 开混淆；默认开启属性混淆与顶层作用域混淆
+-enable-property-obfuscation
+-enable-toplevel-obfuscation
+-enable-filename-obfuscation
+-enable-export-obfuscation

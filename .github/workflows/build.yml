@@ -1,0 +1,98 @@
+name: build
+
+# 家族准则第十四章：所有构建一律走 GitHub Actions（本机不装鸿蒙工具链）
+# 本仓库是 PUBLIC，不消耗私有仓库的 Actions 配额
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # 公开可下载的 OpenHarmony SDK 版本（用于编译校验；HarmonyOS SDK 下载需登录华为账号）
+  OHOS_SDK_VER: 6.0.0.2-Release
+
+jobs:
+  # ---------------------------------------------------------------
+  # 作业 1：纯逻辑单测 —— 不依赖鸿蒙 SDK，M2 起随功能一起长大
+  # ---------------------------------------------------------------
+  unit-test:
+    name: 纯逻辑单测
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 运行单测
+        run: |
+          if [ -f package.json ]; then
+            npm install --no-audit --no-fund --registry=https://registry.npmmirror.com
+            npm test
+          else
+            echo "尚未引入纯 TS 单测（M2 起生效）"
+          fi
+
+  # ---------------------------------------------------------------
+  # 作业 2：ArkTS 编译校验 —— 空工程/代码能否编译通过、产出 HAP
+  # ---------------------------------------------------------------
+  build-hap:
+    name: ArkTS 编译校验 → HAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 缓存 OpenHarmony SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ohos-sdk
+          key: ohos-sdk-${{ env.OHOS_SDK_VER }}
+
+      - name: 准备 OpenHarmony SDK
+        run: bash .github/scripts/setup-ohos-sdk.sh "${OHOS_SDK_VER}"
+
+      - name: 环境自检
+        run: |
+          echo "node: $(node -v)"
+          echo "npm : $(npm -v)"
+          echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
+          ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head -20
+          ./hvigorw --version || true
+
+      - name: 构建 HAP（product=ci）
+        env:
+          DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+          HOS_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+          OHOS_BASE_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+        run: |
+          ./hvigorw clean --no-daemon || true
+          ./hvigorw assembleHap --mode module -p product=ci -p buildMode=debug --no-daemon
+
+      - name: 整理产物
+        if: always()
+        run: |
+          echo "=== 产物 ==="
+          find entry/build -name '*.hap' -o -name '*.app' 2>/dev/null | head -20 || true
+          mkdir -p /tmp/artifacts
+          find entry/build -name '*.hap' -exec cp {} /tmp/artifacts/ \; 2>/dev/null || true
+          ls -lh /tmp/artifacts || true
+
+      - name: 上传 HAP
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hap-ci-${{ github.sha }}
+          path: /tmp/artifacts
+          if-no-files-found: warn
+          retention-days: 14

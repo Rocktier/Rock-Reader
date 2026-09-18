@@ -1,0 +1,32 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Rock阅读 主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Rock阅读"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Rock阅读"
+    },
+    {
+      "name": "shelf_title",
+      "value": "书架"
+    },
+    {
+      "name": "shelf_empty_hint",
+      "value": "还没有书"
+    },
+    {
+      "name": "shelf_import",
+      "value": "导入"
+    },
+    {
+      "name": "reader_placeholder",
+      "value": "阅读"
+    }
+  ]
+}

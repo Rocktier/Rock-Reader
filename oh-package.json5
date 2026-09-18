@@ -1,0 +1,6 @@
+{
+  "modelVersion": "5.0.4",
+  "description": "Rock阅读 / RockReader — 纯本地、核心数据不联网的 HarmonyOS 电子书阅读器",
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,12 @@
+{
+  "float": [
+    {
+      "name": "rd_page_margin",
+      "value": "20vp"
+    },
+    {
+      "name": "rd_text_size_l3",
+      "value": "18fp"
+    }
+  ]
+}

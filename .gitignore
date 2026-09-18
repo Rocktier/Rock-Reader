@@ -24,6 +24,10 @@ build/
 # 本地配置
 local.properties
 
+# CI 下载的 OpenHarmony SDK（体积大，不进仓库）
+.ohos-sdk/
+
+
 # 编辑器 / 系统
 .idea/
 .vscode/

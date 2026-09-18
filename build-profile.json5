@@ -1,0 +1,47 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        // 正式产物：HarmonyOS 单框架（HarmonyOS 6+）
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.4(16)",
+        "targetSdkVersion": "6.0.0(20)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {}
+      },
+      {
+        // CI 专用：用公开可下载的 OpenHarmony SDK 做编译校验（HarmonyOS SDK 下载需登录华为账号）
+        // 目的 = 在 CI 上验证 ArkTS/ArkUI 代码能编译通过；正式包仍由 default 产物出
+        "name": "ci",
+        "compatibleSdkVersion": 20,
+        "runtimeOS": "OpenHarmony",
+        "buildOption": {}
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "ci"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#000000"
+    },
+    {
+      "name": "rd_bg",
+      "value": "#000000"
+    },
+    {
+      "name": "rd_text",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "rd_text2",
+      "value": "#8CFFFFFF"
+    },
+    {
+      "name": "rd_text3",
+      "value": "#52FFFFFF"
+    },
+    {
+      "name": "rd_line",
+      "value": "#24FFFFFF"
+    },
+    {
+      "name": "rd_line_soft",
+      "value": "#12FFFFFF"
+    },
+    {
+      "name": "rd_red",
+      "value": "#FF4A3D"
+    }
+  ]
+}
