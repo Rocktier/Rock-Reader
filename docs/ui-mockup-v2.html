@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RockReader v1 — UI 复审稿（与实现一致）</title>
+<style>
+/* ===== 家族 token（Rocktier家族软件通用准则 第四章）=====
+   数值与 ArkTS 实现逐项对应：common/Theme.ets（色板）+ common/LayoutStyle.ets（档位表，档位 3 = 默认） */
+:root{
+  --bg:#000000;
+  --card:rgba(255,255,255,.031);
+  --line:rgba(255,255,255,.141);
+  --line-soft:rgba(255,255,255,.071);
+  --text:#ffffff;
+  --text2:rgba(255,255,255,.549);
+  --text3:rgba(255,255,255,.322);
+  --red:#FF4A3D;
+  --cover:#1A1A1A;
+  --r-card:12px;      /* 卡片/面板 */
+  --r-bezel:28px;     /* 机身 */
+  --r-cover:0px;      /* 书封：0 圆角（已确认） */
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+  /* 阅读页（档位 3）：字号 18fp / 行距 1.9 / 上下正文留白 34/30 */
+  --rd-font:18px;
+  --rd-lh:34.2px;
+  --rd-margin:20px;
+  --rd-top:34px;
+  --rd-foot:30px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--sans);
+  min-height:100vh;padding:48px 32px 72px;
+  background-image:radial-gradient(rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:22px 22px;
+}
+.page-head{max-width:1680px;margin:0 auto 40px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.wordmark{font-size:26px;font-weight:700;letter-spacing:.02em;display:flex;align-items:center;gap:6px}
+.wordmark i{width:8px;height:8px;background:var(--red);border-radius:50%;display:inline-block;margin-bottom:12px}
+.page-head .meta{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding-bottom:6px}
+.page-head .note{margin-left:auto;font-size:12px;color:var(--text2);padding-bottom:4px;max-width:440px;line-height:1.75}
+.stage{max-width:1680px;margin:0 auto;display:flex;flex-wrap:wrap;gap:44px;justify-content:center}
+.device{display:flex;flex-direction:column;gap:14px}
+.caption{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3)}
+.caption b{color:var(--text);font-weight:400}
+.screen{
+  width:360px;height:748px;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--r-bezel);overflow:hidden;position:relative;display:flex;flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,.7);
+}
+/* 状态栏：刻意不画信号/WiFi —— 本应用核心数据不联网，阅读本身不需要网络 */
+.statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-family:var(--mono);font-size:11px;color:var(--text2);flex:0 0 auto}
+.statusbar .bat{display:flex;gap:3px}
+.statusbar .bat i{width:2px;background:var(--text2);display:block;border-radius:.5px}
+.statusbar .bat i:nth-child(1){height:4px;margin-top:4px}
+.statusbar .bat i:nth-child(2){height:6px;margin-top:2px}
+.statusbar .bat i:nth-child(3){height:8px}
+.mono{font-family:var(--mono)}
+
+/* ===== 1. 书架 ===== */
+.shelf{padding:6px 22px 0;display:flex;flex-direction:column;gap:18px;flex:1;overflow:hidden}
+.shelf-head{display:flex;align-items:center;gap:10px}
+.shelf-head h1{font-size:22px;font-weight:700}
+.shelf-head .count{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.shelf-head .acts{margin-left:auto;display:flex;gap:8px}
+.sq{width:30px;height:30px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--text);background:transparent}
+.sq.small{font-size:13px}
+.sq.big{font-size:15px}
+.continue{border:1px solid var(--line);background:var(--card);border-radius:var(--r-card);padding:14px;display:flex;gap:14px;position:relative}
+.continue .badge{position:absolute;top:12px;right:12px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.cover{border-radius:var(--r-cover);flex:0 0 auto;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--cover)}
+.cover .init{color:rgba(255,255,255,.20);font-weight:600}
+.cover.big{width:58px;height:82px}
+.cover.big .init{font-size:24px}
+.cover.grid{width:100%;aspect-ratio:1/1.4}
+.cover.grid .init{font-size:36px}
+.continue .info{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.continue .t{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.continue .fmt{font-family:var(--mono);font-size:10px;color:var(--text3)}
+.continue .pg{margin-top:6px;font-family:var(--mono);font-size:9px;color:var(--text3)}
+.segbar{display:flex;gap:2px;height:2px}
+.segbar i{flex:1;background:var(--line-soft);display:block}
+.segbar i.on{background:var(--text)}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 14px}
+.book{display:flex;flex-direction:column;gap:7px}
+.book .t{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book .fmt{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.shelf-foot{margin-top:auto;padding:14px 0 20px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--text3)}
+
+/* ===== 2/3. 阅读页（分页模式）===== */
+.reader{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.reader .body{flex:1;padding:var(--rd-top) var(--rd-margin) var(--rd-foot);font-size:var(--rd-font);line-height:var(--rd-lh);overflow:hidden}
+.reader .body p+p{margin-top:.9em}
+.reader .foot{flex:0 0 var(--rd-foot);padding:0 var(--rd-margin) 12px;display:flex;justify-content:space-between;align-items:flex-end;font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.06em}
+/* 浮出层 */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+.topbar,.bottombar{position:absolute;left:0;right:0;background:#000;border:0 solid var(--line-soft)}
+.topbar{top:0;border-bottom-width:1px;padding:10px 18px 12px 12px;display:flex;align-items:center;gap:6px}
+.topbar .back{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text)}
+.topbar .title{font-size:13px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .idx{font-family:var(--mono);font-size:9.5px;color:var(--text3)}
+.bottombar{bottom:0;border-top-width:1px;padding:16px 18px 26px}
+.bottombar .chline{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--text3);margin-bottom:10px;gap:10px}
+.bottombar .chline span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bottombar .tabs{display:flex;margin-bottom:14px}
+.bottombar .tabs div{flex:1;text-align:center;font-size:12.5px;color:var(--text);height:34px;display:flex;align-items:center;justify-content:center}
+.bottombar .tabs div.dim{color:var(--text3)}
+.bottombar .pct{margin-top:8px;font-family:var(--mono);font-size:9px;color:var(--text3)}
+
+/* ===== 4. 目录浮层 ===== */
+.toc{position:absolute;left:0;right:0;bottom:0;height:62%;background:#000;border:1px solid var(--line);border-bottom:0;border-radius:var(--r-card) var(--r-card) 0 0;display:flex;flex-direction:column}
+.toc .head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;font-family:var(--mono);font-size:11px;color:var(--text2)}
+.toc .head .n{font-size:10px;color:var(--text3)}
+.toc .list{flex:1;overflow:hidden}
+.toc .item{display:flex;align-items:center;gap:0;padding:13px 20px;border-top:1px solid var(--line-soft)}
+.toc .item .no{width:30px;font-family:var(--mono);font-size:9.5px;color:var(--text3)}
+.toc .item .t{font-size:13.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toc .item.cur .no{color:var(--red)}
+.toc .item.cur .t{color:var(--text)}
+
+/* ===== 5. 设置 ===== */
+.settings{flex:1;display:flex;flex-direction:column;padding:0 22px 0}
+.settings .head{padding:10px 0 12px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line-soft);margin:0 -10px 0 -22px;padding-left:12px}
+.settings .head .back{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.settings .head .t{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em}
+.settings .group{padding:18px 0 0}
+.settings .glabel{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:.1em}
+.settings .row{padding:16px 0;border-bottom:1px solid var(--line-soft)}
+.settings .row:last-of-type{border-bottom:0}
+.settings .rhead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.settings .rhead .l{font-size:13.5px}
+.settings .rhead .h{font-family:var(--mono);font-size:9.5px;color:var(--text3)}
+.chip-row{display:flex;gap:8px}
+.chip{width:44px;height:34px;border:1px solid var(--line);background:var(--card);color:var(--text2);font-family:var(--mono);font-size:13px;display:flex;align-items:center;justify-content:center;border-radius:0}
+.chip.on{background:var(--text);color:#000;border-color:var(--text)}
+.chip.wide{width:auto;padding:0 18px;font-size:12.5px}
+.settings .foot{margin-top:auto;padding:18px 0 26px;color:var(--text2);font-size:12px;line-height:1.7}
+.settings .foot small{display:block;color:var(--text3);font-size:10px;margin-top:6px}
+
+/* ===== 说明区 ===== */
+.notes{max-width:1680px;margin:64px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px}
+.note-card{border:1px solid var(--line);border-radius:var(--r-card);padding:18px;background:var(--card)}
+.note-card h3{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text2);margin-bottom:12px}
+.note-card ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.note-card li{font-size:12.5px;color:var(--text2);line-height:1.7;display:flex;gap:8px}
+.note-card li b{color:var(--text);font-weight:400}
+.note-card li:before{content:"—";color:var(--text3);flex:0 0 auto}
+.swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.sw{width:46px;height:46px;border:1px solid var(--line);position:relative}
+.sw span{position:absolute;bottom:-18px;left:0;font-family:var(--mono);font-size:8.5px;color:var(--text3)}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="wordmark">Rock阅读<i></i></div>
+  <div class="meta">v1 · UI 复审稿 · 与 ArkTS 实现 1:1</div>
+  <div class="note">这版不是"设计意图"，而是**已经写进代码的界面**：尺寸、色值、字号、行距、档位芯片都从 <span class="mono">common/Theme.ets</span> 与 <span class="mono">common/LayoutStyle.ets</span> 直取。数码一律等宽字体（实现里就是 monospace，不是点阵字）。</div>
+</div>
+
+<div class="stage">
+
+  <!-- ============ 1. 书架 ============ -->
+  <div class="device">
+    <div class="caption"><b>01</b> 书架 · 启动停在这里（不自动跳书）</div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="shelf">
+        <div class="shelf-head">
+          <h1>书架</h1>
+          <span class="count">6 本</span>
+          <span class="acts">
+            <span class="sq small">Aa</span>
+            <span class="sq big">＋</span>
+          </span>
+        </div>
+
+        <div class="continue">
+          <span class="badge"></span>
+          <div class="cover big"><span class="init">硅</span></div>
+          <div class="info">
+            <div class="t">硅谷工程师爸爸的超强思维训练课</div>
+            <div class="fmt">EPUB</div>
+            <div class="segbar">
+              <i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="pg">28%</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="book"><div class="cover grid"><span class="init">硅</span></div><div class="t">硅谷工程师爸爸…</div><div class="fmt">EPUB</div></div>
+          <div class="book"><div class="cover grid"><span class="init">活</span></div><div class="t">活着</div><div class="fmt">TXT</div></div>
+          <div class="book"><div class="cover grid"><span class="init">三</span></div><div class="t">三体</div><div class="fmt">EPUB</div></div>
+          <div class="book"><div class="cover grid"><span class="init">围</span></div><div class="t">围城</div><div class="fmt">TXT</div></div>
+          <div class="book"><div class="cover grid"><span class="init">平</span></div><div class="t">平凡的世界</div><div class="fmt">TXT</div></div>
+          <div class="book"><div class="cover grid"><span class="init">万</span></div><div class="t">万历十五年</div><div class="fmt">EPUB</div></div>
+        </div>
+
+        <div class="shelf-foot"><span>LOCAL ONLY</span><span>v1.0.0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 2. 阅读页（沉浸）============ -->
+  <div class="device">
+    <div class="caption"><b>02</b> 阅读页 · 零常驻控件（只有页脚一行）</div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="reader">
+        <div class="body">
+          <p>思维力是孩子语言、数学、艺术、音乐全面发展的基础。可以说，思维力决定着孩子的学习力。在孩子大脑高速发育的阶段进行科学系统的思维训练，可以开发智力，提升学习力。</p>
+          <p>我曾看过清华女教授颜宁参加的一期电视节目，不禁为颜宁的智商和口才深深折服。身边有个清华师兄认识颜宁，他跟我说："颜师姐的思维能力太强了，所以在科学、语言等各方面都很优秀！"</p>
+          <p>从那时候起，我才发现，原来思维能力是一个孩子能否走得远的关键。</p>
+        </div>
+        <div class="foot"><span>第一章 思维力决定孩子的学习力</span><span>12/27</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 3. 点中间 → 浮出细栏 ============ -->
+  <div class="device">
+    <div class="caption"><b>03</b> 点屏幕中间 · 浮出上下细栏（再点收起）</div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="reader">
+        <div class="body" style="opacity:.55">
+          <p>思维力是孩子语言、数学、艺术、音乐全面发展的基础。可以说，思维力决定着孩子的学习力。在孩子大脑高速发育的阶段进行科学系统的思维训练，可以开发智力，提升学习力。</p>
+          <p>我曾看过清华女教授颜宁参加的一期电视节目，不禁为颜宁的智商和口才深深折服。</p>
+        </div>
+        <div class="scrim"></div>
+        <div class="topbar">
+          <div class="back">‹</div>
+          <div class="title">硅谷工程师爸爸的超强思维训练课</div>
+          <div class="idx">3/14</div>
+        </div>
+        <div class="bottombar">
+          <div class="chline"><span>第一章 思维力决定孩子的学习力</span><span>12/27</span></div>
+          <div class="tabs">
+            <div>上一章</div>
+            <div>目录</div>
+            <div>A a</div>
+            <div>下一章</div>
+          </div>
+          <div class="segbar">
+            <i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="pct">31%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4. 目录浮层 ============ -->
+  <div class="device">
+    <div class="caption"><b>04</b> 目录浮层 · 当前章用家族红标序号</div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="reader">
+        <div class="body" style="opacity:.35">
+          <p>思维力是孩子语言、数学、艺术、音乐全面发展的基础。可以说，思维力决定着孩子的学习力。</p>
+          <p>我曾看过清华女教授颜宁参加的一期电视节目。</p>
+        </div>
+        <div class="scrim" style="background:rgba(0,0,0,.62)"></div>
+        <div class="toc">
+          <div class="head"><span>CONTENTS</span><span class="n">14</span></div>
+          <div class="list">
+            <div class="item"><span class="no">1</span><span class="t">Cover</span></div>
+            <div class="item"><span class="no">2</span><span class="t">封面</span></div>
+            <div class="item"><span class="no">3</span><span class="t">版权页</span></div>
+            <div class="item cur"><span class="no">4</span><span class="t">第一章 思维力决定孩子的学习力</span></div>
+            <div class="item"><span class="no">5</span><span class="t">第二章 亲子互动，激发孩子的超强脑力</span></div>
+            <div class="item"><span class="no">6</span><span class="t">第三章 从小学编程，培养孩子的思考能力</span></div>
+            <div class="item"><span class="no">7</span><span class="t">第四章 数学启蒙，从生活里长出来</span></div>
+            <div class="item"><span class="no">8</span><span class="t">第五章 用绘本打开想象力</span></div>
+            <div class="item"><span class="no">9</span><span class="t">第六章 专注力是可以练出来的</span></div>
+            <div class="item"><span class="no">10</span><span class="t">第七章 亲子共读的十个技巧</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 5. 设置 ============ -->
+  <div class="device">
+    <div class="caption"><b>05</b> 设置 · 全是档位芯片，**一根滑块都没有**</div>
+    <div class="screen">
+      <div class="statusbar"><span>9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="settings">
+        <div class="head"><div class="back">‹</div><div class="t">SETTINGS</div></div>
+
+        <div class="group">
+          <div class="glabel">排版</div>
+
+          <div class="row">
+            <div class="rhead"><span class="l">字号</span><span class="h">3/5</span></div>
+            <div class="chip-row"><div class="chip">1</div><div class="chip">2</div><div class="chip on">3</div><div class="chip">4</div><div class="chip">5</div></div>
+          </div>
+
+          <div class="row">
+            <div class="rhead"><span class="l">行距</span><span class="h">3/5</span></div>
+            <div class="chip-row"><div class="chip">1</div><div class="chip">2</div><div class="chip on">3</div><div class="chip">4</div><div class="chip">5</div></div>
+          </div>
+
+          <div class="row">
+            <div class="rhead"><span class="l">页边距</span><span class="h">3/5</span></div>
+            <div class="chip-row"><div class="chip">1</div><div class="chip">2</div><div class="chip on">3</div><div class="chip">4</div><div class="chip">5</div></div>
+          </div>
+
+          <div class="glabel" style="padding-top:18px">主题</div>
+          <div class="row">
+            <div class="chip-row"><div class="chip wide on">深色</div><div class="chip wide">浅色</div></div>
+          </div>
+        </div>
+
+        <div class="foot">
+          核心数据不联网
+          <small>书籍与进度全部在本机处理</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div class="note-card">
+    <h3>家族色板（实现同源）</h3>
+    <div class="swatches">
+      <div class="sw" style="background:#000000"><span>#000 bg</span></div>
+      <div class="sw" style="background:#ffffff"><span>#fff text</span></div>
+      <div class="sw" style="background:#FF4A3D"><span>红点</span></div>
+      <div class="sw" style="background:#1A1A1A"><span>书封</span></div>
+      <div class="sw" style="background:rgba(255,255,255,.141)"><span>line</span></div>
+      <div class="sw" style="background:rgba(255,255,255,.071)"><span>line-soft</span></div>
+    </div>
+  </div>
+
+  <div class="note-card">
+    <h3>这一版落实的纪律</h3>
+    <ul>
+      <li><b>正文绝不用点阵字</b> —— 数码（页码/进度/序号）用等宽，正文用系统字体</li>
+      <li><b>阅读页零常驻控件</b> —— 只有一行页脚（章名 + 页码）</li>
+      <li><b>不出现任何滑块</b> —— 字号/行距/边距全是 5 档芯片</li>
+      <li><b>广告不参与布局</b> —— 阅读页永远零广告；广告缺席时不留空洞（M7）</li>
+      <li><b>空态不放营销文案</b>；任何屏幕都<b>不出现滚动条</b></li>
+    </ul>
+  </div>
+
+  <div class="note-card">
+    <h3>档位 → 数值（唯一真源）</h3>
+    <ul>
+      <li>字号：14 / 16 / <b>18</b> / 20 / 22 fp</li>
+      <li>行距：1.4 / 1.6 / <b>1.9</b> / 2.2 / 2.5 倍</li>
+      <li>页边距：12 / 16 / <b>20</b> / 24 / 28 vp</li>
+      <li>UI 芯片只写序号，排版层查表 —— 不允许出现第二份数值</li>
+      <li>切换档位后<b>按字符偏移复原位置</b>，不会跳页</li>
+    </ul>
+  </div>
+
+  <div class="note-card">
+    <h3>还没定 / 待你拍</h3>
+    <ul>
+      <li>翻页要不要做<b>手指跟手拖动</b>（现在：滑动触发 + 淡入淡出，最省最稳）</li>
+      <li>目录浮层要不要显示<b>每章进度</b></li>
+      <li>书封要不要接<b>EPUB 真实封面图</b>（现在只显示书名首字）</li>
+      <li>浅色主题的<b>正文底色</b>要不要给"护眼米黄"档</li>
+    </ul>
+  </div>
+</div>
+
+</body>
+</html>

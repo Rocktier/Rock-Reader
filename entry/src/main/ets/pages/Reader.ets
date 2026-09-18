@@ -234,7 +234,8 @@ struct Reader {
       ? this.pageCount - 1
       : pageOfChar(table.pages, charOffset) - 1;
     this.showPage(target < 0 ? 0 : target);
-    this.pagesSincePersist = 999;   // 切章一定落进度
+    // 切章一定落进度：showPage 里的节流保存可能刚好被跳过（距上次落库不足 5 页）
+    this.persistProgress(true);
   }
 
   private showPage(index: number): void {

@@ -9,18 +9,18 @@
 技术底座与调研结论见 `findings.md`「调研结论（2026-09-18）」；UI 方向 = 家族 Nothing OS 风格（黑白单色 + 点阵数码 + 红点 `#FF4A3D`）。
 
 ## Current Phase
-Phase 1
+Phase 6（M6 打磨 + 真机验证准备）
 
 ## Phases
 
-### Phase 1: 技术调研 + 防御式实现（本机无环境，不能实测）
-> 本机不装 DevEco / SDK，**没有本地编译与运行能力**。所以 spike 降级为：查官方文档确认 API 能力 → 代码里做能力探测与降级路径 → **真机/CI 构建后再回填实测结果**。
-- [ ] `@ohos.measure` 文本测量与分页：查文档确认可用性与精度；代码留"测量失败则退化为按字符数分页"的兜底
-- [ ] `util.TextDecoder` 是否支持 GBK / GB18030：查文档；不支持则自实现 GBK 映射（或先支持 UTF-8 + 手动选编码）
-- [ ] `@ohos.zlib` 能否直接处理 zip：查文档；**默认按"不支持 zip 归档"设计**，先写好最小 zip 解析 + raw inflate
-- [ ] `fs.read` 按 offset 随机读：查文档确认 API 语义
-- [ ] 真机 / 首次 CI 构建成功后，回填 `findings.md` 的「spike 结果」表
-- **Status:** pending
+### Phase 1: 技术调研 + 防御式实现 —— ✅ 2026-09-18 完成
+> 本机不装 DevEco / SDK，**没有本地编译与运行能力**。所以 spike 降级为：查官方文档（并直接读 `interface_sdk-js` 的 `.d.ts`）确认 API → 代码里做能力探测与降级 → CI 构建校验 → **真机实测仍待 M6**。
+- [x] 文本测量与分页：**推翻原假设** —— 不用 `@ohos.measure` 逐段测量，改用 `@ohos.graphics.text`（`ParagraphBuilder` → `layoutSync` → `getLineMetrics()` 直接给每行 `startIndex/endIndex`），一次排版即可切页
+- [x] `util.TextDecoder` GB18030：**已停用**，改自研纯 TS 解码路径（`engine/text/Utf8Decode.ets` + `Encoding.ets` 探测），保证 CI 可测
+- [x] `@ohos.zlib` 能否处理 zip：**结论 = 不用它**，自研中央目录 + raw inflate（理由：只有自研才能在 CI 里用真实 deflate 数据验证）
+- [x] 章节取文本：用**字符偏移**（GBK 场景字节偏移对不上，见 findings）
+- [x] **辟谣**：博客里流传的 `onTextLayout` / `TextLayoutResult` / `ReaderController` 等 API 官方不存在，一律以 `.d.ts` 为准
+- **Status:** done（结论入 `findings.md`「调研结论 A~E」）
 
 ### Phase 2: 工程骨架（手写，不用 DevEco 向导）—— ✅ 2026-09-18 完成
 - [x] 建工程目录 + 独立 git 仓库（远端 `Rocktier/Rock-Reader`）
@@ -42,28 +42,33 @@ Phase 1
 - **Status:** done
 - 实现：`data/BookDb.ets`、`engine/importer/BookImporter.ets`、`pages/Index.ets`
 
-### Phase 4: 解析与索引 —— ✅ TXT 完成；EPUB 属 M4
+### Phase 4: 解析与索引 —— ✅ 2026-09-18 完成（TXT + EPUB）
 - [x] TXT：编码识别（BOM → UTF-8 严格校验 → GB18030 兜底）+ 章节正则 + 兜底切章
 - [x] 导入时建章节索引落 relationalStore（字符偏移 + UTF-8 字节偏移都存）
 - [x] 取章：按**字符偏移**（GBK 场景字节偏移对不上，见 findings）
-- [ ] EPUB：zip + container.xml + OPF + XHTML → 段落模型（M4）
-- [ ] 解析/分页移入 `taskpool`（当前同步执行，**待办**；导入单本书耗时在百毫秒级，真机实测再决定优先级）
-- **Status:** in_progress
+- [x] EPUB：自研 zip 中央目录 + raw inflate → container.xml → OPF → NCX/nav → XHTML → 纯文本
+- [ ] 解析移入 `taskpool`（当前同步执行）——**实测数据不支持现在做**：真实书整本解析 7ms、全书解压转文本 22ms，远小于一帧感知阈值；真机若遇超大书卡顿再上
+- **Status:** done
 
-### Phase 5: 阅读页
-- [x] 滚动模式阅读 + 上一章/下一章 + 点屏浮出细栏 + 页脚等宽数码
-- [x] 进度落库（切章落一次；书架继续阅读卡片读它）
-- [ ] **横滑分页（默认模式）**——`PageTableBuilder` 已就绪，差接 `graphics.text` 的 `LineMetrics`（下一步）
-- [ ] 目录跳转、字号/行距档位切换、夜间/昼间主题、滚动位置恢复
-- **Status:** in_progress
+### Phase 5: 阅读页 —— ✅ 2026-09-18 完成
+- [x] **横滑分页（默认模式）**：`TextPaginator` 一次 `layoutSync` 取每行区间 → 页表；页表按 `layoutKey` 缓存 → 翻页零测量
+- [x] 交互：点两侧翻页 / 点中间浮出细栏 / 横滑翻页（淡出→换页→淡入 + 方向位移）
+- [x] 目录浮层（跳章）、章节导航、分段进度条（Nothing 式每 10% 一格）、页脚等宽数码
+- [x] 进度落库：章内每 5 页 + 切章必落 + `onPageHide`/`aboutToDisappear` 立即落
+- [x] 字号/行距/边距档位切换（返回阅读页自动重排，**按字符偏移复原位置，不跳页**）
+- [x] 昼/夜主题（运行时切换，与系统深浅色解耦）
+- **Status:** done
+- 实现：`engine/paginator/*`、`pages/Reader.ets`、`pages/Settings.ets`、`data/ReaderPrefs.ets`、`common/{LayoutStyle,Theme}.ets`
 
-### Phase 6: EPUB（**已并入 v1**，党哥 2026-09-18 拍板）
-- [ ] zip 解析（优先 `@ohos.zlib`，不行自己写中央目录 + raw inflate）
-- [ ] `container.xml` / OPF / NCX / Nav 解析（`@ohos.xml`）
-- [ ] XHTML → 段落模型（只认基础标签；**v1 不解析 CSS**）
-- [ ] 交给同一个 `Paginator` 排版（与 TXT 共用管线）
-- **Status:** pending
-- ⚠️ 若 Reader Kit 开通条件核实通过 → 本 Phase 可整块换成 `ReaderKitParser` 适配器实现
+### Phase 6: EPUB（**已并入 v1**，党哥 2026-09-18 拍板）—— ✅ 2026-09-18 完成
+- [x] zip 解析：**自研**中央目录 + raw inflate（`engine/zip/`）——理由：`@ohos.zlib` 设备才有、CI 里无法验证
+- [x] `container.xml` / OPF / NCX / nav 解析（自研极小扫描器，`engine/epub/Xml.ets`）
+- [x] XHTML → 纯文本（丢 head/style/script、实体还原、段落留空行；**v1 不解析 CSS**）
+- [x] 复用同一个 `Paginator`（TXT 与 EPUB 共用分页/进度/设置管线）
+- **Status:** done
+- 真实出版 epub 实测（calibre 3.44 生成，3.4MB / 103 条目 / 14 章 / 11.7 万字）：解析 7ms，转文本 22ms，目录标题全对
+- 过程中逮到两个真 bug（均已写回归测试）：① 嵌套 NCX 按顺序配对 → 整本目录错位一章；② 小节标题（带 `#fragment`）盖住章级标题
+- ⚠️ 若 Reader Kit 开通条件核实通过 → 可用 `ReaderKitParser` 适配器替换（`BookSource` 接口位已留）
 
 ### Phase 7: 打包与交付
 - [x] **发布流程（2026-09-18 实测通过）**：`git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动跑单测 + 编译 + **建 Release 并挂 HAP + SHA256SUMS**
@@ -74,20 +79,21 @@ Phase 1
 - [ ] **正式 HarmonyOS 包**（`default` product）：需党哥用华为账号下载 command-line-tools（Linux x64，登录门禁）→ 给我国内可访问直链 → 接进 CI
 - [ ] **已签名可安装包**：需 AGC 调试证书（.p12/.cer/.p7b）+ **每台测试机注册 UDID**
 - **Status:** in_progress（发布流程已通；正式包待 SDK）
-- [ ] `.github/workflows/build.yml`：Linux + `hvigorw assembleHap`
-- [ ] 签名走 Secrets，产物上传 Artifacts
-- [ ] 单份 `build-profile.json5`：`compatibleSdkVersion = 20`、`targetSdkVersion = 24`（已放弃 HarmonyOS 4，不再出双包）
-- [ ] 党哥下令后 push + tag + Release（挂 HAP）
-- **Status:** pending
 
-### Phase 8: 真机验证
-- [ ] 等党哥自购鸿蒙设备后实测（导入、翻页流畅度、大文件、续航/内存）
-- **Status:** pending
+### Phase 8: 真机验证（**M6 的剩余部分，本机做不到**）
+- [ ] 冷启动实测 ≤1s（CI 只能证编译与体积，启动耗时必须真机）
+- [ ] 翻页流畅度 / 掉帧（`layoutSync` 在真机上的实际耗时）
+- [ ] 大文件（50MB+ TXT）导入耗时与内存峰值
+- [ ] 系统字体缩放下排版是否与测量一致（**最高风险项**：测量用 `graphics.text`、渲染用 ArkUI `Text`，两者断行必须一致，否则页面会溢出）
+- [ ] 昼/夜主题、档位切换的真机观感
+- **Status:** pending（等设备 + 正式包）
 
 ## Key Questions
-1. 首版格式范围：**只做 TXT**，还是 TXT + EPUB 一起上？（建议先 TXT）
-2. 阅读器要不要支持 PDF？（PDF 是另一套渲染，建议不做）
-3. ~~远端仓库名？~~ → **已定 `Rocktier/Rock-Reader`**（PUBLIC；已本地 init + remote，首次 push 待党哥下令）
+1. ~~首版格式范围？~~ → **v1 = TXT + EPUB**（党哥 2026-09-18 拍板）
+2. 阅读器要不要支持 PDF？→ **不做**（Reader Kit 也不支持；PDF 是另一套渲染）
+3. ~~远端仓库名？~~ → **已定 `Rocktier/Rock-Reader`**（PUBLIC，已多次 push）
+4. **待党哥定**：软著 / 隐私政策文本、首发定价（若要买断）、是否做「继续阅读」元服务卡片（M7+ 候选）
+5. **待核实**（不阻塞开发）：Ads Kit 是否需 AGC 开通/签约；华为审核对广告位与未成年人保护的具体要求
 
 ## Decisions Made
 | Decision | Rationale |
@@ -103,8 +109,16 @@ Phase 1
 | **本机不搭鸿蒙环境**，只写代码；工程文件手写，不用 DevEco 向导 | 党哥 2026-09-18 定；构建与校验全靠 CI |
 | 三个 spike 改为"文档调研 + 防御式实现"，实测等首次 CI 构建 / 真机 | 本机无编译与运行能力，不能本地实测 |
 | ~~首次 push 暂缓~~ → **已于 2026-09-18 完成首次 push**（4 个 commit） | 远端已有台账与 README；下一步补 CI workflow 与工程骨架 |
+| **zip / inflate / XML 全部自研**（不用 `@ohos.zlib`、`@ohos.xml`） | 本机无鸿蒙环境：设备 API 只能"上真机碰运气"；自研纯 TS 能在 CI 里用**真实 deflate 数据**与**真实出版 epub** 验证。代价：多写约 500 行，收益：EPUB 链路第一次上真机前就已经被证明是对的 |
+| **排版按"章"在主线程序列化执行**（暂不做 taskpool） | 实测：整本 11.7 万字解压+转文本 22ms，单章 `layoutSync` 更小；taskpool 会引入传递 `LineMetrics`/`FontCollection` 的跨线程风险，收益不抵风险。真机若卡再上 |
+| **EPUB 段落模型 = 纯文本 + 空行分段**（不做富文本/标题样式） | 与 TXT 共用同一条分页/进度/设置管线；v1 不解析 CSS。代价：EPUB 标题不加粗。升级路径：`Paginator` 已按"文本 + 样式"接口预留 |
+| **主题写在 TS 色板里，不用资源限定符** | 主题由用户在应用内选（昼/夜），必须与系统深浅色解耦；`resources/dark/` 只能跟随系统 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
-|       | 1       |            |
+| `arkts-no-obj-literals-as-types` / `arkts-no-untyped-obj-literals` | 1 | `Array<{start:number;end:number}>` 这类**对象字面量不能当类型**；改为共用 `PageRange` 接口，字面量先赋给有类型的局部变量再 push |
+| `10505001 Property 'opacity' is not assignable to base type 'CustomComponent'` | 1 | 组件字段名撞上了 ArkUI 的属性方法（`opacity`）；改名 `pageOpacity`。**同类陷阱**：`visibility` / `offset` / `position` / `id` / `key` 等都要避开 |
+| esbuild `Could not resolve './Xxx'`（无扩展名 .ets 导入） | 1 | `test/run.mjs` 显式加 `resolveExtensions: ['.ets', ...]`；ArkTS 源码里本来就不写扩展名 |
+| **嵌套 NCX 目录错位一章**（真实书实测发现） | 1 | 原实现按"text 与 content 出现顺序配对"；父 navPoint 有 navLabel 但无 content 时整体错位。改为 `scanTags` + 栈的**结构级配对**，并加回归测试 |
+| **小节标题盖住章级标题**（真实书实测发现） | 1 | 带 `#fragment` 的 navPoint 解析成同一文件路径，先到先得会赢。改为章级（无 fragment）优先，仅当该文件无章级标题时才退回小节标题 |

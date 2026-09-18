@@ -127,3 +127,73 @@
 | 真实样本测试期望 3 章、实际 4 章 | 是**我的期望写错**：样本开头有书名/作者，按设计应成「前言」章 → 修正期望为「前言 + 3 章」 |
 | TxtParser 里从 `@kit.ArkTS` 重复 import | 合并为一行（去掉未用的 `taskpool`） |
 | 书架用了 `rd_card`/`rd_g100` 两个未定义色值 | 补进 `color.json`（`#08FFFFFF` / `#1A1A1A`） |
+
+---
+
+## Session: 2026-09-18（M3 收尾 → M4 → M5 → M6，一路做到可交付）
+
+### Current Status
+- **M1~M5 全部完成；M6 只剩"真机项"**（本机无鸿蒙环境，必须等设备）
+- CI 全绿；纯逻辑单测 **20 → 52**；HAP **115 KB**（预算 ≤5MB）
+
+### Actions Taken
+
+**M3 收尾 —— 横滑分页（默认阅读模式）**
+- 新增 `engine/paginator/Paginator.ets`（契约 + `PageCache` LRU + `FakePaginator`）与 `TextPaginator.ets`（`@ohos.graphics.text`：`ParagraphBuilder → layoutSync → getLineMetrics()` 取每行 `endIndex`）
+- 新增 `common/LayoutStyle.ets`：档位**唯一真源**表 + `layoutKey`（把实际 px 折进缓存键，防系统字体缩放错用旧页表）
+- 阅读页重写：点两侧翻页 / 点中间浮出细栏 / 横滑翻页（淡出→换页→淡入 + 方向位移）/ 目录浮层 / 分段进度条 / 底栏四键
+- 进度策略：章内每 5 页落一次 + **切章必落** + `onPageHide`/`aboutToDisappear` 立即落
+- 单测新增 `paginator` / `layout` 两组；**`clampLevel` 边界写错被测试逮到**（0 与负数被当成 NaN 回落默认档）
+
+**M5 —— 设置 / 目录 / 昼夜 / 切档不跳页**
+- 新增 `data/ReaderPrefs.ets`（Preferences，**只存序号与主题名**）+ `common/Theme.ets`（运行时色板，与系统深浅色解耦）
+- 新增 `pages/Settings.ets`：字号/行距/边距 5 档芯片 + 主题 2 芯片，**全页无滑块**；底部只写「核心数据不联网」
+- 阅读页 `onPageShow` 重读偏好 → 签名变了才重排 → **按字符偏移复原位置**（切档位不跳页）
+- 书架/阅读/设置三页全部切到 `Palette`（`$r('app.color.*')` 只留窗口背景）
+
+**M4 —— EPUB 全链路（自研 zip + inflate + OPF/NCX + XHTML）**
+- 新增 `engine/zip/Inflate.ets`（raw DEFLATE：stored / fixed / dynamic 三种块）、`engine/zip/ZipReader.ets`（中央目录 + **按需取条目，不解压到磁盘**）
+- 新增 `engine/text/Utf8Decode.ets`（纯 TS，非法序列 → U+FFFD）
+- 新增 `engine/epub/{Xml,Opf,Xhtml,EpubParse}.ets` 与设备层 `engine/parser/EpubParser.ets`；`BookSource` 加 `EpubSource`；`BookDb` 的 chapters 加 `href` 列（含幂等迁移）；导入时用 OPF 的书名/作者
+- 新增 `test/zipfixture.ts`：在内存里现造**真实合法 zip**（正确 CRC32 + 真实 deflate），避免把版权书塞进仓库
+- 测试运行器补 `resolveExtensions`（否则 esbuild 解析不到 ArkTS 的无扩展名 `.ets` 导入）
+- 单测 **30 → 52**
+
+**对真实书的验证（关键一步）**
+- 用 calibre 生成的真实出版 epub（3.4MB / 103 条目 / 14 章 / 11.7 万字）在本机跑完整链路：
+  中央目录 3ms、整本解析 **7ms**、全书解压+转文本 **22ms**、书名/作者/封面/目录标题全对
+- 顺手用系统 `unzip -t` 交叉验证测试 fixture 本身是合法 zip（证明 fixture 与读者都是对的）
+- **逮到两个真 bug**（都补了回归测试）：① 嵌套 NCX（父 navPoint 有 navLabel 无 content）按顺序配对 → 整本目录**错位一章**；② 小节标题（带 `#fragment`）会**盖住章级标题**
+- 过程脚本跑完即删，不进仓库（版权 + 体积）
+
+**M6 —— 打磨与文档**
+- `README.md` 重写（当前状态、架构、自研理由、**本地如何验证真实书**、构建发布、许可证红线）
+- `docs/v1-design.md`：修掉 `LayoutStyle` 档位范围与实际不符（1|2|3 → 1~5）、补真实书实测性能数据
+- `docs/ui-mockup-v2.html`：与实现 **1:1** 的 UI 复审稿（5 屏：书架 / 阅读 / 浮出细栏 / 目录浮层 / 设置）
+- `task_plan.md`：Phase 1/4/5/6 置为完成、Phase 8 列清真机项、决策表 +4 条、错误表 +5 条
+
+### Test Results
+| Test | Expected | Actual | Status |
+|------|----------|--------|--------|
+| 纯逻辑单测（本地 + CI） | 全绿 | **52/52** | ✅ |
+| CI 编译（M3：graphics.text / Swiper 交互 / 主题） | 通过 | 第 2 轮通过（首轮 5 个 ArkTS 错误已修） | ✅ |
+| CI 编译（M4：自研 zip/inflate/XML） | 通过 | 一次通过 | ✅ |
+| 真实出版 EPUB 端到端（本机 Node） | 目录正确、正文正确 | 14 章标题全对；正文首尾都对得上；22ms | ✅ |
+| HAP 体积 | ≤5MB | **115 KB** | ✅ |
+| 冷启动 / 翻页掉帧 / 大文件内存 | — | 本机无设备，**未验证** | ⏳ |
+
+### Errors
+| Error | Resolution |
+|-------|------------|
+| ArkTS `arkts-no-obj-literals-as-types`（`Array<{start,end}>`）| 对象字面量不能当类型声明 → 改用 `PageRange` 接口 |
+| ArkTS `10505001 Property 'opacity' is not assignable to CustomComponent` | 字段名撞上 ArkUI 属性方法 → 改名 `pageOpacity`（同类：`visibility`/`offset`/`position`/`id` 都要避） |
+| esbuild `Could not resolve './Xxx'` | ArkTS 内部导入不写扩展名 → 运行器显式 `resolveExtensions: ['.ets', ...]` |
+| 嵌套 NCX 目录错位一章 | 改 `scanTags` + 栈的**结构级配对**（见上） |
+| 小节标题盖住章级标题 | 章级（无 fragment）优先，仅当该文件无章级标题才退回小节标题 |
+| `gh run watch` 抓到上一轮 run（时序） | 改成轮询 `gh run list -L1` 直到 `completed` |
+| `curl --socks5-hostname` 不被本机 curl 识别 | 换标准写法 `-x socks5h://127.0.0.1:1086` |
+
+### Next
+- **等党哥**：要不要打首个 tag 发 Release（发版需下令）
+- **等设备**：M6 真机项（冷启动 ≤1s、翻页掉帧、50MB TXT、字体缩放下排版一致性 —— 最后一条是最高风险项）
+- **M7**：Ads Kit 广告模块（默认联网呈现、无开关、无引导、断网静默降级、绝不出现在阅读页）

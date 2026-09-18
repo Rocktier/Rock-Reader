@@ -95,10 +95,10 @@ interface Paginator {
 }
 
 interface LayoutStyle {                 // 只暴露"档位"，不暴露连续值（无滑块铁律）
-  fontSizeLevel: 1|2|3|4|5;
-  lineHeightLevel: 1|2|3;
-  marginLevel: 1|2|3;
-  fontFamily: string;
+  fontSizeLevel: number;                // 1~5（表见 §8「档位 → 实际数值」）
+  lineHeightLevel: number;              // 1~5
+  marginLevel: number;                  // 1~5
+  fontFamily: string;                   // v1 固定系统字体
 }
 
 interface PageTable {
@@ -155,7 +155,7 @@ interface AdPolicy {
 | 冷启动 ≤ 1s | 首屏只读书架表；非首屏模块懒加载；DB 异步查询 |
 | 翻页 < 16ms | 页表命中 → 不做任何测量；排版全在 taskpool |
 | 内存 | 只持当前章文本 + ±2 页；大 TXT **不整本入内存**，按字节偏移随机读 |
-| 排版成本 | 整章**一次** `layoutSync` 拿全部行区间，**不逐页反复测量** |
+| 排版成本 | 整章**一次** `layoutSync` 拿全部行区间，**不逐页反复测量**。**实测（2026-09-18，真实出版 EPUB）**：3.4MB / 103 条目 / 11.7 万字，中央目录解析 3ms、整本解析 7ms、全书解压+转文本 22ms |
 | HAP ≤ 5MB | 0 三方库；zip 自研；矢量图标；只留 `arm64-v8a`；开混淆与资源压缩 |
 
 ---
