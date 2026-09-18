@@ -13,8 +13,10 @@ permissions:
   contents: read
 
 env:
-  # 公开可下载的 OpenHarmony SDK 版本（用于编译校验；HarmonyOS SDK 下载需登录华为账号）
+  # 公开可下载的 OpenHarmony SDK（编译校验用；HarmonyOS SDK 下载需登录华为账号）
   OHOS_SDK_VER: 6.0.0.2-Release
+  # 首次下载 3.2GB 很慢，靠 actions/cache 之后不再重复下载
+  SDK_ROOT: ${{ github.workspace }}/.ohos-sdk
 
 jobs:
   # ---------------------------------------------------------------
@@ -40,12 +42,17 @@ jobs:
           fi
 
   # ---------------------------------------------------------------
-  # 作业 2：ArkTS 编译校验 —— 空工程/代码能否编译通过、产出 HAP
+  # 作业 2：ArkTS 编译校验 → HAP
   # ---------------------------------------------------------------
   build-hap:
     name: ArkTS 编译校验 → HAP
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # 首次（无缓存）要下 3.2GB SDK，40 分钟不够；有缓存后本作业约 3~5 分钟
+    timeout-minutes: 180
+    env:
+      DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+      HOS_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+      OHOS_BASE_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -53,11 +60,16 @@ jobs:
         with:
           node-version: '20'
 
+      - name: 磁盘与缓存自检
+        run: |
+          df -h / | tail -1
+          ls -d "${SDK_ROOT}" 2>/dev/null && du -sh "${SDK_ROOT}" || echo "无 SDK 缓存"
+
       - name: 缓存 OpenHarmony SDK
         uses: actions/cache@v4
         with:
-          path: ${{ github.workspace }}/.ohos-sdk
-          key: ohos-sdk-${{ env.OHOS_SDK_VER }}
+          path: ${{ env.SDK_ROOT }}
+          key: ohos-sdk-${{ env.OHOS_SDK_VER }}-v2
 
       - name: 准备 OpenHarmony SDK
         run: bash .github/scripts/setup-ohos-sdk.sh "${OHOS_SDK_VER}"
@@ -65,16 +77,12 @@ jobs:
       - name: 环境自检
         run: |
           echo "node: $(node -v)"
-          echo "npm : $(npm -v)"
           echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
           ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head -20
-          ./hvigorw --version || true
+          du -sh "${DEVECO_SDK_HOME}" 2>/dev/null || true
+          df -h / | tail -1
 
       - name: 构建 HAP（product=ci）
-        env:
-          DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
-          HOS_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
-          OHOS_BASE_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
         run: |
           ./hvigorw clean --no-daemon || true
           ./hvigorw assembleHap --mode module -p product=ci -p buildMode=debug --no-daemon
@@ -82,11 +90,11 @@ jobs:
       - name: 整理产物
         if: always()
         run: |
-          echo "=== 产物 ==="
+          echo "=== 搜索产物 ==="
           find entry/build -name '*.hap' -o -name '*.app' 2>/dev/null | head -20 || true
           mkdir -p /tmp/artifacts
           find entry/build -name '*.hap' -exec cp {} /tmp/artifacts/ \; 2>/dev/null || true
-          ls -lh /tmp/artifacts || true
+          ls -lh /tmp/artifacts 2>/dev/null || true
 
       - name: 上传 HAP
         if: always()
