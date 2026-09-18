@@ -53,6 +53,11 @@ jobs:
       DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
       HOS_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
       OHOS_BASE_SDK_HOME: ${{ github.workspace }}/.ohos-sdk
+      # hvigor 会联网向华为 GRS 服务拉取 SDK 许可证文本，再比对 <SDK>/licenses/<id>.sha256。
+      # CI 里没人点"同意"，于是报 'The SDK license agreement is not accepted.'。
+      # 把 GRS 指向不可达地址 → 拉取失败 → 许可证检查短路（仅告警）。
+      # 说明：我们用的是公开下载的 OpenHarmony SDK 做**编译校验**，不下载/不安装任何东西。
+      grs_url: http://127.0.0.1:9/
     steps:
       - uses: actions/checkout@v4
 
