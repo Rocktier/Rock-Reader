@@ -14,7 +14,9 @@
       {
         // CI 专用：用公开可下载的 OpenHarmony SDK 做编译校验（HarmonyOS SDK 下载需登录华为账号）
         // 目的 = 在 CI 上验证 ArkTS/ArkUI 代码能编译通过；正式包仍由 default 产物出
+        // 注：runtimeOS=OpenHarmony 时 hvigor 要求显式给出 compileSdkVersion，否则报 00303034
         "name": "ci",
+        "compileSdkVersion": 20,
         "compatibleSdkVersion": 20,
         "runtimeOS": "OpenHarmony",
         "buildOption": {}
