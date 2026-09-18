@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RockReader v1 — UI 草案</title>
+<style>
+/* ===== 家族 token（来源：Rocktier家族软件通用准则 第四章） ===== */
+:root{
+  --bg:#000000;
+  --card:rgba(255,255,255,.03);
+  --line:rgba(255,255,255,.14);
+  --line-soft:rgba(255,255,255,.07);
+  --text:#ffffff;
+  --text2:rgba(255,255,255,.55);
+  --text3:rgba(255,255,255,.32);
+  --red:#FF4A3D;
+  --g100:#1A1A1A; --g200:#2D2D2D; --g300:#404040; --g400:#737373; --g500:#A6A6A6;
+  --r-card:12px;      /* 卡片/面板 */
+  --r-bezel:28px;     /* 机身 */
+  --r-cover:0px;      /* 书封：0 圆角（已确认） */
+  --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue","PingFang SC","Microsoft YaHei",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--sans);
+  min-height:100vh;padding:48px 32px 72px;
+  background-image:radial-gradient(rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:22px 22px;
+}
+/* ===== 页面头部 ===== */
+.page-head{max-width:1560px;margin:0 auto 44px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap}
+.wordmark{font-size:26px;font-weight:700;letter-spacing:.02em;display:flex;align-items:center;gap:6px}
+.wordmark i{width:8px;height:8px;background:var(--red);border-radius:50%;display:inline-block;margin-bottom:12px}
+.page-head .meta{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);padding-bottom:6px}
+.page-head .note{margin-left:auto;font-size:12px;color:var(--text2);padding-bottom:4px;max-width:420px;line-height:1.7}
+
+/* ===== 手机排列 ===== */
+.stage{max-width:1560px;margin:0 auto;display:flex;flex-wrap:wrap;gap:44px;justify-content:center}
+.device{display:flex;flex-direction:column;gap:14px}
+.caption{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3)}
+.caption b{color:var(--text);font-weight:400}
+.screen{
+  width:360px;height:748px;background:var(--bg);border:1px solid var(--line);
+  border-radius:var(--r-bezel);overflow:hidden;position:relative;
+  display:flex;flex-direction:column;
+  box-shadow:0 24px 60px rgba(0,0,0,.7);
+}
+/* 状态栏：刻意不画信号/WiFi —— 本应用无联网权限 */
+.statusbar{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font-family:var(--mono);font-size:11px;color:var(--text2);flex:0 0 auto}
+.statusbar .bat{display:flex;gap:4px}
+.statusbar .bat i{width:2px;height:8px;background:var(--text2);display:block;border-radius:.5px}
+.statusbar .bat i:nth-child(1){height:4px;margin-top:4px}
+.statusbar .bat i:nth-child(2){height:6px;margin-top:2px}
+
+/* ===== 通用零件 ===== */
+.mono{font-family:var(--mono)}
+.chip{
+  border:1px solid var(--line);background:transparent;color:var(--text2);
+  font-family:var(--mono);font-size:12px;padding:7px 0;min-width:44px;text-align:center;
+  border-radius:0;letter-spacing:.02em;
+}
+.chip.on{background:var(--text);color:#000;border-color:var(--text)}
+.chip-row{display:flex;gap:6px}
+.segbar{display:flex;gap:2px;height:2px}
+.segbar i{flex:1;background:var(--line-soft);display:block}
+.segbar i.on{background:var(--text)}
+.dotmatrix{display:inline-grid;gap:1px;vertical-align:middle;font-size:0}
+.dotmatrix b{width:2px;height:2px;display:block;background:transparent}
+.dotmatrix b.f{background:var(--text)}
+
+/* ===== 1. 书架 ===== */
+.shelf{padding:6px 22px 0;display:flex;flex-direction:column;gap:18px;flex:1;overflow:hidden}
+.shelf-head{display:flex;align-items:baseline;gap:10px}
+.shelf-head h1{font-size:22px;font-weight:600;letter-spacing:.01em}
+.shelf-head .count{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.shelf-head .add{margin-left:auto;width:30px;height:30px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--text);line-height:1}
+.continue{
+  border:1px solid var(--line);background:var(--card);border-radius:var(--r-card);
+  padding:14px;display:flex;gap:14px;position:relative;
+}
+.continue .badge{position:absolute;top:12px;right:12px;width:6px;height:6px;border-radius:50%;background:var(--red)}
+.cover{width:58px;height:82px;border-radius:var(--r-cover);flex:0 0 auto;position:relative;overflow:hidden;border:1px solid var(--line-soft)}
+.cover.sm{width:74px;height:106px}
+.cover .init{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:26px;color:rgba(255,255,255,.16);font-weight:600}
+.cover::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.16) 1px,transparent 1px);background-size:7px 7px;opacity:.5}
+.cover.v1{background:linear-gradient(150deg,#242424,#0c0c0c)}
+.cover.v2{background:linear-gradient(150deg,#2f2f2f,#111)}
+.cover.v3{background:linear-gradient(150deg,#1c1c1c,#050505)}
+.cover.v4{background:linear-gradient(150deg,#333,#0e0e0e)}
+.cover.v5{background:linear-gradient(150deg,#262626,#0a0a0a)}
+.cover.v6{background:linear-gradient(150deg,#1a1a1a,#000)}
+.continue .info{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
+.continue .t{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.continue .a{font-size:11.5px;color:var(--text2)}
+.continue .ch{font-family:var(--mono);font-size:10.5px;color:var(--text3);letter-spacing:.04em;margin-top:auto}
+.continue .segbar{margin-top:6px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 14px}
+.book{display:flex;flex-direction:column;gap:7px}
+.book .t{font-size:11.5px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.book .p{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.06em;display:flex;justify-content:space-between}
+.book .cover.sm{width:100%;height:auto;aspect-ratio:2/3;display:block}
+.shelf-foot{margin-top:auto;padding:14px 0 20px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.08em;text-transform:uppercase}
+
+/* ===== 2/3. 阅读页 ===== */
+.reader{padding:0;flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+.reader .text{flex:1;padding:6px 22px 0;font-size:18px;line-height:1.9;color:var(--text);letter-spacing:.01em}
+.reader .text p{margin-bottom:0}
+.reader .text p+p{margin-top:0}
+.reader .text .indent{text-indent:2em}
+.footer{flex:0 0 auto;padding:0 22px 18px;display:flex;flex-direction:column;gap:8px}
+.footer .row{display:flex;justify-content:space-between;align-items:flex-end}
+.footer .ch{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.08em}
+.footer .pg{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.08em;display:flex;align-items:center;gap:6px}
+/* 浮出菜单状态 */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.72);opacity:0;pointer-events:none}
+.screen.menu .scrim{opacity:1}
+.topbar,.bottombar{position:absolute;left:0;right:0;background:#0a0a0a;border-color:var(--line-soft);border-style:solid;border-width:0;opacity:0;transform:translateY(-6px);transition:none}
+.screen.menu .topbar,.screen.menu .bottombar{opacity:1;transform:none}
+.topbar{top:0;border-bottom-width:1px;padding:16px 18px 14px;padding-top:52px}
+.topbar .line1{display:flex;align-items:center;gap:12px}
+.topbar .back{font-size:17px;color:var(--text2)}
+.topbar .bk{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar .cp{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.08em}
+.topbar .acts{margin-left:auto;display:flex;gap:8px}
+.topbar .acts span{border:1px solid var(--line);padding:4px 8px;font-family:var(--mono);font-size:9.5px;color:var(--text2);letter-spacing:.08em}
+.bottombar{bottom:0;border-top-width:1px;padding:16px 18px 26px}
+.tabs{display:flex;justify-content:space-between;align-items:flex-end}
+.tab{display:flex;flex-direction:column;align-items:center;gap:8px;width:56px}
+.tab .glyph{width:22px;height:22px;position:relative}
+.tab .lbl{font-family:var(--mono);font-size:9px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase}
+.tab.on .lbl{color:var(--text)}
+/* CSS 画图标 */
+.g-line{position:absolute;left:0;right:0;height:1px;background:var(--text3)}
+.tab.on .g-line{background:var(--text)}
+.g-list i{position:absolute;left:0;right:0;height:1px;background:currentColor}
+.g-list{color:var(--text3)}
+.tab.on .g-list{color:var(--text)}
+.g-list i:nth-child(1){top:5px}.g-list i:nth-child(2){top:11px;right:6px}.g-list i:nth-child(3){top:17px}
+.g-aa{font-family:var(--mono);font-size:15px;color:var(--text3);display:flex;align-items:center;justify-content:center;height:100%}
+.tab.on .g-aa{color:var(--text)}
+.g-circle{border:1px solid var(--text3);border-radius:50%;width:22px;height:22px;overflow:hidden}
+.tab.on .g-circle{border-color:var(--text)}
+.g-circle::after{content:"";position:absolute;left:0;top:0;width:50%;height:100%;background:var(--text3)}
+.tab.on .g-circle::after{background:var(--text)}
+.g-dots{position:absolute;inset:0;background-image:radial-gradient(var(--text3) 1.2px,transparent 1.2px);background-size:8px 8px;background-position:2px 2px}
+.tab.on .g-dots{background-image:radial-gradient(var(--text) 1.2px,transparent 1.2px)}
+.panel{margin-top:18px;border-top:1px solid var(--line-soft);padding-top:14px}
+.panel .plabel{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px}
+
+/* ===== 4. 设置 ===== */
+.settings{padding:6px 22px 0;display:flex;flex-direction:column;gap:22px;flex:1;overflow:hidden}
+.settings h1{font-size:22px;font-weight:600}
+.group{display:flex;flex-direction:column;gap:10px}
+.group .glabel{font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.12em;text-transform:uppercase;display:flex;justify-content:space-between}
+.group .glabel em{font-style:normal;color:var(--text2)}
+.priv{margin-top:auto;margin-bottom:20px;border-top:1px solid var(--line-soft);padding-top:14px;display:flex;gap:10px;align-items:flex-start}
+.priv .lock{width:14px;height:14px;border:1px solid var(--text3);position:relative;flex:0 0 auto;margin-top:2px}
+.priv .lock::after{content:"";position:absolute;left:2px;right:2px;top:3px;height:1px;background:var(--text3)}
+.priv p{font-size:11px;line-height:1.7;color:var(--text2)}
+.priv p b{font-weight:400;color:var(--text3);font-family:var(--mono);font-size:10px;letter-spacing:.06em}
+
+/* ===== 底部：token 与已定决策 ===== */
+.foot{max-width:1560px;margin:64px auto 0;border-top:1px solid var(--line-soft);padding-top:26px;display:flex;gap:56px;flex-wrap:wrap}
+.foot section{min-width:260px}
+.foot h3{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text3);margin-bottom:14px;font-weight:400}
+.swatches{display:flex;gap:10px;flex-wrap:wrap}
+.sw{display:flex;flex-direction:column;gap:6px;align-items:center}
+.sw i{width:38px;height:38px;border:1px solid var(--line);display:block}
+.sw span{font-family:var(--mono);font-size:9px;color:var(--text3)}
+.foot ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.foot li{font-size:12px;color:var(--text2);line-height:1.6;display:flex;gap:8px}
+.foot li b{color:var(--text);font-weight:400}
+.foot li::before{content:"—";color:var(--text3);font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <div class="wordmark">RockReader<i></i></div>
+  <div class="meta">v1 ui draft · 2026-09-18 · 360×748</div>
+  <div class="note">HTML 1:1 还原（本机无鸿蒙环境，不能跑 ArkUI）。字号/间距/圆角/色值即为实现依据；点阵字为纯 CSS 绘制，非字体。</div>
+</div>
+
+<div class="stage">
+
+  <!-- ========== 1. 书架 ========== -->
+  <div class="device">
+    <div class="screen">
+      <div class="statusbar"><span class="mono">9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="shelf">
+        <div class="shelf-head">
+          <h1>书架</h1><span class="count">12 本</span>
+          <span class="add">＋</span>
+        </div>
+
+        <!-- 继续阅读（启动停在这里，不自动跳书） -->
+        <div class="continue">
+          <span class="badge"></span>
+          <div class="cover v1"><span class="init">岩</span></div>
+          <div class="info">
+            <div class="t">岩层之下</div>
+            <div class="a">佚名</div>
+            <div class="ch">第 12 章 · 38%</div>
+            <div class="segbar">
+              <i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="book"><div class="cover v2 sm"><span class="init">砂</span></div><div class="t">砂与砾</div><div class="p"><span>100%</span><span>读完</span></div></div>
+          <div class="book"><div class="cover v3 sm"><span class="init">潮</span></div><div class="t">潮汐表</div><div class="p"><span>62%</span><span>3 天前</span></div></div>
+          <div class="book"><div class="cover v4 sm"><span class="init">铁</span></div><div class="t">铁与灰</div><div class="p"><span>7%</span><span>上周</span></div></div>
+          <div class="book"><div class="cover v5 sm"><span class="init">雾</span></div><div class="t">雾港手记</div><div class="p"><span>24%</span><span>上周</span></div></div>
+          <div class="book"><div class="cover v6 sm"><span class="init">苔</span></div><div class="t">苔原</div><div class="p"><span>0%</span><span>未读</span></div></div>
+          <div class="book"><div class="cover v1 sm"><span class="init">尘</span></div><div class="t">尘与钟</div><div class="p"><span>0%</span><span>未读</span></div></div>
+        </div>
+
+        <div class="shelf-foot"><span>本地 · 未联网</span><span data-dot="1.2 GB" data-dot-size="1"></span></div>
+      </div>
+    </div>
+    <div class="caption"><b>1 · 书架</b><br>启动停在此页，不自动跳书</div>
+  </div>
+
+  <!-- ========== 2. 阅读页（沉浸） ========== -->
+  <div class="device">
+    <div class="screen">
+      <div class="statusbar"><span class="mono">9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="reader">
+        <div class="text">
+          <p class="indent">那天夜里下了雨。他把台灯拧到最暗的一档，翻开那本读了三个月还没读完的旧书。</p>
+          <p class="indent">纸页的页码是印上去的，翻过一页就少一页。这件事让人安心——进度是看得见的，退路是关得上的。</p>
+          <p class="indent">他读到第一百一十七页，停住。窗外雨声盖过了楼下的车流，房间里只剩下翻页时纸面摩擦的细响。他把手指按在那一行下面，像按住一个刚刚稳住的念头。</p>
+          <p class="indent">书里写的是另一个人如何熬过二十年。他忽然想，所谓耐心，也许只是把一件小事重复到别人放弃为止。</p>
+          <p class="indent">灯灭之前，他在页边画了一道很短的横线，然后合上书，把它放回桌上原来的位置。</p>
+        </div>
+        <div class="footer">
+          <div class="segbar">
+            <i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="row">
+            <span class="ch">第十二章 · 雨夜</span>
+            <span class="pg"><span data-dot="117/347" data-dot-size="1"></span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>2 · 阅读页（沉浸）</b><br>零常驻控件，只有页脚数码</div>
+  </div>
+
+  <!-- ========== 3. 阅读页（点屏中间） ========== -->
+  <div class="device">
+    <div class="screen menu">
+      <div class="statusbar"><span class="mono">9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="reader">
+        <div class="text">
+          <p class="indent">那天夜里下了雨。他把台灯拧到最暗的一档，翻开那本读了三个月还没读完的旧书。</p>
+          <p class="indent">纸页的页码是印上去的，翻过一页就少一页。这件事让人安心——进度是看得见的，退路是关得上的。</p>
+          <p class="indent">他读到第一百一十七页，停住。窗外雨声盖过了楼下的车流，房间里只剩下翻页时纸面摩擦的细响。</p>
+        </div>
+        <div class="footer">
+          <div class="segbar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="row">
+            <span class="ch">第十二章 · 雨夜</span>
+            <span class="pg"><span data-dot="117/347" data-dot-size="1"></span></span>
+          </div>
+        </div>
+
+        <div class="scrim"></div>
+
+        <div class="topbar">
+          <div class="line1">
+            <span class="back">‹</span>
+            <span class="bk">岩层之下</span>
+            <span class="cp">EPUB · 1.8 MB</span>
+            <span class="acts"><span>目录</span><span>更多</span></span>
+          </div>
+        </div>
+
+        <div class="bottombar">
+          <div class="tabs">
+            <div class="tab on">
+              <div class="glyph g-list"><i></i><i></i><i></i></div>
+              <span class="lbl">目录</span>
+            </div>
+            <div class="tab">
+              <div class="glyph g-aa">Aa</div>
+              <span class="lbl">字号</span>
+            </div>
+            <div class="tab">
+              <div class="glyph g-circle"></div>
+              <span class="lbl">主题</span>
+            </div>
+            <div class="tab">
+              <div class="glyph g-dots"></div>
+              <span class="lbl">更多</span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="plabel">字号 · 档位</div>
+            <div class="chip-row">
+              <span class="chip">1</span><span class="chip">2</span>
+              <span class="chip on">3</span>
+              <span class="chip">4</span><span class="chip">5</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="plabel">行距 · 档位</div>
+            <div class="chip-row">
+              <span class="chip">1</span><span class="chip on">2</span><span class="chip">3</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>3 · 点屏幕中间</b><br>上下细栏浮出 · 档位芯片（无滑块）</div>
+  </div>
+
+  <!-- ========== 4. 设置 ========== -->
+  <div class="device">
+    <div class="screen">
+      <div class="statusbar"><span class="mono">9:41</span><span class="bat"><i></i><i></i><i></i></span></div>
+      <div class="settings">
+        <h1>设置</h1>
+
+        <div class="group">
+          <div class="glabel"><span>字号</span><em>档 3</em></div>
+          <div class="chip-row">
+            <span class="chip" style="flex:1">1</span><span class="chip" style="flex:1">2</span>
+            <span class="chip on" style="flex:1">3</span>
+            <span class="chip" style="flex:1">4</span><span class="chip" style="flex:1">5</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>行距</span><em>档 3</em></div>
+          <div class="chip-row">
+            <span class="chip" style="flex:1">1</span>
+            <span class="chip on" style="flex:1">3</span>
+            <span class="chip" style="flex:1">5</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>页边距</span><em>档 3</em></div>
+          <div class="chip-row">
+            <span class="chip" style="flex:1">1</span>
+            <span class="chip on" style="flex:1">3</span>
+            <span class="chip" style="flex:1">5</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>主题</span></div>
+          <div class="chip-row">
+            <span class="chip" style="flex:1">跟随系统</span>
+            <span class="chip" style="flex:1">昼</span>
+            <span class="chip on" style="flex:1">夜</span>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="glabel"><span>翻页</span><em>v1 不做仿真</em></div>
+          <div class="chip-row">
+            <span class="chip on" style="flex:1">横滑</span>
+            <span class="chip" style="flex:1">滚动</span>
+          </div>
+        </div>
+
+        <div class="priv">
+          <span class="lock"></span>
+          <p><b>CORE DATA STAYS LOCAL</b><br>核心数据不联网 · 书籍与进度全部在本机处理</p>
+        </div>
+      </div>
+    </div>
+    <div class="caption"><b>4 · 设置</b><br>全档位芯片 · 全页无滑块</div>
+  </div>
+
+</div>
+
+<div class="foot">
+  <section>
+    <h3>色板（家族 token）</h3>
+    <div class="swatches">
+      <div class="sw"><i style="background:#000"></i><span>#000000</span></div>
+      <div class="sw"><i style="background:#fff"></i><span>#FFFFFF</span></div>
+      <div class="sw"><i style="background:#FF4A3D"></i><span>#FF4A3D</span></div>
+      <div class="sw"><i style="background:#1A1A1A"></i><span>#1A1A1A</span></div>
+      <div class="sw"><i style="background:#2D2D2D"></i><span>#2D2D2D</span></div>
+      <div class="sw"><i style="background:#404040"></i><span>#404040</span></div>
+      <div class="sw"><i style="background:#737373"></i><span>#737373</span></div>
+      <div class="sw"><i style="background:#A6A6A6"></i><span>#A6A6A6</span></div>
+    </div>
+  </section>
+  <section>
+    <h3>三条纪律（本次已落实）</h3>
+    <ul>
+      <li><b>正文不用点阵</b>：点阵只给页码/进度/章号这类"数码"</li>
+      <li><b>零滑块</b>：字号/行距/边距全部档位芯片</li>
+      <li><b>零常驻控件</b>：阅读页只在点屏中间时浮出细栏</li>
+    </ul>
+  </section>
+  <section>
+    <h3>已确认的三个决定</h3>
+    <ul>
+      <li>书封 <b>0 圆角</b>，卡片 12</li>
+      <li>启动 <b>停在书架</b>，不自动跳书</li>
+      <li>翻页 <b>横滑 + 淡化</b>，v1 不做仿真</li>
+    </ul>
+  </section>
+  <section>
+    <h3>点阵字实现</h3>
+    <ul>
+      <li>纯 CSS 5×7 点栅格绘制，<b>不引入任何字体文件</b></li>
+      <li>仅用于页码、进度、容量等数字</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+/* 5×7 点阵字：只覆盖数字与常用符号（页码/百分比/容量），不引入字体文件 */
+const DOT_FONT = {
+  '0':['01110','10001','10011','10101','11001','10001','01110'],
+  '1':['00100','01100','00100','00100','00100','00100','01110'],
+  '2':['01110','10001','00001','00010','00100','01000','11111'],
+  '3':['11111','00010','00100','00010','00001','10001','01110'],
+  '4':['00010','00110','01010','10010','11111','00010','00010'],
+  '5':['11111','10000','11110','00001','00001','10001','01110'],
+  '6':['00110','01000','10000','11110','10001','10001','01110'],
+  '7':['11111','00001','00010','00100','01000','01000','01000'],
+  '8':['01110','10001','10001','01110','10001','10001','01110'],
+  '9':['01110','10001','10001','01111','00001','00010','01100'],
+  '/':['00001','00001','00010','00100','01000','10000','10000'],
+  '.':['00000','00000','00000','00000','00000','00110','00110'],
+  ':':['00000','00100','00100','00000','00100','00100','00000'],
+  '%':['11001','11010','00010','00100','01000','01011','10011'],
+  ' ':['00000','00000','00000','00000','00000','00000','00000'],
+  'G':['01110','10001','10000','10111','10001','10001','01110'],
+  'B':['11110','10001','10001','11110','10001','10001','11110'],
+  'M':['10001','11011','10101','10001','10001','10001','10001'],
+  'R':['11110','10001','10001','11110','10100','10010','10001'],
+  'O':['01110','10001','10001','10001','10001','10001','01110'],
+  'C':['01110','10001','10000','10000','10000','10001','01110'],
+  'K':['10001','10010','10100','11000','10100','10010','10001'],
+  'A':['01110','10001','10001','11111','10001','10001','10001'],
+  'E':['11111','10000','10000','11110','10000','10000','11111'],
+  'D':['11110','10001','10001','10001','10001','10001','11110'],
+  'T':['11111','00100','00100','00100','00100','00100','00100'],
+  'L':['10000','10000','10000','10000','10000','10000','11111'],
+  'I':['11111','00100','00100','00100','00100','00100','11111'],
+  'N':['10001','11001','10101','10011','10001','10001','10001'],
+  'S':['01111','10000','10000','01110','00001','00001','11110'],
+  'U':['10001','10001','10001','10001','10001','10001','01110'],
+  'Y':['10001','10001','01010','00100','00100','00100','00100'],
+  'P':['11110','10001','10001','11110','10000','10000','10000'],
+  'V':['10001','10001','10001','10001','10001','01010','00100'],
+  'W':['10001','10001','10001','10101','10101','11011','10001'],
+  'F':['11111','10000','10000','11110','10000','10000','10000'],
+  'H':['10001','10001','10001','11111','10001','10001','10001'],
+  'X':['10001','10001','01010','00100','01010','10001','10001']
+};
+
+function renderDot(el){
+  const str = el.dataset.dot || '';
+  const d = Number(el.dataset.dotSize || 2);
+  const gap = 1;
+  const out = [];
+  for (const ch of str.toUpperCase()) {
+    const g = DOT_FONT[ch] || DOT_FONT[' '];
+    const cell = document.createElement('div');
+    cell.className = 'dotmatrix';
+    cell.style.gridTemplateColumns = `repeat(5,${d}px)`;
+    cell.style.gap = gap + 'px';
+    cell.style.marginRight = gap * 2 + 'px';
+    for (const row of g) {
+      for (const bit of row) {
+        const b = document.createElement('b');
+        b.style.width = d + 'px';
+        b.style.height = d + 'px';
+        if (bit === '1') b.className = 'f';
+        cell.appendChild(b);
+      }
+    }
+    out.push(cell);
+  }
+  el.replaceChildren(...out);
+  el.style.display = 'inline-flex';
+  el.style.alignItems = 'center';
+}
+
+document.querySelectorAll('[data-dot]').forEach(renderDot);
+</script>
+</body>
+</html>

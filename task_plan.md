@@ -4,7 +4,9 @@
 > 铁律全文：`..\planning\findings.md` 顶部常驻章节。
 
 ## Goal
-做一个**纯本地、零联网**的鸿蒙电子书阅读器：导入本地书 → 解析 → 分页 → 阅读 → 记住进度。首版打 TXT，跑通全链路后再上 EPUB。
+做一个**纯本地、零联网**的鸿蒙电子书阅读器：导入本地书 → 解析 → 分页 → 阅读 → 记住进度。
+**v1 范围 = TXT + EPUB 一起上**（党哥 2026-09-18 拍板）；阅读内核**自研为主**，Reader Kit 只留可插拔适配器位。
+技术底座与调研结论见 `findings.md`「调研结论（2026-09-18）」；UI 方向 = 家族 Nothing OS 风格（黑白单色 + 点阵数码 + 红点 `#FF4A3D`）。
 
 ## Current Phase
 Phase 1
@@ -49,11 +51,13 @@ Phase 1
 - [ ] 阅读进度实时落库
 - **Status:** pending
 
-### Phase 6: EPUB（TXT 跑通后）
+### Phase 6: EPUB（**已并入 v1**，党哥 2026-09-18 拍板）
 - [ ] zip 解析（优先 `@ohos.zlib`，不行自己写中央目录 + raw inflate）
-- [ ] `container.xml` / OPF / NCX 解析（`@ohos.xml`）
-- [ ] 章节 HTML → 纯文本/富文本排版
+- [ ] `container.xml` / OPF / NCX / Nav 解析（`@ohos.xml`）
+- [ ] XHTML → 段落模型（只认基础标签；**v1 不解析 CSS**）
+- [ ] 交给同一个 `Paginator` 排版（与 TXT 共用管线）
 - **Status:** pending
+- ⚠️ 若 Reader Kit 开通条件核实通过 → 本 Phase 可整块换成 `ReaderKitParser` 适配器实现
 
 ### Phase 7: 打包与交付
 - [ ] `.github/workflows/build.yml`：Linux + `hvigorw assembleHap`
