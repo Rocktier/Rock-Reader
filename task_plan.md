@@ -62,6 +62,11 @@ Phase 1
 - ⚠️ 若 Reader Kit 开通条件核实通过 → 本 Phase 可整块换成 `ReaderKitParser` 适配器实现
 
 ### Phase 7: 打包与交付
+- [x] **发布流程（2026-09-18 实测通过）**：`git tag vX.Y.Z && git push origin vX.Y.Z` → CI 自动跑单测 + 编译 + **建 Release 并挂 HAP + SHA256SUMS**
+  - 带连字符的 tag（如 `v0.1.0-alpha.1`）自动标记为 Pre-release
+  - Release 说明里写明产物真相（product=ci / OpenHarmony / 未签名 / **不能装鸿蒙手机**），防止被误当可安装包分发
+  - 验证方式：临时 tag `v0.0.1-compile-check` 端到端跑通后已删除（仓库当前无 tag / 无 release）
+  - ⚠️ 发版时机仍遵守家族规矩：**党哥下令才打 tag**（准则第九章）
 - [ ] `.github/workflows/build.yml`：Linux + `hvigorw assembleHap`
 - [ ] 签名走 Secrets，产物上传 Artifacts
 - [ ] 单份 `build-profile.json5`：`compatibleSdkVersion = 20`、`targetSdkVersion = 24`（已放弃 HarmonyOS 4，不再出双包）
