@@ -9,7 +9,8 @@
 技术底座与调研结论见 `findings.md`「调研结论（2026-09-18）」；UI 方向 = 家族 Nothing OS 风格（黑白单色 + 点阵数码 + 红点 `#FF4A3D`）。
 
 ## Current Phase
-Phase 6（M6 打磨 + 真机验证准备）
+**Phase 8（真机验证）** —— M1~M6 与字体模块均已打磨完成；等党哥在 DevEco Studio 上按 `docs/device-test.md` 跑第一轮。
+（Phase 7 的"正式包"待党哥提供 commandline-tools 直链；Phase 9 字体模块已完成）
 
 ## Phases
 
@@ -81,12 +82,24 @@ Phase 6（M6 打磨 + 真机验证准备）
 - **Status:** in_progress（发布流程已通；正式包待 SDK）
 
 ### Phase 8: 真机验证（**M6 的剩余部分，本机做不到**）
+- [x] 党哥在 Windows 上装 DevEco Studio；华为开发者账号已注册并认证；验收清单已交付（`docs/device-test.md`）
 - [ ] 冷启动实测 ≤1s（CI 只能证编译与体积，启动耗时必须真机）
 - [ ] 翻页流畅度 / 掉帧（`layoutSync` 在真机上的实际耗时）
 - [ ] 大文件（50MB+ TXT）导入耗时与内存峰值
-- [ ] 系统字体缩放下排版是否与测量一致（**最高风险项**：测量用 `graphics.text`、渲染用 ArkUI `Text`，两者断行必须一致，否则页面会溢出）
-- [ ] 昼/夜主题、档位切换的真机观感
-- **Status:** pending（等设备 + 正式包）
+- [ ] 系统字体缩放下排版是否与测量一致（**最高风险项 B1**：测量用 `graphics.text`、渲染用 ArkUI `Text`，两者断行必须一致，否则页面会溢出）
+- [ ] **用下载字体再验一次末行（B4）**——验证测量端 `loadFontSync` 与渲染端 `registerFont` 真的同源
+- [ ] 昼/夜主题、档位切换、字体下载与切换的真机观感
+- **Status:** in_progress（等党哥第一轮结果）
+
+### Phase 9: 字体（按需下载，不占包体）—— ✅ 2026-09-18 完成
+- [x] **策略**：不内置字体文件（一款中文字体最小 9~11MB，会撞碎铁律 2）→ 按需下载（党哥 2026-09-18 定）
+- [x] **系统字体**：`getSystemFontList()` 列出系统已装字体供选（体积 0）
+- [x] **开源字体子集**：GB2312 全集 6763 字 → 楷 3.27MB / 宋 2.91MB；按 OFL 的 Reserved Font Name 规则改名并写入归属
+- [x] **多源下载 + 每源校验 SHA256**：jsDelivr CDN（国内可达）→ GitHub Release → GitHub raw
+- [x] **测量与渲染同源**：渲染用 `registerFont`，测量端额外 `FontCollection.loadFontSync(族名, 文件路径)`
+- [x] 字体资产托管在独立 `fonts` 分支 + tag `fonts-v1`（**不污染 main**）
+- [ ] 可选：子集扩到 GBK 全集（覆盖更多生僻字，体积约翻倍）—— 等党哥定
+- **Status:** done
 
 ## Key Questions
 1. ~~首版格式范围？~~ → **v1 = TXT + EPUB**（党哥 2026-09-18 拍板）
@@ -98,13 +111,13 @@ Phase 6（M6 打磨 + 真机验证准备）
 ## Decisions Made
 | Decision | Rationale |
 |----------|-----------|
-| 纯本地离线，零联网，不做书源 | 党哥定的边界 A；对齐家族铁律 3 |
-| 不申请 `ohos.permission.INTERNET` | 铁律 3；无账号、无同步、无统计 |
+| **核心数据不联网**（铁律 3 修订版，取代"零联网"） | 党哥 2026-09-18 修订：核心数据永不出设备、断网功能 100% 完整；联网只用于**广告**与**用户主动下载字体包**（两者都在家族 findings §8 登记）。不做书源、不上传任何数据 |
+| **声明 `ohos.permission.INTERNET`**（2026-09-18 起） | 仅两处：① 字体包下载（用户点击才发起）② 广告（M7 未接入）。断网时两者静默缺席，功能不受影响 |
 | 渲染用 ArkUI `Text`/`Span` 自绘分页，不用 Web 组件 | Web 组件重、慢，违背"极致小 / 极致快" |
 | 大文件不整体读入，走字节偏移索引 + 随机读 | 避免 OOM；几十 MB TXT 也能秒开 |
 | 优先不引三方库（zip / 编码必要时自己写最小实现） | 铁律 2：HAP ≤5MB |
-| 解析、分页走 `taskpool` | 铁律 1：UI 线程不干活 |
-| **只支持 HarmonyOS 6+**（`compatibleSdkVersion = 20` / `targetSdkVersion = 24`），放弃 HarmonyOS 4 | 党哥 2026-09-18 定：4.x 存量 <1%；单包更小、无 API 差异分支，贴合铁律 1、2 |
+| ~~解析、分页走 `taskpool`~~ → **改为按"章"在主线程序列化执行** | 实测推翻了原判断：整本 11.7 万字解压+转文本 **22ms**、单章 `layoutSync` 更小，远低于感知阈值；taskpool 反而要跨线程传 `LineMetrics`/`FontCollection`，风险大于收益。真机若卡再上 |
+| **兼容 HarmonyOS 5.0.4（API 16）及以上**，`targetSdkVersion = 6.0.0(20)`，单框架单包 | 代码只用 API 16 以内的能力（`graphics.text` API 12+、`getSystemFontList` API 10+）。早期文档写的"20/24"是笔误，已以配置为准改正（覆盖面更大，也不受 API 24 SDK 是否安装影响） |
 | 家族命名前缀 **Rock**（中文 Rock阅读 / 英文 RockReader） | 党哥 2026-09-18 定 |
 | **本机不搭鸿蒙环境**，只写代码；工程文件手写，不用 DevEco 向导 | 党哥 2026-09-18 定；构建与校验全靠 CI |
 | 三个 spike 改为"文档调研 + 防御式实现"，实测等首次 CI 构建 / 真机 | 本机无编译与运行能力，不能本地实测 |
@@ -113,6 +126,9 @@ Phase 6（M6 打磨 + 真机验证准备）
 | **排版按"章"在主线程序列化执行**（暂不做 taskpool） | 实测：整本 11.7 万字解压+转文本 22ms，单章 `layoutSync` 更小；taskpool 会引入传递 `LineMetrics`/`FontCollection` 的跨线程风险，收益不抵风险。真机若卡再上 |
 | **EPUB 段落模型 = 纯文本 + 空行分段**（不做富文本/标题样式） | 与 TXT 共用同一条分页/进度/设置管线；v1 不解析 CSS。代价：EPUB 标题不加粗。升级路径：`Paginator` 已按"文本 + 样式"接口预留 |
 | **主题写在 TS 色板里，不用资源限定符** | 主题由用户在应用内选（昼/夜），必须与系统深浅色解耦；`resources/dark/` 只能跟随系统 |
+| **字体不内置，按需下载**（党哥 2026-09-18 定） | 一款覆盖通用中文的字体最小 9~11MB，内置三款 = +33MB，会撞碎铁律 2（HAP ≤5MB）。改为：系统字体（0）+ 开源字体 GB2312 子集（3~4MB，用户点下载）；**每个源都校验 SHA256** |
+| **字体资产放独立 `fonts` 分支 + tag**，不进 main | 避免给每个 clone 都塞 6MB 二进制；jsDelivr 仍可按 tag 服务 |
+| **全流程不变量测试**（不丢字 / 不重复 / 页码双向一致 / 空章不崩） | 分页链路的 bug 几乎都表现为这四类；测"不变量"比测数值更能挡住回归（见 `test/flow.test.ts`） |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -122,3 +138,7 @@ Phase 6（M6 打磨 + 真机验证准备）
 | esbuild `Could not resolve './Xxx'`（无扩展名 .ets 导入） | 1 | `test/run.mjs` 显式加 `resolveExtensions: ['.ets', ...]`；ArkTS 源码里本来就不写扩展名 |
 | **嵌套 NCX 目录错位一章**（真实书实测发现） | 1 | 原实现按"text 与 content 出现顺序配对"；父 navPoint 有 navLabel 但无 content 时整体错位。改为 `scanTags` + 栈的**结构级配对**，并加回归测试 |
 | **小节标题盖住章级标题**（真实书实测发现） | 1 | 带 `#fragment` 的 navPoint 解析成同一文件路径，先到先得会赢。改为章级（无 fragment）优先，仅当该文件无章级标题时才退回小节标题 |
+| `OpenMode.TRUNCATE` 不存在（10505001） | 1 | 枚举名是 **`TRUNC`**（查 `@ohos.file.fs.d.ts` 枚举确认） |
+| 字体被误提交到 main（`git switch --orphan` 失败但管道让后续 `&&` 继续） | 1 | 未推送前 `git reset --hard origin/main` 撤销；字体保留在独立 `fonts` 分支 |
+| 国内镜像全部不可用（TUNA / USTC / 南大 `github-release`） | 1 | 这类镜像是**申请制**，我们仓库没入库 → 404。改为"字体做子集（3MB 级）+ jsDelivr 官方 CDN" |
+| jsDelivr 直连上游大仓库 403 / npm 上只有 woff2 | 1 | 上游仓库超限；npm 镜像的字体包是网页用 woff2，不适合本地注册 → 走自托管子集 |
