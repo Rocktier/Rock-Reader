@@ -5,14 +5,16 @@
 # 依据：家族 findings §7（CI 构建 HAP 可行性）+ §14（构建一律走 GitHub Actions）
 #
 # 设计要点（都是被 3.2GB 体积和 runner 磁盘逼出来的）：
-#   1. 只解压编译必需的组件（ets / js / toolchains），跳过 native 与 previewer
-#   2. 下载完 tar 立即删除，解压完中间目录立即删除（否则磁盘不够）
+#   1. 五个组件全都要解压（少一个 hvigor 就报 "Unable to find the following components"）
+#   2. 下载完 tar 立即删除、每个组件解压完立即删 zip、中间目录用完即删（否则磁盘不够）
 #   3. 第二套兼容布局用**符号链接**，避免缓存体积翻倍
 set -euo pipefail
 
 VER="${1:-6.0.0.2-Release}"
 ROOT="${PWD}/.ohos-sdk"
-COMPONENTS="ets js toolchains"
+# 注意：hvigor 会校验 compileSdkVersion 对应的全部组件，即使本项目是纯 ArkTS（无 C++）、
+# CI 也不用预览器，native 与 previewer 仍必须存在，否则报 native:20 / previewer:20 缺失。
+COMPONENTS="ets js native previewer toolchains"
 
 if [ -f "${ROOT}/.ready" ]; then
   echo "==> SDK 命中缓存，跳过下载"
@@ -59,6 +61,7 @@ for c in ${COMPONENTS}; do
     mv "${inner}"/* "${DEST}/${c}/" 2>/dev/null || true
     rmdir "${inner}" 2>/dev/null || true
   fi
+  rm -f "${z}"          # 解压完立刻删掉该组件的 zip，避免累计撑爆 runner 磁盘
   echo "  ${c} ok"
 done
 rm -rf "${RAW}"                      # 释放中间目录

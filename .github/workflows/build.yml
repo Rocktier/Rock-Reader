@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SDK_ROOT }}
-          key: ohos-sdk-${{ env.OHOS_SDK_VER }}-v2
+          key: ohos-sdk-${{ env.OHOS_SDK_VER }}-v3
 
       - name: 准备 OpenHarmony SDK
         run: bash .github/scripts/setup-ohos-sdk.sh "${OHOS_SDK_VER}"
