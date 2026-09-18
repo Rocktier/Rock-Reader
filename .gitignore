@@ -6,9 +6,11 @@ oh_modules/
 build/
 .hvigor/
 .cxx/
+.preview/
 **/build/
 **/.hvigor/
 **/.cxx/
+**/.preview/
 **/oh_modules/
 
 # 签名与密钥（绝不入库）
