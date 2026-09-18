@@ -22,14 +22,16 @@ Phase 1
 - [ ] 真机 / 首次 CI 构建成功后，回填 `findings.md` 的「spike 结果」表
 - **Status:** pending
 
-### Phase 2: 工程骨架（手写，不用 DevEco 向导）
-- [x] 建 `f:\AI\HarmonyOS\RockReader\` + 独立 git 仓库（远端 `Rocktier/Rock-Reader`）
-- [ ] 手写 hvigor 工程文件：`build-profile.json5` / `oh-package.json5` / `hvigorfile.ts`
-- [ ] 手写 `AppScope/` + `entry/`（`module.json5`、`main_pages.json`、`EntryAbility.ets`、`Index.ets`）
-- [ ] 包命名 `com.rocktier.rockreader`
-- [ ] `module.json5` **不声明** `ohos.permission.INTERNET`
-- [ ] 推到仓库触发 CI，验证"空工程也能构建通过"（这是本机唯一的编译校验手段）
-- **Status:** pending
+### Phase 2: 工程骨架（手写，不用 DevEco 向导）—— ✅ 2026-09-18 完成
+- [x] 建工程目录 + 独立 git 仓库（远端 `Rocktier/Rock-Reader`）
+- [x] 手写 hvigor 工程文件：`build-profile.json5` / `oh-package.json5` / `hvigorfile.ts` / `hvigor/hvigor-config.json5`
+- [x] 手写 `AppScope/` + `entry/`（`module.json5`、`main_pages.json`、`EntryAbility.ets`、`Index.ets`、`Reader.ets`）
+- [x] 包命名 `com.rocktier.rockreader`
+- [x] `module.json5` **不声明** `ohos.permission.INTERNET`（核心数据不联网；广告 M7 再加）
+- [x] 推到仓库触发 CI，**空工程在 CI 构建通过**：`BUILD SUCCESSFUL`，产物 `entry-default-unsigned.hap` **90 KB**
+- [x] 纯逻辑单测接入 CI：`node:test` + esbuild 把 `.ets` 当 TS 编译，17 个用例全绿
+- **Status:** done
+- 配方与 7 个坑：家族 `findings.md` §13（全家族复用）；CI 文件 `.github/workflows/build.yml`
 
 ### Phase 3: 导入与书架
 - [ ] `filePicker` 选书 → 拷进沙箱 `filesDir/books/`

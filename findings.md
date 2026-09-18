@@ -142,7 +142,7 @@
 - **书架**：黑白网格 + 封面；元数据（页数/进度/时间）用等宽小字；空态不放营销文案（家族 Pic2Webp 已定）。
 - **设置**：**一律不用滑块**（家族铁律，Pic2Webp 已确立）——字号/行距/页边距全改**预设档位芯片**；芯片排 2×2 网格避免怪异换行。
 - **交互**：无滚动条（视觉隐藏）、一屏展示、卡片圆角 12、动效短促（≈0.2s）。
-- **待定**：书封面用 0 圆角（矩形更像书）还是家族 12；需要你拍一下。
+- **已定**（党哥 2026-09-18）：书封面 **0 圆角**（矩形更像书），卡片/面板 12 圆角。
 
 ## E. 待核实清单（写进 task_plan，别忘）
 
@@ -150,3 +150,24 @@
 2. `@ohos.graphics.text` 能否在 **taskpool/worker 后台线程**使用——文档签名无 Context 依赖，但 `FontCollection.getGlobalInstance()` 不跨线程、`LineMetrics.runMetrics` 是 `Map` 不易传递；需 PoC 验证（本机无环境，等首次 CI/真机）。
 3. `TextDecoder` 的 GB18030 支持、`@ohos.zlib` 的 zip 归档支持——原三个 spike 仍然有效。
 4. 家族代码表里 **RockReader 的双字母代码**（如 `RR`）需与 Rocktier 家族代码表核对后登记。
+
+---
+
+# M1 结果（2026-09-18）：工程骨架 + CI 构建通过 ✅
+
+| 项 | 结果 |
+|---|---|
+| CI | GitHub Actions **全绿**（仓库 PUBLIC，不耗私有额度）：`纯逻辑单测` + `ArkTS 编译校验 → HAP` |
+| 产物 | `entry/build/ci/outputs/default/entry-default-unsigned.hap` = **90 KB**（未签名；铁律 2 预算 ≤5MB 绰绰有余） |
+| 编译校验方案 | 用**公开免登录**的 OpenHarmony SDK（apiVersion 20）+ **双 product**（`default`=HarmonyOS 正式包 / `ci`=OpenHarmony 编译校验），同一份源码 |
+| 构建链 | `npm i @ohos/hvigor@6.0.6 @ohos/hvigor-ohos-plugin@6.0.6` → `node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap`（**不用**仓库里的 hvigorw 包装器，它会假绿） |
+| 单测 | `npm test`：esbuild 把 `.ets` 当 TS 编译 + `node:test`，**17/17 绿**（本地与 CI 都能跑） |
+| 引擎落地 | `entry/src/main/ets/engine/`：`text/Encoding.ets`、`text/ChapterSplitter.ets`、`paginator/PageTableBuilder.ets`（纯逻辑、零 ArkUI 依赖，可进 taskpool） |
+
+**踩坑记录**：7 个坑（假绿包装器 / `type:module` 冲突 / compileSdkVersion / 许可证联网检查 / 大小写同名 env 键 / 五个组件必须齐全 / OpenHarmony 设备类型是 `default`）已全量写入**家族** `findings.md` §13，后续鸿蒙应用直接复用。
+
+**单测当场抓到的两个真实 bug**（已修）：
+1. 首个章标题之前的内容（书名/前言）会被丢掉 → 改为单独成「前言」章；
+2. `split('\n')` 尾部空元素导致字符偏移虚增 1 → 按剩余长度夹紧。
+
+**遗留**：正式 HarmonyOS 包（`default` product）仍需一次性用华为账号下载 command-line-tools 才能在 CI 出；且拿到真机前也装不了（签名要绑定 UDID，见家族 findings §10）。
