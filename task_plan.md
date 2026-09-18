@@ -71,6 +71,9 @@ Phase 1
   - Release 说明里写明产物真相（product=ci / OpenHarmony / 未签名 / **不能装鸿蒙手机**），防止被误当可安装包分发
   - 验证方式：临时 tag `v0.0.1-compile-check` 端到端跑通后已删除（仓库当前无 tag / 无 release）
   - ⚠️ 发版时机仍遵守家族规矩：**党哥下令才打 tag**（准则第九章）
+- [ ] **正式 HarmonyOS 包**（`default` product）：需党哥用华为账号下载 command-line-tools（Linux x64，登录门禁）→ 给我国内可访问直链 → 接进 CI
+- [ ] **已签名可安装包**：需 AGC 调试证书（.p12/.cer/.p7b）+ **每台测试机注册 UDID**
+- **Status:** in_progress（发布流程已通；正式包待 SDK）
 - [ ] `.github/workflows/build.yml`：Linux + `hvigorw assembleHap`
 - [ ] 签名走 Secrets，产物上传 Artifacts
 - [ ] 单份 `build-profile.json5`：`compatibleSdkVersion = 20`、`targetSdkVersion = 24`（已放弃 HarmonyOS 4，不再出双包）

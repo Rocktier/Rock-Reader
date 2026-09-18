@@ -1,15 +1,29 @@
 /**
- * 阅读页
- * 设计依据：docs/v1-design.md §8 —— 零常驻控件（点屏幕中间才浮出细栏）、页脚等宽数码
+ * 阅读页（分页模式，M3）
+ * 设计依据：docs/v1-design.md §5 / §6 / §8
  *
- * 本版为 M3 第一版：**滚动模式** + 章节切换 + 进度落库。
- * 分页（横滑翻页，默认模式）下一步做 —— PageTableBuilder 已就绪，只差接 graphics.text 的 LineMetrics。
+ * 快在哪（本页的性能骨架）：
+ *  1. 整章**一次** layoutSync 拿全部行区间 → 切成页表（TextPaginator）；
+ *  2. 页表按 layoutKey 缓存（PageCache）→ 命中时**翻页只是换 substring，零测量**；
+ *  3. 只持当前章文本，不整本入内存。
+ *
+ * 交互（对齐 spec §8）：
+ *  - 零常驻控件：正文之外只有一行页脚（等宽章名 + 页码）
+ *  - 点屏幕中间 → 浮出上下细栏；点左右两侧 → 翻页
+ *  - 横滑（PanGesture）→ 翻页；**淡入淡出 + 微小位移**，v1 不做仿真翻页
+ *  - 目录 / 设置 都从浮层进入；设置返回时**按字符偏移复原位置**（切档位不跳页）
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { router } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
+import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookRecord, ChapterRow, ReadingProgress } from '../common/Types';
-import { readChapterTextByChars, clearTextCache } from '../engine/parser/TxtParser';
+import { BookSource, createBookSource } from '../engine/parser/BookSource';
+import { fontSizeFpOf, layoutKey, LayoutLevels, lineHeightRatioOf, marginVpOf } from '../common/LayoutStyle';
+import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
+import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
+import { TextPaginator } from '../engine/paginator/TextPaginator';
+import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 
 interface ReaderParams {
   bookId: string;
@@ -18,40 +32,111 @@ interface ReaderParams {
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
-/** 排版档位 3（默认）的数值，见 docs/v1-design.md §8 唯一真源表 */
-const FONT_SIZE: number = 18;
-const LINE_HEIGHT: number = 34;
-const PAGE_MARGIN: number = 20;
+/** 页脚高度（vp）：正文可用高度要扣掉 */
+const FOOTER_VP: number = 30;
+/** 正文顶部留白（vp） */
+const HEADER_VP: number = 34;
+/** 每次翻页落一次进度太重 → 章内每 5 页落一次；切章 / 退出必落 */
+const PERSIST_EVERY_PAGES: number = 5;
+/** 翻页动画时长（ms）——短促，对齐 spec「动效 ≈0.2s」 */
+const FADE_OUT_MS: number = 90;
+const FADE_IN_MS: number = 130;
+/** 淡入淡出的位移量（vp） */
+const FADE_SHIFT_VP: number = 18;
+/** 判定为翻页的滑动距离比例（屏宽的倍数） */
+const SWIPE_RATIO: number = 0.12;
 
 @Entry
 @Component
 struct Reader {
+  @State palette: Palette = paletteOf(THEME_DARK);
   @State title: string = '';
   @State chapterTitle: string = '';
-  @State text: string = '';
   @State chapterIndex: number = 0;
   @State chapterCount: number = 0;
+  @State pageIndex: number = 0;
+  @State pageCount: number = 0;
+  @State pagePercent: number = 0;
+  @State bookPercent: number = 0;
+  @State pageText: string = '';
   @State showMenu: boolean = false;
+  @State showToc: boolean = false;
   @State hint: string = '';
   @State loading: boolean = true;
+  @State opacity: number = 1;
+  @State offsetX: number = 0;
+  /** 渲染参数：必须与排版参数同源（唯一真源 = common/LayoutStyle） */
+  @State fontSizeFp: number = 18;
+  @State lineHeightVp: number = 34.2;
+  @State marginVp: number = 20;
 
   private db: BookDb = new BookDb();
+  private prefs: ReaderPrefs = new ReaderPrefs();
   private book: BookRecord | null = null;
   private chapters: ChapterRow[] = [];
+  private source: BookSource | null = null;
+  private chapterText: string = '';
+  private pages: PageRange[] = [];
+  private paginator: Paginator = new TextPaginator();
+  private cache: PageCache = new PageCache(4);
+  private theme: ThemeName = THEME_DARK;
+  private currentKey: string = '';
+  private viewWidthVp: number = 0;
+  private viewHeightVp: number = 0;
+  private areaReady: boolean = false;
+  /** 首屏：拿到视口尺寸后再排版 */
+  private pendingChapter: number = 0;
+  private pendingOffset: number = 0;
+  private pagesSincePersist: number = 0;
 
   aboutToAppear(): void {
     this.init();
   }
 
-  aboutToDisappear(): void {
-    clearTextCache();
+  onPageShow(): void {
+    // 从设置页返回：主题/档位可能变了 → 变了才重排，并按字符偏移复原位置（切档位不跳页）
+    this.prefs.open(getContext(this) as Context);
+    this.prefs.reload();
+    const theme: ThemeName = this.prefs.getTheme();
+    if (theme !== this.theme) {
+      this.theme = theme;
+      this.palette = paletteOf(theme);
+    }
+    if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
+      return;
+    }
+    const next: string = this.boxOf(this.prefs.getLevels()).signature;
+    if (next !== this.currentKey) {
+      const keep: number = this.pages.length > 0 ? this.pages[this.pageIndex].start : 0;
+      this.openChapter(this.chapterIndex, keep);
+    }
   }
+
+  onPageHide(): void {
+    this.persistProgress(true);
+  }
+
+  aboutToDisappear(): void {
+    this.persistProgress(true);
+    if (this.source !== null) {
+      this.source.release();
+    }
+    this.cache.clear();
+  }
+
+  // ------------------------------------------------------------------
+  // 初始化与排版
+  // ------------------------------------------------------------------
 
   private async init(): Promise<void> {
     try {
       const params = router.getParams() as ReaderParams;
+      this.prefs.open(getContext(this) as Context);
+      this.theme = this.prefs.getTheme();
+      this.palette = paletteOf(this.theme);
+
       await this.db.open(getContext(this) as Context);
-      const book = await this.db.getBook(params.bookId);
+      const book: BookRecord | null = await this.db.getBook(params.bookId);
       if (book === null) {
         this.hint = '找不到这本书';
         this.loading = false;
@@ -59,25 +144,22 @@ struct Reader {
       }
       this.book = book;
       this.title = book.title;
-
-      if (book.format !== 'txt') {
-        // EPUB 解析在 M4；这里明确告知，不假装能读
-        this.hint = 'EPUB 阅读将在下个版本支持';
-        this.loading = false;
-        return;
-      }
+      this.source = createBookSource(book);
 
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
       if (this.chapterCount === 0) {
-        this.hint = '这本书没有解析出章节';
+        this.hint = book.format === 'epub' ? '这本书的目录解析失败' : '这本书没有解析出章节';
         this.loading = false;
         return;
       }
-      const p: ReadingProgress | null = await this.db.getProgress(book.id);
-      const idx: number = p === null ? 0 : Math.min(p.chapterIndex, this.chapterCount - 1);
-      this.loadChapter(idx);
+      const progress: ReadingProgress | null = await this.db.getProgress(book.id);
+      this.pendingChapter = progress === null ? 0 : Math.min(progress.chapterIndex, this.chapterCount - 1);
+      this.pendingOffset = progress === null ? 0 : progress.charOffset;
       this.loading = false;
+      if (this.areaReady) {
+        this.openChapter(this.pendingChapter, this.pendingOffset);
+      }
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'reader init failed: %{public}s', JSON.stringify(e));
       this.hint = '打开失败';
@@ -85,33 +167,175 @@ struct Reader {
     }
   }
 
-  private loadChapter(idx: number): void {
-    if (this.book === null || idx < 0 || idx >= this.chapters.length) {
-      return;
-    }
-    this.chapterIndex = idx;
-    const ch: ChapterRow = this.chapters[idx];
-    this.chapterTitle = ch.title;
-    try {
-      this.text = readChapterTextByChars(this.book.path, ch.startChar, ch.endChar);
-    } catch (e) {
-      hilog.error(DOMAIN, TAG, 'load chapter failed: %{public}s', JSON.stringify(e));
-      this.text = '';
-      this.hint = '这一章读取失败';
-    }
-    this.persistProgress();
+  /** 由档位 + 视口算出这一套排版参数（唯一真源，测量与渲染共用） */
+  private boxOf(levels: LayoutLevels): LayoutBox {
+    const fontSizePx: number = fp2px(fontSizeFpOf(levels.fontSizeLevel));
+    const lineHeightPx: number = fontSizePx * lineHeightRatioOf(levels.lineHeightLevel);
+    const marginVp: number = marginVpOf(levels.marginLevel);
+    const widthPx: number = vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
+    const heightPx: number = vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
+    return {
+      fontSizePx: fontSizePx,
+      lineHeightPx: lineHeightPx,
+      widthPx: widthPx,
+      heightPx: heightPx,
+      signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx)
+    };
   }
 
-  /** 每章切换时落一次进度；再叠加「每 N 页落一次」在分页版里做 */
-  private persistProgress(): void {
+  /** 打开某章并定位到某个字符偏移（内部会按签名查缓存，命中则不重排） */
+  private openChapter(index: number, charOffset: number): void {
+    if (this.source === null || index < 0 || index >= this.chapters.length) {
+      return;
+    }
+    const levels: LayoutLevels = this.prefs.getLevels();
+    const box: LayoutBox = this.boxOf(levels);
+    const chapter: ChapterRow = this.chapters[index];
+
+    let text: string = '';
+    try {
+      text = this.source.chapterText(chapter);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'read chapter failed: %{public}s', JSON.stringify(e));
+      this.hint = '这一章读取失败';
+      return;
+    }
+
+    this.chapterIndex = index;
+    this.chapterTitle = chapter.title;
+    this.chapterText = text;
+    this.fontSizeFp = fontSizeFpOf(levels.fontSizeLevel);
+    this.lineHeightVp = px2vp(box.lineHeightPx);
+    this.marginVp = marginVpOf(levels.marginLevel);
+
+    const cacheKey: string = index + '|' + box.signature;
+    this.currentKey = box.signature;
+    let table: PageTable | null = this.cache.get(cacheKey);
+    if (table === null) {
+      let built: PageTable;
+      try {
+        built = this.paginator.paginate(text, box);
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, 'paginate failed: %{public}s', JSON.stringify(e));
+        this.hint = '这一章排版失败';
+        return;
+      }
+      this.cache.put(cacheKey, built);
+      table = built;
+    }
+
+    this.pages = table.pages;
+    this.pageCount = table.pages.length;
+    const target: number = charOffset < 0
+      ? this.pageCount - 1
+      : pageOfChar(table.pages, charOffset) - 1;
+    this.showPage(target < 0 ? 0 : target);
+    this.pagesSincePersist = 999;   // 切章一定落进度
+  }
+
+  private showPage(index: number): void {
+    if (this.pages.length === 0) {
+      return;
+    }
+    let i: number = index;
+    if (i < 0) {
+      i = 0;
+    }
+    if (i > this.pages.length - 1) {
+      i = this.pages.length - 1;
+    }
+    this.pageIndex = i;
+    const range: PageRange = this.pages[i];
+    this.pageText = this.chapterText.substring(range.start, range.end);
+    this.pagePercent = (i + 1) / this.pages.length;
+    this.bookPercent = this.chapterCount === 0
+      ? 0
+      : (this.chapterIndex + this.pagePercent) / this.chapterCount;
+    this.persistProgress(false);
+  }
+
+  // ------------------------------------------------------------------
+  // 翻页
+  // ------------------------------------------------------------------
+
+  /** 翻页：dir = +1 下一页 / -1 上一页。章内换页零计算；跨章才取新文本 */
+  private turnPage(dir: number): void {
+    if (this.pageCount === 0) {
+      return;
+    }
+    if (dir > 0 && this.pageIndex < this.pageCount - 1) {
+      this.animateTurn(this.chapterIndex, this.pageIndex + 1, dir);
+      return;
+    }
+    if (dir < 0 && this.pageIndex > 0) {
+      this.animateTurn(this.chapterIndex, this.pageIndex - 1, dir);
+      return;
+    }
+    const next: number = this.chapterIndex + dir;
+    if (next < 0 || next >= this.chapterCount) {
+      return;
+    }
+    this.animateTurn(next, dir > 0 ? 0 : -1, dir);
+  }
+
+  /** 淡出 → 换页 → 淡入（带微小位移，方向感来自位移方向） */
+  private animateTurn(chapterIndex: number, pageIndex: number, dir: number): void {
+    animateTo({
+      duration: FADE_OUT_MS,
+      curve: Curve.EaseIn,
+      onFinish: () => {
+        if (chapterIndex !== this.chapterIndex) {
+          this.openChapter(chapterIndex, pageIndex < 0 ? -1 : 0);
+          if (pageIndex >= 0 && pageIndex !== this.pageIndex) {
+            this.showPage(pageIndex);
+          }
+        } else {
+          this.showPage(pageIndex);
+        }
+        this.offsetX = dir * FADE_SHIFT_VP;
+        animateTo({ duration: FADE_IN_MS, curve: Curve.EaseOut }, () => {
+          this.offsetX = 0;
+          this.opacity = 1;
+        });
+      }
+    }, () => {
+      this.opacity = 0;
+      this.offsetX = -dir * FADE_SHIFT_VP;
+    });
+  }
+
+  private jumpToChapter(index: number): void {
+    this.showToc = false;
+    if (index === this.chapterIndex) {
+      return;
+    }
+    this.openChapter(index, 0);
+    this.showPage(0);
+  }
+
+  // ------------------------------------------------------------------
+  // 进度
+  // ------------------------------------------------------------------
+
+  private persistProgress(force: boolean): void {
     if (this.book === null || this.chapterCount === 0) {
       return;
     }
+    if (!force) {
+      this.pagesSincePersist += 1;
+      if (this.pagesSincePersist < PERSIST_EVERY_PAGES) {
+        return;
+      }
+    }
+    this.pagesSincePersist = 0;
+    const offset: number = this.pages.length > 0 && this.pageIndex < this.pages.length
+      ? this.pages[this.pageIndex].start
+      : 0;
     const p: ReadingProgress = {
       bookId: this.book.id,
       chapterIndex: this.chapterIndex,
-      charOffset: 0,
-      percent: (this.chapterIndex + 1) / this.chapterCount,
+      charOffset: offset,
+      percent: this.bookPercent,
       updatedAt: Date.now()
     };
     this.db.saveProgress(p).catch((e: Error) => {
@@ -122,115 +346,280 @@ struct Reader {
     });
   }
 
+  // ------------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------------
+
   @Builder
   topBar() {
     Row() {
       Text('‹')
-        .fontSize(17)
-        .fontColor($r('app.color.rd_text2'))
+        .fontSize(20)
+        .fontColor(this.palette.text)
+        .width(34)
+        .height(34)
+        .textAlign(TextAlign.Center)
         .onClick(() => router.back())
       Text(this.title)
         .fontSize(13)
         .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.rd_text'))
+        .fontColor(this.palette.text)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: 12 })
+        .margin({ left: 6 })
         .layoutWeight(1)
-      Text(`${this.chapterIndex + 1}/${this.chapterCount}`)
+      Text(this.chapterCount > 0 ? `${this.chapterIndex + 1}/${this.chapterCount}` : '')
         .fontSize(9.5)
         .fontFamily('monospace')
-        .fontColor($r('app.color.rd_text3'))
+        .fontColor(this.palette.text3)
     }
     .width('100%')
-    .padding({ left: 18, right: 18, top: 14, bottom: 14 })
-    .backgroundColor($r('app.color.rd_bg'))
-    .border({ width: { bottom: 1 }, color: $r('app.color.rd_line_soft') })
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 12, right: 18, top: 10, bottom: 12 })
+    .backgroundColor(this.palette.bg)
+    .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+  }
+
+  @Builder
+  segBar(percent: number) {
+    Row({ space: 2 }) {
+      ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], (i: number) => {
+        Row()
+          .layoutWeight(1)
+          .height(2)
+          .backgroundColor(percent * 10 > i ? this.palette.text : this.palette.line)
+      }, (i: number) => 'seg' + i)
+    }
+    .width('100%')
   }
 
   @Builder
   bottomBar() {
     Column() {
       Row() {
-        Text('上一章')
-          .fontSize(12)
-          .fontColor(this.chapterIndex > 0 ? $r('app.color.rd_text') : $r('app.color.rd_text3'))
-          .onClick(() => this.loadChapter(this.chapterIndex - 1))
-        Blank()
         Text(this.chapterTitle)
           .fontSize(10)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
           .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-        Blank()
-        Text('下一章')
-          .fontSize(12)
-          .fontColor(this.chapterIndex < this.chapterCount - 1 ? $r('app.color.rd_text') : $r('app.color.rd_text3'))
-          .onClick(() => this.loadChapter(this.chapterIndex + 1))
+        Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
+          .fontSize(10)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
       }
       .width('100%')
-      .alignItems(VerticalAlign.Center)
+      .margin({ bottom: 10 })
+
+      Row() {
+        Text('上一章')
+          .fontSize(12.5)
+          .fontColor(this.chapterIndex <= 0 ? this.palette.text3 : this.palette.text)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .onClick(() => this.jumpToChapter(this.chapterIndex - 1))
+        Text('目录')
+          .fontSize(12.5)
+          .fontColor(this.palette.text)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.showToc = true;
+          })
+        Text('A a')
+          .fontSize(12.5)
+          .fontColor(this.palette.text)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/Settings' });
+          })
+        Text('下一章')
+          .fontSize(12.5)
+          .fontColor(this.chapterIndex >= this.chapterCount - 1 ? this.palette.text3 : this.palette.text)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .onClick(() => this.jumpToChapter(this.chapterIndex + 1))
+      }
+      .width('100%')
+      .margin({ bottom: 14 })
+
+      this.segBar(this.bookPercent)
+
+      Row() {
+        Text(`${Math.round(this.bookPercent * 100)}%`)
+          .fontSize(9)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .margin({ top: 8 })
     }
     .width('100%')
     .padding({ left: 18, right: 18, top: 16, bottom: 26 })
-    .backgroundColor($r('app.color.rd_bg'))
-    .border({ width: { top: 1 }, color: $r('app.color.rd_line_soft') })
+    .backgroundColor(this.palette.bg)
+    .border({ width: { top: 1 }, color: this.palette.lineSoft })
+    .onClick(() => {
+    })
+  }
+
+  @Builder
+  tocPanel() {
+    Column() {
+      Row() {
+        Text('CONTENTS')
+          .fontSize(11)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text2)
+        Blank()
+        Text(`${this.chapterCount}`)
+          .fontSize(10)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .padding({ left: 20, right: 20, top: 16, bottom: 12 })
+
+      List() {
+        ForEach(this.chapters, (item: ChapterRow) => {
+          ListItem() {
+            Row() {
+              Text(`${item.index + 1}`)
+                .fontSize(9.5)
+                .fontFamily('monospace')
+                .fontColor(item.index === this.chapterIndex ? this.palette.red : this.palette.text3)
+                .width(30)
+              Text(item.title)
+                .fontSize(13.5)
+                .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .padding({ left: 20, right: 20, top: 13, bottom: 13 })
+            .onClick(() => this.jumpToChapter(item.index))
+          }
+        }, (item: ChapterRow) => 'ch' + item.index)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+    }
+    .width('100%')
+    .height('62%')
+    .backgroundColor(this.palette.bg)
+    .borderRadius({ topLeft: 12, topRight: 12 })
+    .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
+    .onClick(() => {
+    })
   }
 
   build() {
-    Stack() {
-      Scroll() {
-        Column() {
-          if (this.hint.length > 0) {
-            Text(this.hint)
-              .fontSize(13)
-              .fontColor($r('app.color.rd_text2'))
-              .margin({ top: 60 })
-          } else {
-            Text(this.text)
-              .fontSize(FONT_SIZE)
-              .lineHeight(LINE_HEIGHT)
-              .fontColor($r('app.color.rd_text'))
-              .width('100%')
-              .textAlign(TextAlign.Start)
-          }
+    Stack({ alignContent: Alignment.Bottom }) {
+      // ---- 正文（点中间开菜单，点两侧翻页）----
+      Column() {
+        if (this.hint.length > 0) {
+          Text(this.hint)
+            .fontSize(13)
+            .fontColor(this.palette.text2)
+            .margin({ top: 60 })
+        } else {
+          Text(this.pageText)
+            .fontSize(this.fontSizeFp)
+            .lineHeight(this.lineHeightVp)
+            .fontColor(this.palette.text)
+            .width('100%')
+            .textAlign(TextAlign.Start)
         }
-        .width('100%')
-        .padding({
-          left: PAGE_MARGIN,
-          right: PAGE_MARGIN,
-          top: 40,
-          bottom: 40
-        })
-        .alignItems(HorizontalAlign.Start)
       }
-      .scrollBar(BarState.Off)
       .width('100%')
       .height('100%')
+      .padding({
+        left: this.marginVp,
+        right: this.marginVp,
+        top: HEADER_VP,
+        bottom: FOOTER_VP
+      })
+      .alignItems(HorizontalAlign.Start)
+      .clip(true)
+      .opacity(this.opacity)
+      .translate({ x: this.offsetX })
+      .onAreaChange((oldValue: Area, newValue: Area) => {
+        this.viewWidthVp = newValue.width as number;
+        this.viewHeightVp = newValue.height as number;
+        if (!this.areaReady && this.viewWidthVp > 0 && this.viewHeightVp > 0) {
+          this.areaReady = true;
+          if (this.chapterCount > 0) {
+            this.openChapter(this.pendingChapter, this.pendingOffset);
+          }
+        }
+      })
+      .onClick((event: ClickEvent) => {
+        const third: number = this.viewWidthVp / 3;
+        if (this.showToc) {
+          this.showToc = false;
+          return;
+        }
+        if (this.showMenu) {
+          this.showMenu = false;
+          return;
+        }
+        if (this.hint.length > 0) {
+          return;
+        }
+        if (event.x < third) {
+          this.turnPage(-1);
+        } else if (event.x > third * 2) {
+          this.turnPage(1);
+        } else {
+          this.showMenu = true;
+        }
+      })
+      .gesture(
+        PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
+          .onActionEnd((event: GestureEvent) => {
+            if (this.showMenu || this.showToc || this.hint.length > 0) {
+              return;
+            }
+            const threshold: number = this.viewWidthVp * SWIPE_RATIO;
+            if (event.offsetX <= -threshold) {
+              this.turnPage(1);
+            } else if (event.offsetX >= threshold) {
+              this.turnPage(-1);
+            }
+          })
+      )
 
-      // 页脚：等宽数码（Nothing 式），常驻但极克制
+      // ---- 页脚（唯一常驻控件，极克制：等宽章名 + 页码）----
       Column() {
         Row() {
           Text(this.chapterTitle)
             .fontSize(9.5)
             .fontFamily('monospace')
-            .fontColor($r('app.color.rd_text3'))
+            .fontColor(this.palette.text3)
             .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
-          Text(this.chapterCount > 0 ? `${this.chapterIndex + 1}/${this.chapterCount}` : '')
+          Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
             .fontSize(9.5)
             .fontFamily('monospace')
-            .fontColor($r('app.color.rd_text3'))
+            .fontColor(this.palette.text3)
         }
         .width('100%')
-        .padding({ left: PAGE_MARGIN, right: PAGE_MARGIN, bottom: 14 })
+        .padding({ left: this.marginVp, right: this.marginVp, bottom: 12 })
       }
       .width('100%')
-      .height('100%')
+      .height(FOOTER_VP)
       .justifyContent(FlexAlign.End)
 
+      // ---- 浮层：点屏中间才出现 ----
       if (this.showMenu) {
         Column() {
           this.topBar()
@@ -239,13 +628,28 @@ struct Reader {
         }
         .width('100%')
         .height('100%')
+        .onClick(() => {
+          this.showMenu = false;
+        })
+      }
+
+      // ---- 目录 ----
+      if (this.showToc) {
+        Column() {
+          Column()
+            .width('100%')
+            .layoutWeight(1)
+            .onClick(() => {
+              this.showToc = false;
+            })
+          this.tocPanel()
+        }
+        .width('100%')
+        .height('100%')
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.rd_bg'))
-    .onClick(() => {
-      this.showMenu = !this.showMenu;
-    })
+    .backgroundColor(this.palette.bg)
   }
 }

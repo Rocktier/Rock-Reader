@@ -1,12 +1,15 @@
 /**
  * 书架页
  * 设计依据：docs/v1-design.md §8 —— 黑底白字、等宽数码、书封 0 圆角、卡片 12 圆角、空态不放营销文案
+ * 主题：色板来自 common/Theme.ets（运行时切换，与系统深浅色解耦）
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
+import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookImporter, ImportResult } from '../engine/importer/BookImporter';
 import { BookRecord, ReadingProgress } from '../common/Types';
+import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -37,11 +40,31 @@ struct Index {
   @State resume: BookRecord | null = null;
   @State resumePercent: number = 0;
   @State busy: boolean = false;
+  @State palette: Palette = paletteOf(THEME_DARK);
 
   private db: BookDb = new BookDb();
+  private prefs: ReaderPrefs = new ReaderPrefs();
+  private theme: ThemeName = THEME_DARK;
 
   aboutToAppear(): void {
+    this.prefs.open(getContext(this) as Context);
+    this.applyTheme();
     this.load();
+  }
+
+  onPageShow(): void {
+    // 从设置页返回：主题可能改了
+    this.prefs.open(getContext(this) as Context);
+    this.prefs.reload();
+    this.applyTheme();
+  }
+
+  private applyTheme(): void {
+    const theme: ThemeName = this.prefs.getTheme();
+    if (theme !== this.theme) {
+      this.theme = theme;
+      this.palette = paletteOf(theme);
+    }
   }
 
   private async load(): Promise<void> {
@@ -116,12 +139,12 @@ struct Index {
     Column() {
       Text(book.title.length > 0 ? book.title.substring(0, 1) : '书')
         .fontSize(size * 0.42)
-        .fontColor($r('app.color.rd_text3'))
+        .fontColor(this.palette.text3)
         .fontWeight(FontWeight.Bold)
     }
     .width(size)
     .height(size * 1.4)
-    .backgroundColor($r('app.color.rd_g100'))
+    .backgroundColor(this.palette.cover)
     .borderRadius(0)                       // 书封 0 圆角（已确认）
     .justifyContent(FlexAlign.Center)
   }
@@ -134,27 +157,27 @@ struct Index {
         Text(book.title)
           .fontSize(15)
           .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.rd_text'))
+          .fontColor(this.palette.text)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(book.format.toUpperCase())
           .fontSize(10)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
         Row({ space: 2 }) {
           ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], (i: number) => {
             Row()
               .layoutWeight(1)
               .height(2)
-              .backgroundColor(this.resumePercent * 10 > i ? $r('app.color.rd_text') : $r('app.color.rd_line_soft'))
-          })
+              .backgroundColor(this.resumePercent * 10 > i ? this.palette.text : this.palette.line)
+          }, (i: number) => 'rp' + i)
         }
         .width('100%')
         .margin({ top: 6 })
         Text(`${Math.round(this.resumePercent * 100)}%`)
           .fontSize(9)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
@@ -162,9 +185,9 @@ struct Index {
     .width('100%')
     .padding(14)
     .borderRadius(12)                      // 卡片 12 圆角
-    .backgroundColor($r('app.color.rd_card'))
+    .backgroundColor(this.palette.card)
     .borderWidth(1)
-    .borderColor($r('app.color.rd_line'))
+    .borderColor(this.palette.line)
     .onClick(() => this.openBook(book))
   }
 
@@ -175,22 +198,37 @@ struct Index {
         Text($r('app.string.shelf_title'))
           .fontSize(22)
           .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.rd_text'))
+          .fontColor(this.palette.text)
         Text(`${this.books.length} 本`)
           .fontSize(11)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
           .margin({ left: 10 })
         Blank()
-        Text(this.busy ? '···' : '＋')
-          .fontSize(16)
-          .fontColor($r('app.color.rd_text'))
+        Text('Aa')
+          .fontSize(13)
+          .fontColor(this.palette.text)
           .width(30)
           .height(30)
           .textAlign(TextAlign.Center)
           .borderWidth(1)
-          .borderColor($r('app.color.rd_line'))
-          .onClick(() => this.onImport())
+          .borderColor(this.palette.line)
+          .margin({ left: 8 })
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/Settings' });
+          })
+        Text(this.busy ? '···' : '＋')
+          .fontSize(15)
+          .fontColor(this.palette.text)
+          .width(30)
+          .height(30)
+          .textAlign(TextAlign.Center)
+          .borderWidth(1)
+          .borderColor(this.palette.line)
+          .margin({ left: 8 })
+          .onClick(() => {
+            this.onImport();
+          })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -206,7 +244,7 @@ struct Index {
         Column() {
           Text($r('app.string.shelf_empty_hint'))
             .fontSize(13)
-            .fontColor($r('app.color.rd_text3'))
+            .fontColor(this.palette.text3)
         }
         .width('100%')
         .layoutWeight(1)
@@ -220,13 +258,13 @@ struct Index {
                   this.bookCover(item, 88)
                   Text(item.title)
                     .fontSize(11.5)
-                    .fontColor($r('app.color.rd_text'))
+                    .fontColor(this.palette.text)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(item.format.toUpperCase())
                     .fontSize(9)
                     .fontFamily('monospace')
-                    .fontColor($r('app.color.rd_text3'))
+                    .fontColor(this.palette.text3)
                 }
                 .width('100%')
                 .onClick(() => this.openBook(item))
@@ -247,19 +285,19 @@ struct Index {
         Text('LOCAL ONLY')
           .fontSize(9)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
         Blank()
         Text('v1.0.0')
           .fontSize(9)
           .fontFamily('monospace')
-          .fontColor($r('app.color.rd_text3'))
+          .fontColor(this.palette.text3)
       }
       .width('100%')
       .padding({ bottom: 16, top: 8 })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.rd_bg'))
+    .backgroundColor(this.palette.bg)
     .padding({ left: 22, right: 22 })
   }
 }

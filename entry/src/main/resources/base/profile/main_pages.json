@@ -1,6 +1,7 @@
 {
   "src": [
     "pages/Index",
-    "pages/Reader"
+    "pages/Reader",
+    "pages/Settings"
   ]
 }
