@@ -31,6 +31,14 @@
     {
       "name": "rd_red",
       "value": "#FF4A3D"
+    },
+    {
+      "name": "rd_card",
+      "value": "#08FFFFFF"
+    },
+    {
+      "name": "rd_g100",
+      "value": "#1A1A1A"
     }
   ]
 }
