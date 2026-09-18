@@ -63,8 +63,12 @@ struct Reader {
   @State showToc: boolean = false;
   @State hint: string = '';
   @State loading: boolean = true;
-  @State opacity: number = 1;
-  @State offsetX: number = 0;
+  /**
+   * 不能叫 opacity —— ArkUI 的 CustomComponent 自带 opacity(value) 属性方法，
+   * 同名字段会报 10505001（Type 'number' is not assignable to ...CommonAttribute）。
+   */
+  @State pageOpacity: number = 1;
+  @State shiftX: number = 0;
   /** 渲染参数：必须与排版参数同源（唯一真源 = common/LayoutStyle） */
   @State fontSizeFp: number = 18;
   @State lineHeightVp: number = 34.2;
@@ -292,15 +296,15 @@ struct Reader {
         } else {
           this.showPage(pageIndex);
         }
-        this.offsetX = dir * FADE_SHIFT_VP;
+        this.shiftX = dir * FADE_SHIFT_VP;
         animateTo({ duration: FADE_IN_MS, curve: Curve.EaseOut }, () => {
-          this.offsetX = 0;
-          this.opacity = 1;
+          this.shiftX = 0;
+          this.pageOpacity = 1;
         });
       }
     }, () => {
-      this.opacity = 0;
-      this.offsetX = -dir * FADE_SHIFT_VP;
+      this.pageOpacity = 0;
+      this.shiftX = -dir * FADE_SHIFT_VP;
     });
   }
 
@@ -549,8 +553,8 @@ struct Reader {
       })
       .alignItems(HorizontalAlign.Start)
       .clip(true)
-      .opacity(this.opacity)
-      .translate({ x: this.offsetX })
+      .opacity(this.pageOpacity)
+      .translate({ x: this.shiftX })
       .onAreaChange((oldValue: Area, newValue: Area) => {
         this.viewWidthVp = newValue.width as number;
         this.viewHeightVp = newValue.height as number;

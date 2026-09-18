@@ -5,7 +5,7 @@
  * 而 CI 里没有设备；接口隔离后，CI 可以注入"按固定字数切页"的假实现，
  * 把「导入 → 进度 → 翻页 → 落库」整条链路测穿（docs/v1-design.md §3 / §9）。
  */
-import { PageTable } from './PageTableBuilder';
+import { PageRange, PageTable } from './PageTableBuilder';
 
 export interface LayoutBox {
   /** 字号（px，必须与渲染字体一致） */
@@ -76,15 +76,17 @@ export class FakePaginator implements Paginator {
   }
 
   paginate(content: string, box: LayoutBox): PageTable {
-    const pages: Array<{ start: number; end: number }> = [];
+    const pages: PageRange[] = [];
     let start: number = 0;
     while (start < content.length) {
       const end: number = Math.min(start + this.charsPerPage, content.length);
-      pages.push({ start: start, end: end });
+      const range: PageRange = { start: start, end: end };
+      pages.push(range);
       start = end;
     }
     if (pages.length === 0) {
-      pages.push({ start: 0, end: 0 });
+      const empty: PageRange = { start: 0, end: 0 };
+      pages.push(empty);
     }
     return {
       signature: box.signature,
