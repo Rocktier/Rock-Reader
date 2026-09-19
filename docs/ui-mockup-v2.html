@@ -14,7 +14,8 @@
   --line-soft:rgba(255,255,255,.071);
   --text:#ffffff;
   --text2:rgba(255,255,255,.549);
-  --text3:rgba(255,255,255,.322);
+  --text3:rgba(255,255,255,.459);  /* 2026-09-19：原 .322 只有 2.7:1，低于 WCAG AA；页码/章节号是功能性信息，提到 4.5:1 */
+  --overlay:rgba(0,0,0,.92);       /* 浮层底：比纯黑略透，透出纵深（不上 blur，省 GPU） */
   --red:#FF4A3D;
   --cover:#1A1A1A;
   --r-card:12px;      /* 卡片/面板 */
@@ -96,7 +97,7 @@ body{
 .reader .foot{flex:0 0 var(--rd-foot);padding:0 var(--rd-margin) 12px;display:flex;justify-content:space-between;align-items:flex-end;font-family:var(--mono);font-size:9.5px;color:var(--text3);letter-spacing:.06em}
 /* 浮出层 */
 .scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
-.topbar,.bottombar{position:absolute;left:0;right:0;background:#000;border:0 solid var(--line-soft)}
+.topbar,.bottombar{position:absolute;left:0;right:0;background:var(--overlay);border:0 solid var(--line-soft)}
 .topbar{top:0;border-bottom-width:1px;padding:10px 18px 12px 12px;display:flex;align-items:center;gap:6px}
 .topbar .back{width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:20px;color:var(--text)}
 .topbar .title{font-size:13px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -110,7 +111,7 @@ body{
 .bottombar .pct{margin-top:8px;font-family:var(--mono);font-size:9px;color:var(--text3)}
 
 /* ===== 4. 目录浮层 ===== */
-.toc{position:absolute;left:0;right:0;bottom:0;height:62%;background:#000;border:1px solid var(--line);border-bottom:0;border-radius:var(--r-card) var(--r-card) 0 0;display:flex;flex-direction:column}
+.toc{position:absolute;left:0;right:0;bottom:0;height:62%;background:var(--overlay);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-card) var(--r-card) 0 0;display:flex;flex-direction:column}
 .toc .head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;font-family:var(--mono);font-size:11px;color:var(--text2)}
 .toc .head .n{font-size:10px;color:var(--text3)}
 .toc .list{flex:1;overflow:hidden}
@@ -199,7 +200,7 @@ body{
           <div class="book"><div class="cover grid"><span class="init">万</span></div><div class="t">万历十五年</div><div class="fmt">EPUB</div></div>
         </div>
 
-        <div class="shelf-foot"><span>LOCAL ONLY</span><span>v1.0.0</span></div>
+        <div class="shelf-foot"><span>LOCAL ONLY</span></div>
       </div>
     </div>
   </div>
@@ -396,7 +397,8 @@ body{
   <div class="note-card">
     <h3>还没定 / 待你拍</h3>
     <ul>
-      <li>翻页要不要做<b>手指跟手拖动</b>（现在：滑动触发 + 淡入淡出，最省最稳）</li>
+      <li><b>已定（2026-09-19）</b>：翻页做<b>手指跟手拖动</b> —— 拖到哪停到哪，松手按距离（屏宽 25%）或速度（900 vp/s）判定；到头做 35% 橡皮筋。依据 Nothing OS 5.0「可中断动效」</li>
+      <li><b>已定（2026-09-19）</b>：三级数码（页码/章节号）提亮到 WCAG AA 4.5:1（深色 .459 / 浅色 .537）；浮层底改半透明黑 `rgba(0,0,0,.92)` 换纵深，不上 blur</li>
       <li>目录浮层要不要显示<b>每章进度</b></li>
       <li>书封要不要接<b>EPUB 真实封面图</b>（现在只显示书名首字）</li>
       <li>浅色主题的<b>正文底色</b>要不要给"护眼米黄"档</li>

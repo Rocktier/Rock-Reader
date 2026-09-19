@@ -47,8 +47,16 @@ const FADE_OUT_MS: number = 90;
 const FADE_IN_MS: number = 130;
 /** 淡入淡出的位移量（vp） */
 const FADE_SHIFT_VP: number = 18;
-/** 判定为翻页的滑动距离比例（屏宽的倍数） */
-const SWIPE_RATIO: number = 0.12;
+/** 跟手翻页：松手时判定翻页的最小拖拽距离（屏宽倍数）—— 跟手比"轻滑"更笃定 */
+const DRAG_TURN_RATIO: number = 0.25;
+/** 跟手翻页：快扫速度阈值（vp/s），轻扫一下也能翻 */
+const DRAG_TURN_VELOCITY: number = 900;
+/** 到头了（首页往前 / 末页往后）：拖不动，只给 35% 位移当橡皮筋 */
+const DRAG_RESIST: number = 0.35;
+/** 回弹 / 当前页滑出 / 新页淡入的时长（ms） */
+const DRAG_BACK_MS: number = 200;
+const DRAG_OUT_MS: number = 130;
+const DRAG_IN_MS: number = 150;
 
 @Entry
 @Component
@@ -77,6 +85,8 @@ struct Reader {
    */
   @State pageOpacity: number = 1;
   @State shiftX: number = 0;
+  /** 跟手拖拽的实时位移（vp）：0 = 静止；与 shiftX 叠加后作用于正文 */
+  @State dragX: number = 0;
   /** 渲染参数：必须与排版参数同源（唯一真源 = common/LayoutStyle） */
   @State fontSizeFp: number = 18;
   @State lineHeightVp: number = 34.2;
@@ -110,6 +120,8 @@ struct Reader {
   private sessionChapter: number = -1;
   private viewWidthVp: number = 0;
   private viewHeightVp: number = 0;
+  /** 本轮手势是否已进入跟手态（按下时若开着菜单/目录，则整轮忽略） */
+  private dragging: boolean = false;
   /** 上一次排版时的视口（vp）；用于识别"旋转/分屏/字号缩放"导致的尺寸变化 */
   private laidOutWidthVp: number = 0;
   private laidOutHeightVp: number = 0;
@@ -412,6 +424,74 @@ struct Reader {
     });
   }
 
+  // ------------------------------------------------------------------
+  // 跟手翻页（Nothing OS 5.0「可中断动效」：拖到哪停到哪，松手才决定）
+  // ------------------------------------------------------------------
+
+  /** 还能不能往这个方向翻（首页往前 / 末页往后 = 不能，用于橡皮筋与松手判定） */
+  private canTurn(dir: number): boolean {
+    if (this.pageCount === 0) {
+      return false;
+    }
+    if (dir > 0) {
+      return this.pageIndex < this.pageCount - 1 || this.chapterIndex + 1 < this.chapterCount;
+    }
+    return this.pageIndex > 0 || this.chapterIndex > 0;
+  }
+
+  /** 拖拽时的实时位移：能翻就 1:1 跟手，不能翻只给 DRAG_RESIST（像橡皮筋） */
+  private dragOffsetOf(dx: number): number {
+    const dir: number = dx > 0 ? -1 : 1;
+    return this.canTurn(dir) ? dx : dx * DRAG_RESIST;
+  }
+
+  /** 松手结算：够了就滑出并翻页，不够就回弹。全程只动 translate / opacity，不重排版 */
+  private settleDrag(dx: number, velocityX: number): void {
+    const dir: number = dx > 0 ? -1 : 1;
+    const passed: boolean = Math.abs(dx) >= this.viewWidthVp * DRAG_TURN_RATIO
+      || Math.abs(velocityX) >= DRAG_TURN_VELOCITY;
+    if (!passed || !this.canTurn(dir)) {
+      animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
+        this.dragX = 0;
+      });
+      return;
+    }
+    const out: number = dx > 0 ? this.viewWidthVp : -this.viewWidthVp;
+    animateTo({
+      duration: DRAG_OUT_MS,
+      curve: Curve.EaseOut,
+      onFinish: () => {
+        // 换页在"当前页已滑出且不可见"时发生 → 用户看不到换页瞬间
+        this.applyTurn(dir);
+        this.dragX = 0;
+        this.pageOpacity = 0;
+        animateTo({ duration: DRAG_IN_MS, curve: Curve.EaseOut }, () => {
+          this.pageOpacity = 1;
+        });
+      }
+    }, () => {
+      this.dragX = out;
+      this.pageOpacity = 0;
+    });
+  }
+
+  /** 切到目标页但不做动画（跟手路径专用：进出场动画已由 settleDrag 负责） */
+  private applyTurn(dir: number): void {
+    if (dir > 0 && this.pageIndex < this.pageCount - 1) {
+      this.showPage(this.pageIndex + 1);
+      return;
+    }
+    if (dir < 0 && this.pageIndex > 0) {
+      this.showPage(this.pageIndex - 1);
+      return;
+    }
+    const next: number = this.chapterIndex + dir;
+    if (next < 0 || next >= this.chapterCount) {
+      return;
+    }
+    this.openChapter(next, dir > 0 ? 0 : -1);
+  }
+
   private jumpToChapter(index: number): void {
     this.showToc = false;
     if (index === this.chapterIndex) {
@@ -511,7 +591,7 @@ struct Reader {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({ left: 12, right: 18, top: 10, bottom: 12 })
-    .backgroundColor(this.palette.bg)
+    .backgroundColor(this.palette.overlay)
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
   }
 
@@ -597,7 +677,7 @@ struct Reader {
     }
     .width('100%')
     .padding({ left: 18, right: 18, top: 16, bottom: 26 })
-    .backgroundColor(this.palette.bg)
+    .backgroundColor(this.palette.overlay)
     .border({ width: { top: 1 }, color: this.palette.lineSoft })
     .onClick(() => {
     })
@@ -704,7 +784,7 @@ struct Reader {
     }
     .width('100%')
     .height('62%')
-    .backgroundColor(this.palette.bg)
+    .backgroundColor(this.palette.overlay)
     .borderRadius({ topLeft: 12, topRight: 12 })
     .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
     .onClick(() => {
@@ -742,7 +822,7 @@ struct Reader {
       .alignItems(HorizontalAlign.Start)
       .clip(true)
       .opacity(this.pageOpacity)
-      .translate({ x: this.shiftX })
+      .translate({ x: this.shiftX + this.dragX })
       .onAreaChange((oldValue: Area, newValue: Area) => {
         const width: number = newValue.width as number;
         const height: number = newValue.height as number;
@@ -796,16 +876,32 @@ struct Reader {
       })
       .gesture(
         PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
-          .onActionEnd((event: GestureEvent) => {
-            if (this.showMenu || this.showToc || this.hint.length > 0) {
+          .onActionStart(() => {
+            // 菜单/目录开着时整轮忽略：否则拖拽会把浮层和正文一起拖
+            this.dragging = !this.showMenu && !this.showToc && this.hint.length === 0;
+            this.dragX = 0;
+          })
+          .onActionUpdate((event: GestureEvent) => {
+            if (!this.dragging) {
               return;
             }
-            const threshold: number = this.viewWidthVp * SWIPE_RATIO;
-            if (event.offsetX <= -threshold) {
-              this.turnPage(1);
-            } else if (event.offsetX >= threshold) {
-              this.turnPage(-1);
+            this.dragX = this.dragOffsetOf(event.offsetX);
+          })
+          .onActionEnd((event: GestureEvent) => {
+            if (!this.dragging) {
+              return;
             }
+            this.dragging = false;
+            this.settleDrag(event.offsetX, event.velocityX);
+          })
+          .onActionCancel(() => {
+            if (!this.dragging) {
+              return;
+            }
+            this.dragging = false;
+            animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
+              this.dragX = 0;
+            });
           })
       )
 

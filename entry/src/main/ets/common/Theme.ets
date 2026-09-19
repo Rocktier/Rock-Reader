@@ -21,7 +21,12 @@ export interface Palette {
   text: string;
   /** 次级文字 */
   text2: string;
-  /** 三级文字（数码、页码） */
+  /**
+   * 三级文字（数码、页码、章节号）。
+   * 2026-09-19 设计审查：原 0.32 在黑底上只有约 2.7:1，**低于 WCAG AA 4.5:1**；
+   * 它承担的是页码/章节号这类**功能性**信息，故提亮到现在这档（深色 ≈4.5:1，浅色 ≈4.5:1）。
+   * 纯装饰性的灰仍可用 text2 之外的自定义值，不再压这个 token。
+   */
   text3: string;
   /** 描边 */
   line: string;
@@ -33,30 +38,38 @@ export interface Palette {
   card: string;
   /** 书封灰底 */
   cover: string;
+  /**
+   * 浮层底（阅读页上下细栏、目录面板）。
+   * 比 bg 略透（8%）：底下正文已被 scrim 压暗，透出来的是"纵深"而不是干扰文字。
+   * 不上 blur —— backdrop 模糊吃 GPU，撞家族铁律 1（极致快）。
+   */
+  overlay: string;
 }
 
 const DARK: Palette = {
   bg: '#000000',
   text: '#FFFFFF',
   text2: '#8CFFFFFF',
-  text3: '#52FFFFFF',
+  text3: '#75FFFFFF',
   line: '#24FFFFFF',
   lineSoft: '#12FFFFFF',
   red: '#FF4A3D',
   card: '#08FFFFFF',
-  cover: '#1A1A1A'
+  cover: '#1A1A1A',
+  overlay: '#EB000000'
 };
 
 const LIGHT: Palette = {
   bg: '#FFFFFF',
   text: '#000000',
   text2: '#8C000000',
-  text3: '#52000000',
+  text3: '#89000000',
   line: '#24000000',
   lineSoft: '#12000000',
   red: '#E64537',
   card: '#08000000',
-  cover: '#EBEBEB'
+  cover: '#EBEBEB',
+  overlay: '#EBFFFFFF'
 };
 
 export function paletteOf(theme: ThemeName): Palette {
