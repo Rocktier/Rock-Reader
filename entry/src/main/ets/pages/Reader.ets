@@ -65,6 +65,10 @@ struct Reader {
   @State pageText: string = '';
   @State showMenu: boolean = false;
   @State showToc: boolean = false;
+  /** 目录搜索词；空 = 展示全部章节 */
+  @State tocQuery: string = '';
+  /** 目录当前展示的章节（搜索时为子集，**index 仍是原章号**，跳转与高亮不受影响） */
+  @State tocFiltered: ChapterRow[] = [];
   @State hint: string = '';
   @State loading: boolean = true;
   /**
@@ -94,6 +98,8 @@ struct Reader {
   private fontPath: string = '';
   private paginator: Paginator = new TextPaginator();
   private cache: PageCache = new PageCache(4);
+  /** 目录列表的滚动器：打开目录时用它把当前章定位到中间 */
+  private tocScroller: Scroller = new Scroller();
   private theme: ThemeName = THEME_DARK;
   private currentKey: string = '';
   /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
@@ -416,6 +422,32 @@ struct Reader {
   }
 
   // ------------------------------------------------------------------
+  // 目录
+  // ------------------------------------------------------------------
+
+  /** 打开目录：清掉上次的搜索词，列表复位为全量（打开瞬间由 List.onAppear 定位到当前章） */
+  private openToc(): void {
+    this.tocQuery = '';
+    this.tocFiltered = this.chapters;
+    this.showToc = true;
+  }
+
+  /**
+   * 目录搜索：标题子串匹配，忽略大小写。
+   * 只过滤不重编号 —— `item.index` 保持原章号，所以跳转、当前章高亮、序号显示都照旧正确。
+   */
+  private applyTocQuery(query: string): void {
+    const key: string = query.trim().toLowerCase();
+    if (key.length === 0) {
+      this.tocFiltered = this.chapters;
+      return;
+    }
+    this.tocFiltered = this.chapters.filter(
+      (c: ChapterRow) => c.title.toLowerCase().indexOf(key) >= 0
+    );
+  }
+
+  // ------------------------------------------------------------------
   // 进度
   // ------------------------------------------------------------------
 
@@ -529,7 +561,7 @@ struct Reader {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            this.showToc = true;
+            this.openToc();
           })
         Text('A a')
           .fontSize(12.5)
@@ -579,40 +611,95 @@ struct Reader {
           .fontFamily('monospace')
           .fontColor(this.palette.text2)
         Blank()
-        Text(`${this.chapterCount}`)
+        Text(this.tocQuery.length > 0
+          ? `${this.tocFiltered.length}/${this.chapterCount}`
+          : `${this.chapterCount}`)
           .fontSize(10)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 16, bottom: 12 })
+      .padding({ left: 20, right: 20, top: 16, bottom: 10 })
 
-      List() {
-        ForEach(this.chapters, (item: ChapterRow) => {
-          ListItem() {
-            Row() {
-              Text(`${item.index + 1}`)
-                .fontSize(9.5)
-                .fontFamily('monospace')
-                .fontColor(item.index === this.chapterIndex ? this.palette.red : this.palette.text3)
-                .width(30)
-              Text(item.title)
-                .fontSize(13.5)
-                .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .padding({ left: 20, right: 20, top: 13, bottom: 13 })
-            .onClick(() => this.jumpToChapter(item.index))
-          }
-        }, (item: ChapterRow) => 'ch' + item.index)
+      // 章节搜索：三千章的书不必手滚着找
+      Row() {
+        Text('/')
+          .fontSize(12)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+          .width(18)
+        TextInput({ text: this.tocQuery, placeholder: '查找章节' })
+          .fontSize(12.5)
+          .fontColor(this.palette.text)
+          .placeholderColor(this.palette.text3)
+          .placeholderFont({ size: 12.5 })
+          .caretColor(this.palette.red)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(0)
+          .padding(0)
+          .height(36)
+          .layoutWeight(1)
+          .onChange((value: string) => {
+            this.tocQuery = value;
+            this.applyTocQuery(value);
+          })
+        if (this.tocQuery.length > 0) {
+          Text('×')
+            .fontSize(16)
+            .fontColor(this.palette.text3)
+            .width(26)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.tocQuery = '';
+              this.applyTocQuery('');
+            })
+        }
       }
       .width('100%')
-      .layoutWeight(1)
-      .scrollBar(BarState.Off)
-      .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+      .padding({ left: 20, right: 20 })
+      .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+      if (this.tocFiltered.length === 0) {
+        Text(this.tocQuery.length > 0 ? '没有匹配的章节' : '这本书没有解析出章节')
+          .fontSize(12)
+          .fontColor(this.palette.text3)
+          .margin({ top: 30 })
+      } else {
+        List({ scroller: this.tocScroller }) {
+          ForEach(this.tocFiltered, (item: ChapterRow) => {
+            ListItem() {
+              Row() {
+                Text(`${item.index + 1}`)
+                  .fontSize(9.5)
+                  .fontFamily('monospace')
+                  .fontColor(item.index === this.chapterIndex ? this.palette.red : this.palette.text3)
+                  .width(30)
+                Text(item.title)
+                  .fontSize(13.5)
+                  .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .padding({ left: 20, right: 20, top: 13, bottom: 13 })
+              .onClick(() => this.jumpToChapter(item.index))
+            }
+          }, (item: ChapterRow) => 'ch' + item.index)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+        .onAppear(() => {
+          // 打开目录即把当前章滚到中间 —— 读到第 2000 章不用自己从头找
+          try {
+            this.tocScroller.scrollToIndex(this.chapterIndex, false, ScrollAlign.CENTER);
+          } catch (e) {
+            hilog.warn(DOMAIN, TAG, 'toc scrollToIndex failed: %{public}s', (e as Error).message);
+          }
+        })
+      }
     }
     .width('100%')
     .height('62%')
