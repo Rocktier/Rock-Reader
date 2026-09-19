@@ -12,11 +12,16 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookImporter, ImportResult } from '../engine/importer/BookImporter';
 import {
   collectGroups,
+  filterByStatus,
   GROUP_ALL,
   GROUP_UNFILED,
   filledCells,
   normalizeGroupName,
-  percentText
+  percentText,
+  STATUS_ALL,
+  STATUS_DONE,
+  STATUS_READING,
+  STATUS_UNREAD
 } from '../engine/shelf/ShelfRules';
 import { BookRecord, ShelfItem } from '../common/Types';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
@@ -59,6 +64,8 @@ struct Index {
   @State items: ShelfItem[] = [];
   @State groups: string[] = [];
   @State activeGroup: string = GROUP_ALL;
+  /** 阅读状态筛选（未读 / 在读 / 已读），与分组是两个独立维度 */
+  @State statusFilter: string = STATUS_ALL;
   @State resume: ShelfItem | null = null;
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
@@ -121,18 +128,19 @@ struct Index {
     }
   }
 
+  /** 先按分组筛，再按阅读状态筛（两个维度独立） */
   private visibleItems(): ShelfItem[] {
     if (this.activeGroup === GROUP_ALL) {
-      return this.items;
+      return filterByStatus(this.items, this.statusFilter);
     }
-    const out: ShelfItem[] = [];
+    const grouped: ShelfItem[] = [];
     for (let i = 0; i < this.items.length; i++) {
       const it: ShelfItem = this.items[i];
       if (normalizeGroupName(it.book.groupName) === this.activeGroup) {
-        out.push(it);
+        grouped.push(it);
       }
     }
-    return out;
+    return filterByStatus(grouped, this.statusFilter);
   }
 
   private async onImport(): Promise<void> {
@@ -291,6 +299,22 @@ struct Index {
       .borderColor(active ? this.palette.text : this.palette.line)
       .onClick(() => {
         this.activeGroup = name;
+      })
+  }
+
+  @Builder
+  statusChip(label: string, status: string) {
+    Text(label)
+      .fontSize(11)
+      .fontFamily('monospace')
+      .fontColor(this.statusFilter === status ? this.palette.bg : this.palette.text3)
+      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+      .borderRadius(10)
+      .backgroundColor(this.statusFilter === status ? this.palette.text : 'rgba(0,0,0,0)')
+      .borderWidth(1)
+      .borderColor(this.statusFilter === status ? this.palette.text : this.palette.line)
+      .onClick(() => {
+        this.statusFilter = status;
       })
   }
 
@@ -470,6 +494,18 @@ struct Index {
           }
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
+          .width('100%')
+          .margin({ bottom: 8 })
+        }
+
+        // 阅读状态筛选（未读 / 在读 / 已读）
+        if (this.items.length > 0) {
+          Row({ space: 8 }) {
+            this.statusChip('全部', STATUS_ALL)
+            this.statusChip('未读', STATUS_UNREAD)
+            this.statusChip('在读', STATUS_READING)
+            this.statusChip('已读', STATUS_DONE)
+          }
           .width('100%')
           .margin({ bottom: 12 })
         }

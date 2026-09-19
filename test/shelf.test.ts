@@ -11,14 +11,20 @@ import {
   collectGroups,
   filledCells,
   filterByGroup,
+  filterByStatus,
   GROUP_ALL,
   GROUP_UNFILED,
   MAX_GROUP_NAME,
   normalizeGroupName,
   percentText,
+  STATUS_ALL,
+  STATUS_DONE,
+  STATUS_READING,
+  STATUS_UNREAD,
+  statusOf,
   toShelfItems
 } from '../entry/src/main/ets/engine/shelf/ShelfRules.ets';
-import { BookRecord } from '../entry/src/main/ets/common/Types.ets';
+import { BookRecord, ShelfItem } from '../entry/src/main/ets/common/Types.ets';
 
 function book(id: string, title: string, group: string): BookRecord {
   return {
@@ -95,6 +101,32 @@ test('toShelfItems：有进度时原样带出（顺序与书籍一致）', () =>
   percents.set('b', 0.9);
   const items = toShelfItems(books, percents);
   assert.deepEqual(items.map((i) => i.percent), [0.25, 0.9]);
+});
+
+test('阅读状态：0 → 未读；中间 → 在读；≥98% → 已读', () => {
+  assert.equal(statusOf(0), STATUS_UNREAD);
+  assert.equal(statusOf(-0.5), STATUS_UNREAD, '脏数据按未读处理');
+  assert.equal(statusOf(Number.NaN), STATUS_UNREAD);
+  assert.equal(statusOf(0.01), STATUS_READING);
+  assert.equal(statusOf(0.5), STATUS_READING);
+  assert.equal(statusOf(0.979), STATUS_READING);
+  assert.equal(statusOf(0.98), STATUS_DONE, '留 2% 余量：最后一页读了一半也算读完');
+  assert.equal(statusOf(1), STATUS_DONE);
+  assert.equal(statusOf(3), STATUS_DONE, '越界进度按已读，不许出现第四种状态');
+});
+
+test('filterByStatus：按状态筛选；STATUS_ALL 不过滤', () => {
+  const books: BookRecord[] = [book('a', 'A', ''), book('b', 'B', ''), book('c', 'C', '')];
+  const percents: Map<string, number> = new Map<string, number>();
+  percents.set('a', 0);
+  percents.set('b', 0.4);
+  percents.set('c', 1);
+  const items: ShelfItem[] = toShelfItems(books, percents);
+
+  assert.equal(filterByStatus(items, STATUS_ALL).length, 3);
+  assert.deepEqual(filterByStatus(items, STATUS_UNREAD).map((i: ShelfItem) => i.book.id), ['a']);
+  assert.deepEqual(filterByStatus(items, STATUS_READING).map((i: ShelfItem) => i.book.id), ['b']);
+  assert.deepEqual(filterByStatus(items, STATUS_DONE).map((i: ShelfItem) => i.book.id), ['c']);
 });
 
 test('filledCells / percentText：与「继续阅读」卡片的 10 格进度一致', () => {

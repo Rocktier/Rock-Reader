@@ -29,12 +29,27 @@ import { PageTable, buildPageTable, linesPerPage } from './PageTableBuilder';
 /** 已挂进 FontCollection 的字体族（进程内只挂一次，避免重复加载同一个文件） */
 const loadedFamilies: string[] = [];
 
+/**
+ * 档位表里的字重数值（400/500/700）→ graphics.text 的 FontWeight 枚举
+ * （枚举是 W100=0 … W900=8，用显式分支避免数值强转带来的不确定性）
+ */
+function toTextFontWeight(weight: number): text.FontWeight {
+  if (weight >= 700) {
+    return text.FontWeight.W700;
+  }
+  if (weight >= 500) {
+    return text.FontWeight.W500;
+  }
+  return text.FontWeight.W400;
+}
+
 export function measureLineEnds(
   content: string,
   fontSizePx: number,
   widthPx: number,
   fontFamily: string = '',
-  fontPath: string = ''
+  fontPath: string = '',
+  fontWeight: number = 400
 ): number[] {
   const ends: number[] = [];
   if (content.length === 0 || widthPx <= 0 || fontSizePx <= 0) {
@@ -55,6 +70,8 @@ export function measureLineEnds(
     // 必须与渲染字体一致，否则断行不同 → 页面会溢出
     textStyle.fontFamilies = [fontFamily];
   }
+  // 字重必须一致：加粗改变字宽与断行，测量端不加权会导致页面溢出
+  textStyle.fontWeight = toTextFontWeight(fontWeight);
   const paragraphStyle: text.ParagraphStyle = { textStyle: textStyle };
 
   const builder: text.ParagraphBuilder = new text.ParagraphBuilder(paragraphStyle, collection);
@@ -84,7 +101,8 @@ export function measureLineEnds(
 
 export class TextPaginator implements Paginator {
   paginate(content: string, box: LayoutBox): PageTable {
-    const ends: number[] = measureLineEnds(content, box.fontSizePx, box.widthPx, box.fontFamily, box.fontPath);
+    const ends: number[] = measureLineEnds(
+      content, box.fontSizePx, box.widthPx, box.fontFamily, box.fontPath, box.fontWeight);
     const perPage: number = linesPerPage(box.heightPx, box.lineHeightPx);
     const table: PageTable = buildPageTable(ends, perPage, content.length);
     table.signature = box.signature;

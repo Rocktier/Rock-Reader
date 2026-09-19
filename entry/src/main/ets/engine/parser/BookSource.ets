@@ -11,6 +11,9 @@
 import { BookRecord, ChapterRow } from '../../common/Types';
 import { clearTextCache, readChapterTextByChars } from './TxtParser';
 import { clearEpubCache, readEpubChapterText } from './EpubParser';
+import { ReaderPrefs } from '../../data/ReaderPrefs';
+import { convertByMode } from '../text/ChineseConvert';
+import { defaultPurifyRules, purifyText } from '../text/Purify';
 
 export interface BookSource {
   /** 取该章全文；失败抛错（调用方降级提示，不崩） */
@@ -63,7 +66,36 @@ export class UnsupportedSource implements BookSource {
   }
 }
 
-export function createBookSource(book: BookRecord): BookSource {
+/**
+ * 加工层：在取出的原文上做**正文净化（去广告）**与**简繁转换**
+ *
+ * 为什么是装饰器：TXT/EPUB/将来的 Reader Kit 都走同一套加工，阅读页零改动。
+ * 为什么在这里而不是改缓存：净化/简繁是**展示偏好**，不该污染导入时建立的字符偏移索引
+ * （净化会改变字符数，若导入时净化，进度偏移就对不上了）。
+ */
+export class ProcessedSource implements BookSource {
+  private inner: BookSource;
+  private prefs: ReaderPrefs;
+
+  constructor(inner: BookSource, prefs: ReaderPrefs) {
+    this.inner = inner;
+    this.prefs = prefs;
+  }
+
+  chapterText(chapter: ChapterRow): string {
+    let text: string = this.inner.chapterText(chapter);
+    if (this.prefs.isPurifyOn()) {
+      text = purifyText(text, defaultPurifyRules());
+    }
+    return convertByMode(text, this.prefs.getConvertMode());
+  }
+
+  release(): void {
+    this.inner.release();
+  }
+}
+
+function rawSource(book: BookRecord): BookSource {
   if (book.format === 'txt') {
     return new TxtSource(book.path);
   }
@@ -71,4 +103,8 @@ export function createBookSource(book: BookRecord): BookSource {
     return new EpubSource(book.path);
   }
   return new UnsupportedSource();
+}
+
+export function createBookSource(book: BookRecord, prefs: ReaderPrefs): BookSource {
+  return new ProcessedSource(rawSource(book), prefs);
 }

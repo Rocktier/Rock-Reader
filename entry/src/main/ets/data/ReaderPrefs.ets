@@ -7,7 +7,7 @@
  */
 import { preferences } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { clampLevel, DEFAULT_LEVELS, LayoutLevels } from '../common/LayoutStyle';
+import { clampLevel, clampWeightLevel, DEFAULT_LEVELS, LayoutLevels } from '../common/LayoutStyle';
 import { normalizeTheme, THEME_DARK, ThemeName } from '../common/Theme';
 
 const DOMAIN: number = 0x0000;
@@ -20,16 +20,28 @@ const KEY_MARGIN: string = 'margin_level';
 const KEY_THEME: string = 'theme';
 /** 字体族；'' = 系统默认（体积为 0：只列系统已装字体，不内置字体文件） */
 const KEY_FAMILY: string = 'font_family';
+const KEY_WEIGHT: string = 'weight_level';
+/** TXT 正文净化（去广告）开关；默认开（国内 TXT 广告太多） */
+const KEY_PURIFY: string = 'purify_on';
+/** 简繁：'off' | 's2t' | 't2s' */
+const KEY_CONVERT: string = 'convert_mode';
+
+export const CONVERT_OFF: string = 'off';
+export const CONVERT_S2T: string = 's2t';
+export const CONVERT_T2S: string = 't2s';
 
 export class ReaderPrefs {
   private store: preferences.Preferences | null = null;
   private levels: LayoutLevels = {
     fontSizeLevel: DEFAULT_LEVELS.fontSizeLevel,
     lineHeightLevel: DEFAULT_LEVELS.lineHeightLevel,
-    marginLevel: DEFAULT_LEVELS.marginLevel
+    marginLevel: DEFAULT_LEVELS.marginLevel,
+    fontWeightLevel: DEFAULT_LEVELS.fontWeightLevel
   };
   private theme: ThemeName = THEME_DARK;
   private fontFamily: string = '';
+  private purifyOn: boolean = true;
+  private convertMode: string = CONVERT_OFF;
 
   /** 幂等：重复调用直接返回 */
   open(ctx: Context): void {
@@ -39,17 +51,40 @@ export class ReaderPrefs {
     try {
       const store: preferences.Preferences = preferences.getPreferencesSync(ctx, { name: STORE_NAME });
       this.store = store;
-      this.levels = {
-        fontSizeLevel: this.readLevel(store, KEY_FONT),
-        lineHeightLevel: this.readLevel(store, KEY_LINE),
-        marginLevel: this.readLevel(store, KEY_MARGIN)
-      };
+      this.levels = this.readLevels(store);
       this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
       this.fontFamily = this.readText(store, KEY_FAMILY, '');
+      this.purifyOn = this.readBool(store, KEY_PURIFY, true);
+      this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);
     } catch (e) {
       // 读不到就用默认档位（3/3/3 + 深色）—— 绝不因为偏好读取失败而读不了书
       hilog.error(DOMAIN, TAG, 'prefs open failed: %{public}s', JSON.stringify(e));
     }
+  }
+
+  private readLevels(store: preferences.Preferences): LayoutLevels {
+    return {
+      fontSizeLevel: this.readLevel(store, KEY_FONT),
+      lineHeightLevel: this.readLevel(store, KEY_LINE),
+      marginLevel: this.readLevel(store, KEY_MARGIN),
+      fontWeightLevel: this.readWeight(store, KEY_WEIGHT)
+    };
+  }
+
+  private readWeight(store: preferences.Preferences, key: string): number {
+    const raw: preferences.ValueType = store.getSync(key, DEFAULT_LEVELS.fontWeightLevel);
+    if (typeof raw === 'number') {
+      return clampWeightLevel(raw);
+    }
+    return DEFAULT_LEVELS.fontWeightLevel;
+  }
+
+  private readBool(store: preferences.Preferences, key: string, fallback: boolean): boolean {
+    const raw: preferences.ValueType = store.getSync(key, fallback);
+    if (typeof raw === 'boolean') {
+      return raw;
+    }
+    return fallback;
   }
 
   private readLevel(store: preferences.Preferences, key: string): number {
@@ -78,13 +113,11 @@ export class ReaderPrefs {
       return;
     }
     const store: preferences.Preferences = this.store;
-    this.levels = {
-      fontSizeLevel: this.readLevel(store, KEY_FONT),
-      lineHeightLevel: this.readLevel(store, KEY_LINE),
-      marginLevel: this.readLevel(store, KEY_MARGIN)
-    };
+    this.levels = this.readLevels(store);
     this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
     this.fontFamily = this.readText(store, KEY_FAMILY, '');
+    this.purifyOn = this.readBool(store, KEY_PURIFY, true);
+    this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);
   }
 
   getLevels(): LayoutLevels {
@@ -111,12 +144,35 @@ export class ReaderPrefs {
     this.put(KEY_FONT, clampLevel(levels.fontSizeLevel));
     this.put(KEY_LINE, clampLevel(levels.lineHeightLevel));
     this.put(KEY_MARGIN, clampLevel(levels.marginLevel));
+    this.put(KEY_WEIGHT, clampWeightLevel(levels.fontWeightLevel));
     this.flush();
   }
 
   saveTheme(theme: ThemeName): void {
     this.theme = normalizeTheme(theme);
     this.put(KEY_THEME, this.theme);
+    this.flush();
+  }
+
+  /** TXT 去广告（默认开） */
+  isPurifyOn(): boolean {
+    return this.purifyOn;
+  }
+
+  setPurify(on: boolean): void {
+    this.purifyOn = on;
+    this.put(KEY_PURIFY, on);
+    this.flush();
+  }
+
+  /** 'off' | 's2t' | 't2s' */
+  getConvertMode(): string {
+    return this.convertMode;
+  }
+
+  setConvertMode(mode: string): void {
+    this.convertMode = mode;
+    this.put(KEY_CONVERT, mode);
     this.flush();
   }
 

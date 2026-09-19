@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { FakePaginator, LayoutBox, PageCache } from '../entry/src/main/ets/engine/paginator/Paginator.ets';
 
 function box(signature: string): LayoutBox {
-  return { fontSizePx: 42, lineHeightPx: 80, widthPx: 900, heightPx: 1400, signature };
+  return { fontSizePx: 42, lineHeightPx: 80, widthPx: 900, heightPx: 1400, fontFamily: '', fontPath: '', fontWeight: 400, signature };
 }
 
 test('FakePaginator：按固定字数切页，页与页首尾相接且不漏字', () => {

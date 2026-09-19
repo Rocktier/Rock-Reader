@@ -8,3 +8,5 @@ import './epub.test.ts';
 import './flow.test.ts';
 import './realfile.test.ts';
 import './shelf.test.ts';
+import './purify.test.ts';
+import './convert.test.ts';

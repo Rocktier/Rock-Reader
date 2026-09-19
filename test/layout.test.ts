@@ -9,7 +9,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   clampLevel,
+  clampWeightLevel,
   fontSizeFpOf,
+  fontWeightOf,
   layoutKey,
   lineHeightRatioOf,
   marginVpOf
@@ -36,13 +38,13 @@ test('档位越界与非法值都被夹到合法区间（不许出现 0 档或 9
 });
 
 test('layoutKey：档位、实际 px、可用宽度、字体任一变化都必须变（否则错用旧页表）', () => {
-  const lv = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3 };
+  const lv = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 };
   const base = layoutKey(lv, 54, 102.6, 900, '');
   assert.equal(base, layoutKey(lv, 54, 102.6, 900, ''));
 
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 4, lineHeightLevel: 3, marginLevel: 3 }, 54, 102.6, 900, ''));
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 4, marginLevel: 3 }, 54, 102.6, 900, ''));
-  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 4 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 4, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 4, marginLevel: 3, fontWeightLevel: 1 }, 54, 102.6, 900, ''));
+  assert.notEqual(base, layoutKey({ fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 4, fontWeightLevel: 1 }, 54, 102.6, 900, ''));
   assert.notEqual(base, layoutKey(lv, 60, 102.6, 900, ''));
   assert.notEqual(base, layoutKey(lv, 54, 120, 900, ''));
   assert.notEqual(base, layoutKey(lv, 54, 102.6, 860, ''));
@@ -53,4 +55,19 @@ test('layoutKey：档位、实际 px、可用宽度、字体任一变化都必�
   // 换字体会改断行 → 必须进签名
   assert.notEqual(base, layoutKey(lv, 54, 102.6, 900, 'HarmonyOS Sans'));
   assert.equal(layoutKey(lv, 54, 102.6, 900, ''), layoutKey(lv, 54, 102.6, 900, ''), '空字体 = 系统默认，同 key');
+});
+
+test('字重档位：1/2/3 = 400/500/700，越界与 NaN 都夹回合法档', () => {
+  assert.deepEqual([1, 2, 3].map(fontWeightOf), [400, 500, 700]);
+  assert.equal(clampWeightLevel(0), 1);
+  assert.equal(clampWeightLevel(9), 3);
+  assert.equal(clampWeightLevel(Number.NaN), 1, 'NaN 必须回落常规，否则字重是 undefined');
+});
+
+test('layoutKey：换字重必须变（加粗会改字宽与断行，沿用旧页表会切错页）', () => {
+  const lv = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 };
+  const base = layoutKey(lv, 54, 102.6, 900, '');
+  const bold = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 3 };
+  assert.notEqual(base, layoutKey(bold, 54, 102.6, 900, ''));
+  assert.equal(base, layoutKey(lv, 54, 102.6, 900, ''));
 });

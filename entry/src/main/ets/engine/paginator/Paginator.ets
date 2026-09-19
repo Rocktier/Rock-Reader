@@ -20,6 +20,12 @@ export interface LayoutBox {
   fontFamily: string;
   /** 该字体在沙箱里的文件路径（**下载字体**才有）；'' = 系统字体，无需加载 */
   fontPath: string;
+  /**
+   * 字重数值（400/500/700，来自 LayoutStyle 档位表）
+   * ⚠️ 必须传给测量端：加粗会改变字宽与断行，若测量不加权而渲染加权，
+   * 两边断行不一致 → 页面溢出（末行被裁）。已进 layoutKey。
+   */
+  fontWeight: number;
   /** 缓存键，见 common/LayoutStyle.layoutKey */
   signature: string;
 }

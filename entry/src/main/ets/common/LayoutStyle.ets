@@ -15,13 +15,20 @@ export interface LayoutLevels {
   fontSizeLevel: number;
   lineHeightLevel: number;
   marginLevel: number;
+  /** 字重档位 1..3（常规 / 中粗 / 加粗）。会影响断行，所以必须进排版签名 */
+  fontWeightLevel: number;
 }
 
 export const DEFAULT_LEVELS: LayoutLevels = {
   fontSizeLevel: 3,
   lineHeightLevel: 3,
-  marginLevel: 3
+  marginLevel: 3,
+  fontWeightLevel: 1
 };
+
+/** 字重档位范围（与字号等档位不同：只有 3 档，够用且更省事） */
+export const WEIGHT_MIN: number = 1;
+export const WEIGHT_MAX: number = 3;
 
 /** 字号（fp）。索引 = 档位 - 1 */
 const FONT_SIZE_FP: number[] = [14, 16, 18, 20, 22];
@@ -64,6 +71,28 @@ export function marginVpOf(level: number): number {
   return at(MARGIN_VP, level);
 }
 
+/** 字重值（FontWeight 用的数字）。索引 = 档位 - 1 */
+const FONT_WEIGHT: number[] = [400, 500, 700];
+
+/** 夹到 [1,3]；NaN 回落默认档 1（常规）—— 否则会拿到 undefined 字重 */
+export function clampWeightLevel(level: number): number {
+  if (Number.isNaN(level)) {
+    return 1;
+  }
+  const value: number = Math.floor(level);
+  if (value < WEIGHT_MIN) {
+    return WEIGHT_MIN;
+  }
+  if (value > WEIGHT_MAX) {
+    return WEIGHT_MAX;
+  }
+  return value;
+}
+
+export function fontWeightOf(level: number): number {
+  return FONT_WEIGHT[clampWeightLevel(level) - 1];
+}
+
 /**
  * 页表缓存键（layoutSignature）。
  *
@@ -84,6 +113,8 @@ export function layoutKey(
     '-fs' + Math.round(fontSizePx) +
     '-lh' + Math.round(lineHeightPx) +
     '-w' + Math.round(widthPx) +
+    // 字重必须进签名：加粗会改变字宽与断行，沿用旧页表会切错页
+    '-wt' + clampWeightLevel(levels.fontWeightLevel) +
     // 字体必须进签名：换字体会改断行，沿用旧页表会切错页（'sys' = 系统默认）
     '-ff' + (fontFamily.length > 0 ? fontFamily : 'sys');
 }

@@ -11,7 +11,7 @@
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { clampLevel, LayoutLevels, LEVEL_MAX, LEVEL_MIN } from '../common/LayoutStyle';
+import { clampLevel, clampWeightLevel, LayoutLevels, LEVEL_MAX, LEVEL_MIN, WEIGHT_MAX } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { FontStore } from '../data/FontStore';
@@ -29,8 +29,12 @@ const MAX_FONT_ITEMS: number = 40;
 @Component
 struct Settings {
   @State palette: Palette = paletteOf(THEME_DARK);
-  @State levels: LayoutLevels = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3 };
+  @State levels: LayoutLevels = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 };
   @State theme: ThemeName = THEME_DARK;
+  /** TXT 正文净化（去广告） */
+  @State purifyOn: boolean = true;
+  /** 简繁：'off' | 's2t' | 't2s' */
+  @State convertMode: string = 'off';
   /** '' = 系统默认 */
   @State fontFamily: string = '';
   @State fontFamilies: string[] = [];
@@ -49,6 +53,8 @@ struct Settings {
     this.levels = this.prefs.getLevels();
     this.theme = this.prefs.getTheme();
     this.fontFamily = this.prefs.getFontFamily();
+    this.purifyOn = this.prefs.isPurifyOn();
+    this.convertMode = this.prefs.getConvertMode();
     this.palette = paletteOf(this.theme);
     this.refreshFontState();
     this.registerLocalFonts();
@@ -167,10 +173,22 @@ struct Settings {
     const next: LayoutLevels = {
       fontSizeLevel: row === 'font' ? level : this.levels.fontSizeLevel,
       lineHeightLevel: row === 'line' ? level : this.levels.lineHeightLevel,
-      marginLevel: row === 'margin' ? level : this.levels.marginLevel
+      marginLevel: row === 'margin' ? level : this.levels.marginLevel,
+      // 字重只有 3 档，用单独的夹取（clampLevel 会夹到 1..5，对字重不适用）
+      fontWeightLevel: row === 'weight' ? clampWeightLevel(n) : this.levels.fontWeightLevel
     };
     this.levels = next;
     this.prefs.saveLevels(next);
+  }
+
+  private pickPurify(on: boolean): void {
+    this.purifyOn = on;
+    this.prefs.setPurify(on);
+  }
+
+  private pickConvert(mode: string): void {
+    this.convertMode = mode;
+    this.prefs.setConvertMode(mode);
   }
 
   private pickTheme(theme: ThemeName): void {
@@ -185,6 +203,9 @@ struct Settings {
   private currentOf(row: string): number {
     if (row === 'font') {
       return this.levels.fontSizeLevel;
+    }
+    if (row === 'weight') {
+      return this.levels.fontWeightLevel;
     }
     return row === 'line' ? this.levels.lineHeightLevel : this.levels.marginLevel;
   }
@@ -225,6 +246,104 @@ struct Settings {
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding({ top: 16, bottom: 16 })
+  }
+
+  /** 字重：3 档（常规 / 中粗 / 加粗）—— 与字号等 5 档不同，单独一行 */
+  @Builder
+  weightRow() {
+    Column() {
+      Row() {
+        Text('字重')
+          .fontSize(13.5)
+          .fontColor(this.palette.text)
+        Blank()
+        Text(`${this.levels.fontWeightLevel}/${WEIGHT_MAX}`)
+          .fontSize(9.5)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .margin({ bottom: 10 })
+
+      Row({ space: 8 }) {
+        ForEach([1, 2, 3], (n: number) => {
+          Text(n === 1 ? '常规' : (n === 2 ? '中粗' : '加粗'))
+            .fontSize(12)
+            .fontFamily('monospace')
+            .fontColor(this.currentOf('weight') === n ? this.palette.bg : this.palette.text2)
+            .backgroundColor(this.currentOf('weight') === n ? this.palette.text : this.palette.card)
+            .border({ width: 1, color: this.currentOf('weight') === n ? this.palette.text : this.palette.line })
+            .borderRadius(0)
+            .height(CHIP_HEIGHT)
+            .padding({ left: 14, right: 14 })
+            .onClick(() => this.pick('weight', n))
+        }, (n: number) => 'w' + n)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: 16, bottom: 16 })
+  }
+
+  /** 正文处理：去广告（净化）+ 简繁转换 */
+  @Builder
+  textSection() {
+    Column() {
+      // 净化开关
+      Row() {
+        Column() {
+          Text('正文去广告')
+            .fontSize(13.5)
+            .fontColor(this.palette.text)
+          Text('自动删除 TXT 里的站点水印、公众号推广与网址')
+            .fontSize(10)
+            .fontColor(this.palette.text3)
+            .margin({ top: 3 })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Text(this.purifyOn ? '开' : '关')
+          .fontSize(12)
+          .fontFamily('monospace')
+          .fontColor(this.purifyOn ? this.palette.bg : this.palette.text2)
+          .backgroundColor(this.purifyOn ? this.palette.text : this.palette.card)
+          .border({ width: 1, color: this.purifyOn ? this.palette.text : this.palette.line })
+          .borderRadius(0)
+          .height(CHIP_HEIGHT)
+          .padding({ left: 16, right: 16 })
+          .onClick(() => this.pickPurify(!this.purifyOn))
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      // 简繁
+      Column() {
+        Text('简繁')
+          .fontSize(13.5)
+          .fontColor(this.palette.text)
+        Row({ space: 8 }) {
+          ForEach([['off', '不转换'], ['s2t', '简→繁'], ['t2s', '繁→简']], (it: string[]) => {
+            Text(it[1])
+              .fontSize(12)
+              .fontFamily('monospace')
+              .fontColor(this.convertMode === it[0] ? this.palette.bg : this.palette.text2)
+              .backgroundColor(this.convertMode === it[0] ? this.palette.text : this.palette.card)
+              .border({ width: 1, color: this.convertMode === it[0] ? this.palette.text : this.palette.line })
+              .borderRadius(0)
+              .height(CHIP_HEIGHT)
+              .padding({ left: 14, right: 14 })
+              .onClick(() => this.pickConvert(it[0]))
+          }, (it: string[]) => 'c' + it[0])
+        }
+        .width('100%')
+        .margin({ top: 10 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({ bottom: 14 })
+    }
+    .width('100%')
   }
 
   @Builder
@@ -415,6 +534,9 @@ struct Settings {
         this.levelRow('字号', 'font', `${this.levels.fontSizeLevel}/${LEVEL_MAX}`)
         this.levelRow('行距', 'line', `${this.levels.lineHeightLevel}/${LEVEL_MAX}`)
         this.levelRow('页边距', 'margin', `${this.levels.marginLevel}/${LEVEL_MAX}`)
+        this.weightRow()
+
+        this.textSection()
 
         this.fontSection()
 

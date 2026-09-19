@@ -19,7 +19,7 @@ import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookRecord, ChapterRow, ReadingProgress } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
-import { fontSizeFpOf, layoutKey, LayoutLevels, lineHeightRatioOf, marginVpOf } from '../common/LayoutStyle';
+import { fontSizeFpOf, fontWeightOf, layoutKey, LayoutLevels, lineHeightRatioOf, marginVpOf } from '../common/LayoutStyle';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
@@ -75,6 +75,8 @@ struct Reader {
   /** 渲染参数：必须与排版参数同源（唯一真源 = common/LayoutStyle） */
   @State fontSizeFp: number = 18;
   @State lineHeightVp: number = 34.2;
+  /** 字重数值（400/500/700），来自档位表 —— 测量与渲染必须共用同一个值 */
+  @State fontWeightValue: number = 400;
   @State marginVp: number = 20;
   /** '' = 系统默认字体；非空时渲染与测量都必须用同一个族名 */
   @State fontFamily: string = '';
@@ -93,6 +95,9 @@ struct Reader {
   private cache: PageCache = new PageCache(4);
   private theme: ThemeName = THEME_DARK;
   private currentKey: string = '';
+  /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
+  private purifyOn: boolean = true;
+  private convertMode: string = 'off';
   private viewWidthVp: number = 0;
   private viewHeightVp: number = 0;
   /** 上一次排版时的视口（vp）；用于识别"旋转/分屏/字号缩放"导致的尺寸变化 */
@@ -144,7 +149,10 @@ struct Reader {
     }
     // 档位 / 字体 / 视口任一变化都要重排；位置按字符偏移复原（切档位不跳页）
     const next: string = this.boxOf(this.prefs.getLevels()).signature;
-    if (next !== this.currentKey) {
+    // 净化 / 简繁变化会改正文内容 → 不能只重排，必须重新取一次章文本
+    const textChanged: boolean =
+      this.prefs.isPurifyOn() !== this.purifyOn || this.prefs.getConvertMode() !== this.convertMode;
+    if (next !== this.currentKey || textChanged) {
       const keep: number = this.pages.length > 0 ? this.pages[this.pageIndex].start : 0;
       this.openChapter(this.chapterIndex, keep);
     }
@@ -182,7 +190,7 @@ struct Reader {
       }
       this.book = book;
       this.title = book.title;
-      this.source = createBookSource(book);
+      this.source = createBookSource(book, this.prefs);
 
       this.fontFamily = this.prefs.getFontFamily();
       this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(this.fontFamily);
@@ -221,6 +229,7 @@ struct Reader {
       heightPx: heightPx,
       fontFamily: this.fontFamily,
       fontPath: this.fontPath,
+      fontWeight: fontWeightOf(levels.fontWeightLevel),
       signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx, this.fontFamily)
     };
   }
@@ -246,6 +255,9 @@ struct Reader {
     }
     const levels: LayoutLevels = this.prefs.getLevels();
     const box: LayoutBox = this.boxOf(levels);
+    this.fontWeightValue = fontWeightOf(levels.fontWeightLevel);
+    this.purifyOn = this.prefs.isPurifyOn();
+    this.convertMode = this.prefs.getConvertMode();
     const chapter: ChapterRow = this.chapters[index];
 
     this.hint = '';
@@ -593,6 +605,7 @@ struct Reader {
             .fontSize(this.fontSizeFp)
             .lineHeight(this.lineHeightVp)
             .fontFamily(this.fontFamily)      // '' = 系统默认；必须与 TextPaginator 测量时一致
+            .fontWeight(this.fontWeightValue) // 必须来自档位表（测量与渲染共用，否则断行不一致）
             .fontColor(this.palette.text)
             .width('100%')
             .textAlign(TextAlign.Start)
