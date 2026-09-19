@@ -14,6 +14,14 @@ export interface BookRecord {
   size: number;
   addedAt: number;
   lastReadAt: number;
+  /** 分组名（空串或空值按「未分组」处理，见 engine/shelf/ShelfRules） */
+  groupName: string;
+}
+
+/** 书架列表项：书 + 阅读进度（0~1） */
+export interface ShelfItem {
+  book: BookRecord;
+  percent: number;
 }
 
 export interface ReadingProgress {

@@ -165,7 +165,8 @@ export class BookImporter {
       path: dstPath,
       size: srcSize,
       addedAt: now,
-      lastReadAt: now
+      lastReadAt: now,
+      groupName: '' // 新导入的书进「未分组」，由用户在书架里归组
     };
 
     if (ext === 'txt') {
@@ -190,7 +191,8 @@ export class BookImporter {
           path: dstPath,
           size: srcSize,
           addedAt: now,
-          lastReadAt: now
+          lastReadAt: now,
+          groupName: ''
         };
         await this.db.addChapters(id, parsed.chapters);
       } catch (e) {

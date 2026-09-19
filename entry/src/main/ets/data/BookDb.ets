@@ -17,7 +17,10 @@ const DB_NAME = 'rockreader.db';
 
 const SQL_BOOKS = 'CREATE TABLE IF NOT EXISTS books(' +
   'id TEXT PRIMARY KEY, title TEXT NOT NULL, author TEXT, format TEXT, ' +
-  'path TEXT NOT NULL, size INTEGER, added_at INTEGER, last_read_at INTEGER)';
+  'path TEXT NOT NULL, size INTEGER, added_at INTEGER, last_read_at INTEGER, group_name TEXT)';
+
+/** group_name 是后续新增列；老库需要补列（无发布版本，仍做一次兜底迁移） */
+const SQL_BOOKS_ADD_GROUP = 'ALTER TABLE books ADD COLUMN group_name TEXT';
 
 const SQL_CHAPTERS = 'CREATE TABLE IF NOT EXISTS chapters(' +
   'book_id TEXT NOT NULL, idx INTEGER NOT NULL, title TEXT, ' +
@@ -30,6 +33,22 @@ const SQL_CHAPTERS_ADD_HREF = 'ALTER TABLE chapters ADD COLUMN href TEXT';
 
 const SQL_PROGRESS = 'CREATE TABLE IF NOT EXISTS progress(' +
   'book_id TEXT PRIMARY KEY, chapter_index INTEGER, char_offset INTEGER, percent REAL, updated_at INTEGER)';
+
+/** 结果集 → BookRecord（分组列可能为 null：老库补列前的行） */
+function rowToBook(rs: relationalStore.ResultSet): BookRecord {
+  const group: string = rs.getString(rs.getColumnIndex('group_name'));
+  return {
+    id: rs.getString(rs.getColumnIndex('id')),
+    title: rs.getString(rs.getColumnIndex('title')),
+    author: rs.getString(rs.getColumnIndex('author')),
+    format: rs.getString(rs.getColumnIndex('format')),
+    path: rs.getString(rs.getColumnIndex('path')),
+    size: rs.getLong(rs.getColumnIndex('size')),
+    addedAt: rs.getLong(rs.getColumnIndex('added_at')),
+    lastReadAt: rs.getLong(rs.getColumnIndex('last_read_at')),
+    groupName: group === null ? '' : group
+  };
+}
 
 export class BookDb {
   private store: relationalStore.RdbStore | null = null;
@@ -52,6 +71,11 @@ export class BookDb {
     } catch (e) {
       // 忽略：列已存在
     }
+    try {
+      await store.executeSql(SQL_BOOKS_ADD_GROUP);
+    } catch (e) {
+      // 忽略：列已存在
+    }
     this.store = store;
   }
 
@@ -71,26 +95,19 @@ export class BookDb {
       'path': book.path,
       'size': book.size,
       'added_at': book.addedAt,
-      'last_read_at': book.lastReadAt
+      'last_read_at': book.lastReadAt,
+      'group_name': book.groupName
     };
     await this.ready().insert('books', bucket, relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
   }
 
-  async listBooks(): Promise<BookRecord[]> {    const rs = await this.ready().querySql(
-      'SELECT id, title, author, format, path, size, added_at, last_read_at FROM books ' +
+  async listBooks(): Promise<BookRecord[]> {
+    const rs = await this.ready().querySql(
+      'SELECT id, title, author, format, path, size, added_at, last_read_at, group_name FROM books ' +
       'ORDER BY last_read_at DESC, added_at DESC');
     const out: BookRecord[] = [];
     while (rs.goToNextRow()) {
-      out.push({
-        id: rs.getString(rs.getColumnIndex('id')),
-        title: rs.getString(rs.getColumnIndex('title')),
-        author: rs.getString(rs.getColumnIndex('author')),
-        format: rs.getString(rs.getColumnIndex('format')),
-        path: rs.getString(rs.getColumnIndex('path')),
-        size: rs.getLong(rs.getColumnIndex('size')),
-        addedAt: rs.getLong(rs.getColumnIndex('added_at')),
-        lastReadAt: rs.getLong(rs.getColumnIndex('last_read_at'))
-      });
+      out.push(rowToBook(rs));
     }
     rs.close();
     return out;
@@ -98,22 +115,51 @@ export class BookDb {
 
   async getBook(bookId: string): Promise<BookRecord | null> {
     const rs = await this.ready().querySql(
-      'SELECT id, title, author, format, path, size, added_at, last_read_at FROM books WHERE id = ?', [bookId]);
+      'SELECT id, title, author, format, path, size, added_at, last_read_at, group_name FROM books WHERE id = ?',
+      [bookId]);
     let book: BookRecord | null = null;
     if (rs.goToNextRow()) {
-      book = {
-        id: rs.getString(rs.getColumnIndex('id')),
-        title: rs.getString(rs.getColumnIndex('title')),
-        author: rs.getString(rs.getColumnIndex('author')),
-        format: rs.getString(rs.getColumnIndex('format')),
-        path: rs.getString(rs.getColumnIndex('path')),
-        size: rs.getLong(rs.getColumnIndex('size')),
-        addedAt: rs.getLong(rs.getColumnIndex('added_at')),
-        lastReadAt: rs.getLong(rs.getColumnIndex('last_read_at'))
-      };
+      book = rowToBook(rs);
     }
     rs.close();
     return book;
+  }
+
+  /** 重命名（只改书名，不动沙箱文件） */
+  async renameBook(bookId: string, title: string): Promise<void> {
+    await this.ready().executeSql('UPDATE books SET title = ? WHERE id = ?', [title, bookId]);
+  }
+
+  /** 移动分组（分组名由调用方用 ShelfRules.normalizeGroupName 归一化后再传） */
+  async setBookGroup(bookId: string, group: string): Promise<void> {
+    await this.ready().executeSql('UPDATE books SET group_name = ? WHERE id = ?', [group, bookId]);
+  }
+
+  /** 已有分组（数据库侧 DISTINCT；展示层再用 ShelfRules 归一化去重） */
+  async listGroupNames(): Promise<string[]> {
+    const rs = await this.ready().querySql('SELECT DISTINCT group_name FROM books');
+    const out: string[] = [];
+    while (rs.goToNextRow()) {
+      out.push(rs.getString(rs.getColumnIndex('group_name')));
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 一次取全部书的进度，避免书架里 N+1 查询（铁律 1：快） */
+  async listAllProgress(): Promise<Map<string, number>> {
+    const rs = await this.ready().querySql('SELECT book_id, percent FROM progress');
+    const out: Map<string, number> = new Map<string, number>();
+    while (rs.goToNextRow()) {
+      const id: string = rs.getString(rs.getColumnIndex('book_id'));
+      const percent: number = rs.getDouble(rs.getColumnIndex('percent'));
+      // 脏数据不放进去：缺进度由 ShelfRules 记 0，不许 NaN 漏到 UI
+      if (!Number.isNaN(percent)) {
+        out.set(id, percent);
+      }
+    }
+    rs.close();
+    return out;
   }
 
   async deleteBook(bookId: string): Promise<void> {
