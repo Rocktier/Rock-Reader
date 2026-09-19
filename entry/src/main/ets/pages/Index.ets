@@ -458,6 +458,8 @@ struct Index {
             .textAlign(TextAlign.Center)
             .borderWidth(1)
             .borderColor(this.palette.line)
+            // 视觉 30，热区 46：30vp 的点击目标太小（触摸标准 ≥44）
+            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: 8 })
             .onClick(() => {
               router.pushUrl({ url: 'pages/Stats' });
@@ -470,6 +472,7 @@ struct Index {
             .textAlign(TextAlign.Center)
             .borderWidth(1)
             .borderColor(this.palette.line)
+            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: 8 })
             .onClick(() => {
               router.pushUrl({ url: 'pages/Settings' });
@@ -482,6 +485,7 @@ struct Index {
             .textAlign(TextAlign.Center)
             .borderWidth(1)
             .borderColor(this.palette.line)
+            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: 8 })
             .onClick(() => {
               this.onImport();
@@ -579,11 +583,6 @@ struct Index {
 
         Row() {
           Text('LOCAL ONLY')
-            .fontSize(9)
-            .fontFamily('monospace')
-            .fontColor(this.palette.text3)
-          Blank()
-          Text('v1.0.0')
             .fontSize(9)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)

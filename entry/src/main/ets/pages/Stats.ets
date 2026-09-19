@@ -140,6 +140,7 @@ struct Stats {
           .fontColor(this.palette.text)
           .width(30)
           .height(30)
+          .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
           .textAlign(TextAlign.Center)
           .borderWidth(1)
           .borderColor(this.palette.line)

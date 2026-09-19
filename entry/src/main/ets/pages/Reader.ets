@@ -493,6 +493,7 @@ struct Reader {
         .width(34)
         .height(34)
         .textAlign(TextAlign.Center)
+        .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
         .onClick(() => router.back())
       Text(this.title)
         .fontSize(13)
