@@ -18,6 +18,7 @@ import {
   filledCells,
   normalizeGroupName,
   percentText,
+  toShelfItems,
   STATUS_ALL,
   STATUS_DONE,
   STATUS_READING,
@@ -110,12 +111,8 @@ struct Index {
       await this.db.open(getContext(this) as Context);
       const list: BookRecord[] = await this.db.listBooks();
       const percents: Map<string, number> = await this.db.listAllProgress();
-      const built: ShelfItem[] = [];
-      for (let i = 0; i < list.length; i++) {
-        const raw: number | undefined = percents.get(list[i].id);
-        const one: ShelfItem = { book: list[i], percent: raw === undefined ? 0 : raw };
-        built.push(one);
-      }
+      // 组装交给 ShelfRules.toShelfItems：缺进度与 NaN 都记 0，脏数据漏不进进度条
+      const built: ShelfItem[] = toShelfItems(list, percents);
       this.items = built;
       this.groups = collectGroups(list);
       if (this.activeGroup !== GROUP_ALL && this.groups.indexOf(this.activeGroup) < 0) {

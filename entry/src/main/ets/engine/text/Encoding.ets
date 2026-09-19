@@ -84,14 +84,3 @@ export function detectEncoding(bytes: Uint8Array, sampleSize: number = 65536): E
   }
   return { encoding: 'gb18030', bom: false, confidence: 0.7 };
 }
-
-/** 需要跳过 BOM 时才用（交给 TextDecoder 前剥掉） */
-export function bomLength(bytes: Uint8Array): number {
-  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
-    return 3;
-  }
-  if (bytes.length >= 2 && (bytes[0] === 0xFF && bytes[1] === 0xFE || bytes[0] === 0xFE && bytes[1] === 0xFF)) {
-    return 2;
-  }
-  return 0;
-}

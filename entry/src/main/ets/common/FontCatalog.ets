@@ -75,12 +75,3 @@ export function sizeTextOf(bytes: number): string {
   }
   return Math.round(bytes / 1024) + ' KB';
 }
-
-export function findFont(id: string): FontEntry | null {
-  for (let i: number = 0; i < FONT_CATALOG.length; i++) {
-    if (FONT_CATALOG[i].id === id) {
-      return FONT_CATALOG[i];
-    }
-  }
-  return null;
-}

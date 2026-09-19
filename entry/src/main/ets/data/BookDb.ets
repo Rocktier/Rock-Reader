@@ -141,17 +141,6 @@ export class BookDb {
     await this.ready().executeSql('UPDATE books SET group_name = ? WHERE id = ?', [group, bookId]);
   }
 
-  /** 已有分组（数据库侧 DISTINCT；展示层再用 ShelfRules 归一化去重） */
-  async listGroupNames(): Promise<string[]> {
-    const rs = await this.ready().querySql('SELECT DISTINCT group_name FROM books');
-    const out: string[] = [];
-    while (rs.goToNextRow()) {
-      out.push(rs.getString(rs.getColumnIndex('group_name')));
-    }
-    rs.close();
-    return out;
-  }
-
   /** 一次取全部书的进度，避免书架里 N+1 查询（铁律 1：快） */
   async listAllProgress(): Promise<Map<string, number>> {
     const rs = await this.ready().querySql('SELECT book_id, percent FROM progress');

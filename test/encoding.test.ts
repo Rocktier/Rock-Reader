@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  bomLength,
   detectBom,
   detectEncoding,
   isValidUtf8
 } from '../entry/src/main/ets/engine/text/Encoding.ets';
+// BOM 长度只有生产真源这一份：Utf8Decode.bomLengthOf（Encoding 里那份重复实现已删）
+import { bomLengthOf } from '../entry/src/main/ets/engine/text/Utf8Decode.ets';
 
 function utf8Bytes(s: string): Uint8Array {
   return new Uint8Array(Buffer.from(s, 'utf8'));
@@ -14,7 +15,7 @@ function utf8Bytes(s: string): Uint8Array {
 test('UTF-8 BOM 能被识别', () => {
   const bytes = new Uint8Array([0xEF, 0xBB, 0xBF, 0x61]);
   assert.equal(detectBom(bytes), 'utf-8');
-  assert.equal(bomLength(bytes), 3);
+  assert.equal(bomLengthOf(bytes), 3);
   assert.equal(detectEncoding(bytes).bom, true);
 });
 
@@ -50,6 +51,6 @@ test('非法首字节 / 截断序列不误判', () => {
   assert.equal(isValidUtf8(new Uint8Array([0xE5, 0xB2]), 2), true);
 });
 
-test('bomLength 对无 BOM 返回 0', () => {
-  assert.equal(bomLength(new Uint8Array([0x61, 0x62])), 0);
+test('bomLengthOf 对无 BOM 返回 0', () => {
+  assert.equal(bomLengthOf(new Uint8Array([0x61, 0x62])), 0);
 });

@@ -27,8 +27,6 @@ const KEY_PURIFY: string = 'purify_on';
 const KEY_CONVERT: string = 'convert_mode';
 
 export const CONVERT_OFF: string = 'off';
-export const CONVERT_S2T: string = 's2t';
-export const CONVERT_T2S: string = 't2s';
 
 export class ReaderPrefs {
   private store: preferences.Preferences | null = null;

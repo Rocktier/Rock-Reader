@@ -56,20 +56,6 @@ export function buildPageTable(lineEnds: number[], perPage: number, totalChars: 
 }
 
 /**
- * 排版签名：任一参数变化都必须重算页表。
- * 实现说明：不用 crypto（ArkTS 里同步摘要 API 有额外依赖），用稳定字符串即可作 key。
- */
-export function layoutSignature(
-  fontSizeLevel: number,
-  lineHeightLevel: number,
-  marginLevel: number,
-  viewportWidthPx: number,
-  fontFamily: string
-): string {
-  return 'f' + fontSizeLevel + '-l' + lineHeightLevel + '-m' + marginLevel + '-w' + Math.round(viewportWidthPx) + '-' + fontFamily;
-}
-
-/**
  * 当前页落在第几页（页码从 1 开始）；给"按进度恢复阅读位置"用。
  * 用二分查找，页数多时也不慢。
  */
