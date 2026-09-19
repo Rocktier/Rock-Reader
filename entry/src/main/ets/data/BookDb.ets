@@ -12,6 +12,7 @@
  */
 import { relationalStore } from '@kit.ArkData';
 import { BookRecord, ChapterRow, ReadingProgress } from '../common/Types';
+import { ReadSession } from '../engine/stats/ReadStats';
 
 const DB_NAME = 'rockreader.db';
 
@@ -33,6 +34,10 @@ const SQL_CHAPTERS_ADD_HREF = 'ALTER TABLE chapters ADD COLUMN href TEXT';
 
 const SQL_PROGRESS = 'CREATE TABLE IF NOT EXISTS progress(' +
   'book_id TEXT PRIMARY KEY, chapter_index INTEGER, char_offset INTEGER, percent REAL, updated_at INTEGER)';
+
+/** 阅读会话（统计用）：每次进入某章到切章/离开之间记一条 */
+const SQL_SESSIONS = 'CREATE TABLE IF NOT EXISTS read_sessions(' +
+  'book_id TEXT NOT NULL, chapter_index INTEGER, start_at INTEGER, end_at INTEGER)';
 
 /** 结果集 → BookRecord（分组列可能为 null：老库补列前的行） */
 function rowToBook(rs: relationalStore.ResultSet): BookRecord {
@@ -65,6 +70,7 @@ export class BookDb {
     await store.executeSql(SQL_BOOKS);
     await store.executeSql(SQL_CHAPTERS);
     await store.executeSql(SQL_PROGRESS);
+    await store.executeSql(SQL_SESSIONS);
     try {
       // 已存在该列时会报错，属预期（幂等迁移）
       await store.executeSql(SQL_CHAPTERS_ADD_HREF);
@@ -167,6 +173,7 @@ export class BookDb {
     await store.executeSql('DELETE FROM books WHERE id = ?', [bookId]);
     await store.executeSql('DELETE FROM chapters WHERE book_id = ?', [bookId]);
     await store.executeSql('DELETE FROM progress WHERE book_id = ?', [bookId]);
+    await this.deleteSessionsOf(bookId);
   }
 
   async addChapters(bookId: string, chapters: ChapterRow[]): Promise<void> {
@@ -241,5 +248,48 @@ export class BookDb {
 
   async touchLastRead(bookId: string, when: number): Promise<void> {
     await this.ready().executeSql('UPDATE books SET last_read_at = ? WHERE id = ?', [when, bookId]);
+  }
+
+  // ------------------------------------------------------------------
+  // 阅读会话（统计）
+  // ------------------------------------------------------------------
+
+  async addSession(s: ReadSession): Promise<void> {
+    const bucket: relationalStore.ValuesBucket = {
+      'book_id': s.bookId,
+      'chapter_index': s.chapterIndex,
+      'start_at': s.startAt,
+      'end_at': s.endAt
+    };
+    await this.ready().insert('read_sessions', bucket);
+  }
+
+  /** 取会话；since 用于只取近 N 天（默认全部） */
+  async listSessions(since: number = 0): Promise<ReadSession[]> {
+    const rs = await this.ready().querySql(
+      'SELECT book_id, chapter_index, start_at, end_at FROM read_sessions WHERE end_at >= ? ORDER BY start_at ASC',
+      [since]);
+    const out: ReadSession[] = [];
+    while (rs.goToNextRow()) {
+      const s: ReadSession = {
+        bookId: rs.getString(rs.getColumnIndex('book_id')),
+        chapterIndex: rs.getLong(rs.getColumnIndex('chapter_index')),
+        startAt: rs.getLong(rs.getColumnIndex('start_at')),
+        endAt: rs.getLong(rs.getColumnIndex('end_at'))
+      };
+      out.push(s);
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 清理过老的会话（统计只需要近期；避免表无限增长） */
+  async pruneSessions(before: number): Promise<void> {
+    await this.ready().executeSql('DELETE FROM read_sessions WHERE end_at < ?', [before]);
+  }
+
+  /** 删书时一并清掉它的会话 */
+  private async deleteSessionsOf(bookId: string): Promise<void> {
+    await this.ready().executeSql('DELETE FROM read_sessions WHERE book_id = ?', [bookId]);
   }
 }

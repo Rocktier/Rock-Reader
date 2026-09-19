@@ -453,6 +453,18 @@ struct Index {
             .fontColor(this.palette.text3)
             .margin({ left: 10 })
           Blank()
+          Text('▤')
+            .fontSize(13)
+            .fontColor(this.palette.text)
+            .width(30)
+            .height(30)
+            .textAlign(TextAlign.Center)
+            .borderWidth(1)
+            .borderColor(this.palette.line)
+            .margin({ left: 8 })
+            .onClick(() => {
+              router.pushUrl({ url: 'pages/Stats' });
+            })
           Text('Aa')
             .fontSize(13)
             .fontColor(this.palette.text)

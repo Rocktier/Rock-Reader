@@ -23,6 +23,7 @@ import { fontSizeFpOf, fontWeightOf, layoutKey, LayoutLevels, lineHeightRatioOf,
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
+import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
@@ -98,6 +99,9 @@ struct Reader {
   /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
   private purifyOn: boolean = true;
   private convertMode: string = 'off';
+  /** 阅读会话（统计用）：进入某章的开始时间与章号；-1 表示没有进行中的会话 */
+  private sessionStartAt: number = 0;
+  private sessionChapter: number = -1;
   private viewWidthVp: number = 0;
   private viewHeightVp: number = 0;
   /** 上一次排版时的视口（vp）；用于识别"旋转/分屏/字号缩放"导致的尺寸变化 */
@@ -160,10 +164,12 @@ struct Reader {
 
   onPageHide(): void {
     this.persistProgress(true);
+    this.flushSession();
   }
 
   aboutToDisappear(): void {
     this.persistProgress(true);
+    this.flushSession();
     if (this.source !== null) {
       this.source.release();
     }
@@ -248,10 +254,36 @@ struct Reader {
     this.pagePercent = 0;
   }
 
+  /** 记一条阅读会话（短于阈值的不记：翻目录误触不该污染统计） */
+  private flushSession(): void {
+    const started: number = this.sessionStartAt;
+    const chapter: number = this.sessionChapter;
+    this.sessionStartAt = 0;
+    this.sessionChapter = -1;
+    const book: BookRecord | null = this.book;
+    if (book === null || started <= 0 || chapter < 0) {
+      return;
+    }
+    const now: number = Date.now();
+    if (now - started < MIN_SESSION_MS) {
+      return;
+    }
+    const s: ReadSession = { bookId: book.id, chapterIndex: chapter, startAt: started, endAt: now };
+    this.db.addSession(s).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, 'save session failed: %{public}s', e.message);
+    });
+  }
+
   /** 打开某章并定位到某个字符偏移（内部会按签名查缓存，命中则不重排） */
   private openChapter(index: number, charOffset: number): void {
     if (this.source === null || index < 0 || index >= this.chapters.length) {
       return;
+    }
+    // 换章才结算会话：重排（改档位/视口变化）也会走这里，不能把一次连续阅读切碎
+    if (this.sessionChapter !== index) {
+      this.flushSession();
+      this.sessionChapter = index;
+      this.sessionStartAt = Date.now();
     }
     const levels: LayoutLevels = this.prefs.getLevels();
     const box: LayoutBox = this.boxOf(levels);
