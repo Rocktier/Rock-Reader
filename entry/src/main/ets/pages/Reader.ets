@@ -177,6 +177,13 @@ struct Reader {
     // 从独立设置页返回：主题/档位/字体可能变了
     this.prefs.open(getContext(this) as Context);
     this.prefs.reload();
+    // **字体可能刚下载完** —— registerFont 只在进程内/本 UIContext 存活，
+    // aboutToAppear 那次注册时字体还不存在；而设置页自己的注册不影响阅读页
+    // （实测：下载后回来选楷体，正文毫无变化 —— 就是漏了这次补注册）。幂等，重复调用无害。
+    if (this.fontStore === null) {
+      this.fontStore = new FontStore(getContext(this) as Context);
+    }
+    this.registerLocalFonts(this.fontStore);
     this.applyPrefsToLayout();
   }
 
