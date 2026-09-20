@@ -36,6 +36,8 @@ const MODE_NONE: string = 'none';
 const MODE_MENU: string = 'menu';
 const MODE_RENAME: string = 'rename';
 const MODE_GROUP: string = 'group';
+/** 菜单内的「移除」二次确认（不弹系统 dialog —— 见 editorPanel 里的说明） */
+const MODE_DELETE: string = 'delete';
 
 /** 进度条格数（与「继续阅读」卡片一致） */
 const CELLS: number = 10;
@@ -195,27 +197,6 @@ struct Index {
     }
   }
 
-  private confirmDelete(book: BookRecord): void {
-    hilog.info(DOMAIN, TAG, 'confirmDelete: id=%{public}s title=%{public}s', book.id, book.title);
-    promptAction.showDialog({
-      title: book.title.length > 0 ? book.title : '这本书',
-      message: '从书架移除这本书？（不会删除你的原文件）',
-      buttons: [
-        { text: '取消', color: '#A6A6A6' },
-        // 与浅色主题的红保持一致：#FF4A3D 在白底上只有 3.98:1
-        { text: '移除', color: '#D63A2C' }
-      ]
-    }).then((res: promptAction.ShowDialogSuccessResponse) => {
-      // 临时诊断：系统 dialog 的 index 语义在不同平台上可能是 0/1 也可能是 1/2
-      hilog.info(DOMAIN, TAG, 'dialog result: index=%{public}d', res.index);
-      if (res.index === 1) {
-        this.doDelete(book);
-      }
-    }).catch((e: Error) => {
-      hilog.error(DOMAIN, TAG, 'showDialog failed: %{public}s', e.message);
-    });
-  }
-
   private async doDelete(book: BookRecord): Promise<void> {
     // 兜底：拿不到书就直接返回 —— 否则会去删一个空 id，看起来"点了没反应"
     if (book.id.length === 0) {
@@ -351,7 +332,48 @@ struct Index {
             .alignSelf(ItemAlign.Start)
           this.menuButton('重命名', MODE_RENAME)
           this.menuButton('移动到分组', MODE_GROUP)
-          this.menuButton('移除', '')
+          this.menuButton('移除', MODE_DELETE)
+        } else if (this.editorMode === MODE_DELETE) {
+          Text('移除这本书？')
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.palette.text)
+            .alignSelf(ItemAlign.Start)
+          Text('只会从书架移除，不会删除你的原文件。')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
+            .alignSelf(ItemAlign.Start)
+          Row({ space: 10 }) {
+            Text('取消')
+              .fontSize(13)
+              .fontColor(this.palette.text3)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .padding({ top: 8, bottom: 8 })
+              .borderWidth(1)
+              .borderColor(this.palette.line)
+              .onClick(() => this.closeEditor())
+            Text('移除')
+              .fontSize(13)
+              .fontColor(this.palette.bg)
+              .layoutWeight(1)
+              .textAlign(TextAlign.Center)
+              .padding({ top: 8, bottom: 8 })
+              .backgroundColor(this.palette.red)
+              .onClick(() => {
+                // 顺序要紧：closeEditor() 会清空 editorBookId —— 先把书取出来再关。
+                // 这里不用系统的 promptAction.showDialog：它不受我们的色板控制，
+                // 且按钮 index 语义在不同平台上不一致（真机反馈 #5 排查中确认的两个坑）。
+                const target: BookRecord = this.bookOf(this.editorBookId);
+                hilog.info(DOMAIN, TAG, 'remove confirmed: id=%{public}s', target.id);
+                this.closeEditor();
+                if (target.id.length === 0) {
+                  return;
+                }
+                this.doDelete(target);
+              })
+          }
+          .width('100%')
         } else {
           Text(this.editorMode === MODE_RENAME ? '重命名' : '移动到分组')
             .fontSize(14)
@@ -431,22 +453,13 @@ struct Index {
     Text(label)
       .fontSize(14)
       // 用主题的 red（浅底上的红更深，保证「移除」这类危险操作在护眼主题下也看得清）
-      .fontColor(nextMode === '' ? this.palette.red : this.palette.text)
+      .fontColor(nextMode === MODE_DELETE ? this.palette.red : this.palette.text)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ top: 10, bottom: 10 })
       .onClick(() => {
-        if (nextMode === '') {
-          // 顺序要紧：closeEditor() 会清空 editorBookId —— 必须先把书取出来再关，
-          // 否则拿到的是空记录，弹出来的确认框没有书名、点了也不会真删（真机反馈 #5）
-          const target: BookRecord = this.bookOf(this.editorBookId);
-          hilog.info(DOMAIN, TAG, 'menu remove: picked id=%{public}s', target.id);
-          this.closeEditor();
-          if (target.id.length === 0) {
-            hilog.error(DOMAIN, TAG, 'menu remove aborted: book not found');
-            return;
-          }
-          this.confirmDelete(target);
+        if (nextMode === MODE_DELETE) {
+          this.editorMode = MODE_DELETE;
         } else {
           this.editorMode = nextMode;
           if (nextMode === MODE_RENAME) {
