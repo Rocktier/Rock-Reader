@@ -275,14 +275,17 @@ struct Reader {
     }
   }
 
-  /** 由档位 + 视口算出这一套排版参数（唯一真源，测量与渲染共用） */
+  /** 由档位 + 视口算出这一套排版参数（**唯一真源**：测量端与渲染端都从这里取数） */
   private boxOf(levels: LayoutLevels): LayoutBox {
-    const fontSizePx: number = fp2px(fontSizeFpOf(levels.fontSizeLevel));
+    // 字号先取 fp，再换 px —— 两个单位同时放进 box，渲染端就不必自己再查一次档位表
+    const fontSizeFp: number = fontSizeFpOf(levels.fontSizeLevel);
+    const fontSizePx: number = fp2px(fontSizeFp);
     const lineHeightPx: number = fontSizePx * lineHeightRatioOf(levels.lineHeightLevel);
     const marginVp: number = marginVpOf(levels.marginLevel);
     const widthPx: number = vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
     const heightPx: number = vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
     return {
+      fontSizeFp: fontSizeFp,
       fontSizePx: fontSizePx,
       lineHeightPx: lineHeightPx,
       widthPx: widthPx,
@@ -359,7 +362,9 @@ struct Reader {
     this.chapterIndex = index;
     this.chapterTitle = chapter.title;
     this.chapterText = text;
-    this.fontSizeFp = fontSizeFpOf(levels.fontSizeLevel);
+    // 渲染用的量全部**从 box 派生**（而不是在这里再查一遍档位表）——
+    // 否则渲染端与测量端就是两个各算一遍的真源，任何一处表值/换算改动都会悄悄分叉
+    this.fontSizeFp = box.fontSizeFp;
     this.lineHeightVp = px2vp(box.lineHeightPx);
     this.marginVp = marginVpOf(levels.marginLevel);
 

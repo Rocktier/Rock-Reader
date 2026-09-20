@@ -19,12 +19,30 @@ export interface PageTable {
   linesPerPage: number;
 }
 
+/**
+ * 分页安全余量（单位：行）。
+ *
+ * 为什么不是 0：本式隐含一个**从未被验证**的假设 —— "渲染端行盒高度 == lineHeight"。
+ * 字体有自己的 ascent / descent，**行盒压不到比字体自然行高更小**；行距最低档是
+ * 1.4×字号（`LayoutStyle.LINE_HEIGHT_RATIO`），而多数中文字体自然行高在 1.4~1.5em，
+ * 所以该档下行盒有可能被字体"顶回" → 渲染端实际行高大于 lineHeight
+ * → 按 lineHeight 算出的行数偏多 → **末行溢出容器被裁**。
+ * 推导见 `docs/best-minds-review-2026-09-20.md` §2。
+ *
+ * 留半行缓冲：代价是每页最多少放 1 行（页底多一点留白，用户几乎看不见），
+ * 收益是末行不会被裁（裁字用户一眼能看见）。**这个方向是有意选的。**
+ * 真机实测（device-test B1/B4）若发现缺口更大，把本值调到 1.5；若确认渲染端
+ * 严格按 lineHeight 渲染，可调回 0。
+ */
+const LINE_SAFETY_LINES: number = 0.5;
+
 /** 每页能放几行（向下取整，至少 1 行） */
 export function linesPerPage(viewportHeightPx: number, lineHeightPx: number): number {
   if (lineHeightPx <= 0) {
     return 1;
   }
-  const n: number = Math.floor(viewportHeightPx / lineHeightPx);
+  const usablePx: number = viewportHeightPx - lineHeightPx * LINE_SAFETY_LINES;
+  const n: number = Math.floor(usablePx / lineHeightPx);
   return n < 1 ? 1 : n;
 }
 

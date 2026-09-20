@@ -8,6 +8,12 @@
 import { PageRange, PageTable } from './PageTableBuilder';
 
 export interface LayoutBox {
+  /**
+   * 字号（fp，给渲染端 `Text.fontSize` 用）。
+   * 与下面的 `fontSizePx` 由**同一次 `boxOf()` 一起产出** —— 这样"测量用 px / 渲染用 fp"
+   * 是同一个量的两种单位，而不是两个各算一遍、可能漂移的真源。
+   */
+  fontSizeFp: number;
   /** 字号（px，必须与渲染字体一致） */
   fontSizePx: number;
   /** 行高（px，必须与渲染 lineHeight 一致） */

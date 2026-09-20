@@ -35,6 +35,14 @@ export interface EpubPackage {
   items: ManifestItem[];
   /** spine 的 idref 顺序 */
   spine: string[];
+  /**
+   * spine 里标了 `linear="no"` 的 manifest id 集合。
+   * EPUB 规范：`linear="no"` 表示该文档**不属于线性阅读顺序** —— 目录页 / 版权页 /
+   * 彩插 / 附录常这么标。此前完全没读这个属性，所以这一整类页面照旧排进了正文流。
+   */
+  spineNoLinear: Set<string>;
+  /** EPUB2 `guide` 里 `<reference type="toc">` 指向的 zip 内路径；'' = 没有 */
+  guideTocHref: string;
   coverHref: string;
   navItemHref: string;
   ncxHref: string;
@@ -119,15 +127,34 @@ export function parseOpf(xml: string, opfDir: string): EpubPackage {
   }
 
   const spine: string[] = [];
+  const spineNoLinear: Set<string> = new Set<string>();
   const spineTags: string[] = findTags(clean, 'itemref');
   for (let i: number = 0; i < spineTags.length; i++) {
     const idref: string = attrOf(spineTags[i], 'idref');
     if (idref.length > 0) {
       spine.push(idref);
+      // linear="no"（EPUB 规范）：该文档**不属于线性阅读顺序**。目录/版权/彩插/附录常这么标。
+      if (attrOf(spineTags[i], 'linear').toLowerCase() === 'no') {
+        spineNoLinear.add(idref);
+      }
     }
   }
   if (spine.length === 0) {
     throw new Error('EPUB_BAD_SPINE');
+  }
+
+  // guide（EPUB2）：`<reference type="toc" href="...">` 是**规范定义**的目录页指针 ——
+  // 比"文件名像 toc + 链接数"的启发式可靠得多，所以单独取出来当第一判据。
+  let guideTocHref: string = '';
+  const guideTags: string[] = findTags(clean, 'reference');
+  for (let i: number = 0; i < guideTags.length; i++) {
+    if (attrOf(guideTags[i], 'type').toLowerCase() === 'toc') {
+      const guideHref: string = attrOf(guideTags[i], 'href');
+      if (guideHref.length > 0) {
+        guideTocHref = resolveHref(opfDir, guideHref);
+        break;
+      }
+    }
   }
 
   // 封面：① manifest 里 properties 含 cover-image ② meta name="cover" 指向的 item id
@@ -168,6 +195,8 @@ export function parseOpf(xml: string, opfDir: string): EpubPackage {
     opfDir: opfDir,
     items: items,
     spine: spine,
+    spineNoLinear: spineNoLinear,
+    guideTocHref: guideTocHref,
     coverHref: coverHref,
     navItemHref: navItemHref,
     ncxHref: ncxHref

@@ -6,6 +6,7 @@ import './layout.test.ts';
 import './zip.test.ts';
 import './epub.test.ts';
 import './flow.test.ts';
+import './epub-toc.test.ts';
 import './realfile.test.ts';
 import './shelf.test.ts';
 import './purify.test.ts';

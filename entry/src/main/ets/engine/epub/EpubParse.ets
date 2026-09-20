@@ -50,8 +50,23 @@ function isHtml(mediaType: string): boolean {
  *
  * 拿不准时**一律不剔除**：多留一页目录顶多难看，删掉正文不可接受。
  */
-function isTocDocument(zip: ZipArchive, zipPath: string, navHref: string): boolean {
+/**
+ * 是否是"目录页"（P11-1；P12-1 补规范判据）。
+ *
+ * 判据（从强到弱）：
+ *   ① OPF manifest 标了 `properties="nav"` 的文档（EPUB3 规范强制）—— 最可靠；
+ *   ② OPF `guide` 里 `<reference type="toc">` 指向的文档（EPUB2 规范定义的目录页指针）；
+ *   ③ 文件名像目录（toc / nav / contents / 目录）**且**页内有 ≥3 个跳转链接 ——
+ *      只看文件名会误伤（有的书正文章节也叫 contents.xhtml），加链接密度才下结论。
+ *
+ * ①② 是规范里写死的标记，比 ③ 的启发式可靠 —— 所以先判它们。
+ * 拿不准时**一律不剔除**：多留一页目录顶多难看，删掉正文不可接受。
+ */
+function isTocDocument(zip: ZipArchive, zipPath: string, navHref: string, guideTocHref: string): boolean {
   if (navHref.length > 0 && zipPath === navHref) {
+    return true;
+  }
+  if (guideTocHref.length > 0 && zipPath === guideTocHref) {
     return true;
   }
   if (!looksLikeTocPath(zipPath)) {
@@ -91,11 +106,15 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     byId.set(item.id, item);
   }
 
-  // ---- 目录页识别（P11-1）：EPUB 自带的目录页只供目录浮层用，不许进正文流 ----
+  // ---- 非正文页识别（P11-1 + P12-1）：EPUB 自带的目录页只供目录浮层用，不许进正文流。
+  //      两路判据：① 目录页（nav / guide 指针 / 文件名+链接密度）
+  //                 ② `linear="no"` —— 规范规定"不属于线性阅读顺序"（版权页 / 彩插 / 附录常这么标）----
   const tocPaths: Set<string> = new Set<string>();
   let bodyCount: number = 0;
+  let noLinearCount: number = 0;
   for (let i: number = 0; i < pkg.spine.length; i++) {
-    const probe: ManifestItem | undefined = byId.get(pkg.spine[i]);
+    const probeId: string = pkg.spine[i];
+    const probe: ManifestItem | undefined = byId.get(probeId);
     if (probe === undefined || !isHtml(probe.mediaType)) {
       continue;
     }
@@ -103,18 +122,24 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     if (!zip.has(probePath)) {
       continue;
     }
-    if (isTocDocument(zip, probePath, pkg.navItemHref)) {
+    if (isTocDocument(zip, probePath, pkg.navItemHref, pkg.guideTocHref)) {
       tocPaths.add(probePath);
+    } else if (pkg.spineNoLinear.has(probeId)) {
+      noLinearCount += 1;
     } else {
       bodyCount += 1;
     }
   }
-  // 保底：若判据把整本书都算成了目录（说明踩空），就整体放弃剔除 —— 宁可能读，不能空手
+  // 保底①：若判据把整本书都算成了目录（说明踩空），就整体放弃剔除 —— 宁可能读，不能空手
   const skipToc: boolean = bodyCount > 0;
+  // 保底②：`linear="no"` 同理 —— 有的书可能滥用该属性。只有"还剩正文条目"时才按它过滤；
+  //   若全部条目都被排除，说明踩空，整体放弃（宁可能读，不能空手）
+  const skipNoLinear: boolean = bodyCount > 0 && noLinearCount > 0;
 
   const chapters: ChapterRow[] = [];
   for (let i: number = 0; i < pkg.spine.length; i++) {
-    const item: ManifestItem | undefined = byId.get(pkg.spine[i]);
+    const itemId: string = pkg.spine[i];
+    const item: ManifestItem | undefined = byId.get(itemId);
     if (item === undefined || !isHtml(item.mediaType)) {
       continue;
     }
@@ -123,6 +148,9 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
       continue;
     }
     if (skipToc && tocPaths.has(zipPath)) {
+      continue;
+    }
+    if (skipNoLinear && pkg.spineNoLinear.has(itemId)) {
       continue;
     }
     const fromNav: string | undefined = titles.get(zipPath);

@@ -13,11 +13,19 @@ function levels(f: number, l: number, m: number, w: number): LayoutLevels {
   return { fontSizeLevel: f, lineHeightLevel: l, marginLevel: m, fontWeightLevel: w };
 }
 
-test('每页行数 = 视口高 / 行高，向下取整且至少 1 行', () => {
-  assert.equal(linesPerPage(1000, 40), 25);
-  assert.equal(linesPerPage(1000, 33), 30);
-  assert.equal(linesPerPage(10, 40), 1);
+test('每页行数 = 视口高 / 行高，向下取整且至少 1 行（含半行安全余量）', () => {
+  // 半行安全余量（LINE_SAFETY_LINES）见 PageTableBuilder：
+  // 宁可页底留白，不让末行溢出被裁
+  assert.equal(linesPerPage(1000, 40), 24);   // (1000-20)/40 = 24.5 → 24
+  assert.equal(linesPerPage(1000, 33), 29);   // (1000-16.5)/33 ≈ 29.8 → 29
+  assert.equal(linesPerPage(10, 40), 1);      // 余量大于视口高也不崩，至少 1 行
   assert.equal(linesPerPage(1000, 0), 1);
+});
+
+test('半行安全余量：刚好占满整行数时退一行，多出半行以上时能多放一行', () => {
+  assert.equal(linesPerPage(500, 50), 9);    // 500/50 = 10 行刚好满 → 留余量后 9
+  assert.equal(linesPerPage(525, 50), 10);   // 多出半行 → 仍能放 10
+  assert.equal(linesPerPage(600, 50), 11);   // 600/50 = 12 → 留余量后 11
 });
 
 test('页表：按行数切页，页与页首尾相接、无重叠', () => {
