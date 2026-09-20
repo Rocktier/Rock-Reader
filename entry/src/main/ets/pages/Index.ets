@@ -162,6 +162,7 @@ struct Index {
   }
 
   private openEditor(mode: string, item: ShelfItem): void {
+    hilog.info(DOMAIN, TAG, 'openEditor: mode=%{public}s id=%{public}s', mode, item.book.id);
     this.editorBookId = item.book.id;
     this.editorMode = mode;
     this.editorText = mode === MODE_RENAME ? item.book.title : normalizeGroupName(item.book.groupName);
@@ -195,31 +196,41 @@ struct Index {
   }
 
   private confirmDelete(book: BookRecord): void {
+    hilog.info(DOMAIN, TAG, 'confirmDelete: id=%{public}s title=%{public}s', book.id, book.title);
     promptAction.showDialog({
       title: book.title.length > 0 ? book.title : '这本书',
       message: '从书架移除这本书？（不会删除你的原文件）',
       buttons: [
         { text: '取消', color: '#A6A6A6' },
-        { text: '移除', color: '#FF4A3D' }
+        // 与浅色主题的红保持一致：#FF4A3D 在白底上只有 3.98:1
+        { text: '移除', color: '#D63A2C' }
       ]
     }).then((res: promptAction.ShowDialogSuccessResponse) => {
+      // 临时诊断：系统 dialog 的 index 语义在不同平台上可能是 0/1 也可能是 1/2
+      hilog.info(DOMAIN, TAG, 'dialog result: index=%{public}d', res.index);
       if (res.index === 1) {
         this.doDelete(book);
       }
+    }).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, 'showDialog failed: %{public}s', e.message);
     });
   }
 
   private async doDelete(book: BookRecord): Promise<void> {
     // 兜底：拿不到书就直接返回 —— 否则会去删一个空 id，看起来"点了没反应"
     if (book.id.length === 0) {
+      hilog.error(DOMAIN, TAG, 'doDelete aborted: empty book id');
       return;
     }
     try {
+      hilog.info(DOMAIN, TAG, 'doDelete start: id=%{public}s path=%{public}s', book.id, book.path);
       // 先删库（书架立刻干净），再清沙箱文件（书副本 + 预切章目录）。
       // 顺序反过来会在中途失败时留下"文件没了、书还在书架上"的脏状态
       await this.db.deleteBook(book.id);
+      hilog.info(DOMAIN, TAG, 'doDelete: db row removed, cleaning files');
       removeBookFiles(book);
       await this.load();
+      hilog.info(DOMAIN, TAG, 'doDelete done: id=%{public}s', book.id);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'delete failed: %{public}s', JSON.stringify(e));
     }
@@ -402,7 +413,10 @@ struct Index {
       .width('86%')
       .padding(18)
       .borderRadius(12)
-      .backgroundColor(this.palette.card)
+      // 用 overlay（≈92% 主题底色，**不透明**）而不是 card（3%，几乎全透明）：
+      // 卡片盖在深色遮罩上，背景一透明，文字就会跟着遮罩走 ——
+      // 深色主题是白字所以没事，一切到护眼主题（深褐字）就彻底看不见了（真机反馈 #5）
+      .backgroundColor(this.palette.overlay)
       .borderWidth(1)
       .borderColor(this.palette.line)
     }
@@ -416,7 +430,8 @@ struct Index {
   menuButton(label: string, nextMode: string) {
     Text(label)
       .fontSize(14)
-      .fontColor(nextMode === '' ? '#FF4A3D' : this.palette.text)
+      // 用主题的 red（浅底上的红更深，保证「移除」这类危险操作在护眼主题下也看得清）
+      .fontColor(nextMode === '' ? this.palette.red : this.palette.text)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ top: 10, bottom: 10 })
@@ -425,8 +440,10 @@ struct Index {
           // 顺序要紧：closeEditor() 会清空 editorBookId —— 必须先把书取出来再关，
           // 否则拿到的是空记录，弹出来的确认框没有书名、点了也不会真删（真机反馈 #5）
           const target: BookRecord = this.bookOf(this.editorBookId);
+          hilog.info(DOMAIN, TAG, 'menu remove: picked id=%{public}s', target.id);
           this.closeEditor();
           if (target.id.length === 0) {
+            hilog.error(DOMAIN, TAG, 'menu remove aborted: book not found');
             return;
           }
           this.confirmDelete(target);
