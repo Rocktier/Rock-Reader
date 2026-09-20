@@ -19,14 +19,23 @@ import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookRecord, ChapterRow, ReadingProgress } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
-import { fontSizeFpOf, fontWeightOf, layoutKey, LayoutLevels, lineHeightRatioOf, marginVpOf } from '../common/LayoutStyle';
+import {
+  fontSizeFpOf,
+  fontWeightOf,
+  layoutKey,
+  LayoutLevels,
+  LEVEL_MAX,
+  lineHeightRatioOf,
+  marginVpOf,
+  WEIGHT_MAX
+} from '../common/LayoutStyle';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
 import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
-import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 
 interface ReaderParams {
@@ -57,6 +66,12 @@ const DRAG_RESIST: number = 0.35;
 const DRAG_BACK_MS: number = 200;
 const DRAG_OUT_MS: number = 130;
 const DRAG_IN_MS: number = 150;
+/** 目录抽屉宽度（占屏宽比例）：不铺满，右侧留白透出正文，便于边看边选章 */
+const TOC_PANEL_WIDTH: string = '72%';
+/** 抽屉滑入的起始位移（vp）与动画时长（ms）；两个抽屉（目录/设置）共用同一套时长 */
+const TOC_SLIDE_VP: number = 320;
+const SETTINGS_SLIDE_VP: number = 460;
+const PANEL_ANIM_MS: number = 220;
 
 @Entry
 @Component
@@ -73,6 +88,10 @@ struct Reader {
   @State pageText: string = '';
   @State showMenu: boolean = false;
   @State showToc: boolean = false;
+  /** 设置抽屉（P11-2：就地改排版、正文实时跟着变）；与目录抽屉互斥 */
+  @State showSettings: boolean = false;
+  /** 抽屉里显示的档位（与 prefs 同步；改一下即重排 → 实时预览） */
+  @State levels: LayoutLevels = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 };
   /** 目录搜索词；空 = 展示全部章节 */
   @State tocQuery: string = '';
   /** 目录当前展示的章节（搜索时为子集，**index 仍是原章号**，跳转与高亮不受影响） */
@@ -155,17 +174,34 @@ struct Reader {
   }
 
   onPageShow(): void {
-    // 从设置页返回：主题/档位可能变了 → 变了才重排，并按字符偏移复原位置（切档位不跳页）
+    // 从独立设置页返回：主题/档位/字体可能变了
     this.prefs.open(getContext(this) as Context);
     this.prefs.reload();
+    this.applyPrefsToLayout();
+  }
+
+  /**
+   * 把 prefs 的档位/主题/字体反映到当前页面；**变了才重排**，且按字符偏移复原位置（切档位不跳页）。
+   *
+   * 两个调用方：
+   *   ① 从独立设置页返回（onPageShow）
+   *   ② **阅读页内的设置抽屉**改档位（P11-2：边看边调，正文实时跟着变）
+   * 两处共用同一段逻辑，避免"抽屉改了不生效 / 两边行为不一致"。
+   */
+  private applyPrefsToLayout(): void {
     const theme: ThemeName = this.prefs.getTheme();
     if (theme !== this.theme) {
       this.theme = theme;
       this.palette = paletteOf(theme);
       applyThemeToSystem(getContext(this) as Context, theme);
     }
-    this.fontFamily = this.prefs.getFontFamily();
-    this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(this.fontFamily);
+    const family: string = this.prefs.getFontFamily();
+    if (family !== this.fontFamily) {
+      this.fontFamily = family;
+      this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(family);
+    }
+    // 抽屉里显示的档位跟着走（无论是否触发重排）
+    this.levels = this.prefs.getLevels();
     if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
       return;
     }
@@ -507,6 +543,7 @@ struct Reader {
 
   /** 打开目录：清掉上次的搜索词，列表复位为全量（打开瞬间由 List.onAppear 定位到当前章） */
   private openToc(): void {
+    this.showSettings = false; // 与设置抽屉互斥
     this.tocQuery = '';
     this.tocFiltered = this.chapters;
     this.showToc = true;
@@ -525,6 +562,52 @@ struct Reader {
     this.tocFiltered = this.chapters.filter(
       (c: ChapterRow) => c.title.toLowerCase().indexOf(key) >= 0
     );
+  }
+
+  // ------------------------------------------------------------------
+  // 设置抽屉（P11-2：就地改排版，正文实时跟着变，不用来回切页）
+  // ------------------------------------------------------------------
+
+  private openSettings(): void {
+    this.showToc = false; // 与目录抽屉互斥
+    this.levels = this.prefs.getLevels();
+    this.showSettings = true;
+  }
+
+  /** 挑档位：kind = 'font' | 'line' | 'margin' | 'weight' —— 存下来后立刻重排（不跳页） */
+  private pickLevel(kind: string, value: number): void {
+    const cur: LayoutLevels = this.levels;
+    const next: LayoutLevels = {
+      fontSizeLevel: kind === 'font' ? value : cur.fontSizeLevel,
+      lineHeightLevel: kind === 'line' ? value : cur.lineHeightLevel,
+      marginLevel: kind === 'margin' ? value : cur.marginLevel,
+      fontWeightLevel: kind === 'weight' ? value : cur.fontWeightLevel
+    };
+    this.prefs.saveLevels(next);
+    this.applyPrefsToLayout();
+  }
+
+  private pickTheme(theme: ThemeName): void {
+    this.prefs.saveTheme(theme);
+    this.applyPrefsToLayout();
+  }
+
+  private pickFont(family: string): void {
+    this.prefs.saveFontFamily(family);
+    this.applyPrefsToLayout();
+  }
+
+  /** 抽屉里的字体候选：只列**系统默认 + 已下载**的开源字体（系统字体全列表留在独立设置页） */
+  private fontChoices(): FontEntry[] {
+    return this.fontStore === null ? [] : this.fontStore.downloaded();
+  }
+
+  private rangeOf(max: number): number[] {
+    const out: number[] = [];
+    for (let i: number = 1; i <= max; i++) {
+      out.push(i);
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------
@@ -651,7 +734,7 @@ struct Reader {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
           .onClick(() => {
-            router.pushUrl({ url: 'pages/Settings' });
+            this.openSettings();
           })
         Text('下一章')
           .fontSize(12.5)
@@ -782,11 +865,174 @@ struct Reader {
         })
       }
     }
+    .width(TOC_PANEL_WIDTH)
+    .height('100%')
+    .backgroundColor(this.palette.overlay)
+    // 左抽屉：圆角与描边只做贴着屏幕右缘的那侧（左侧贴着屏边，不需要）
+    .borderRadius({ topRight: 12, bottomRight: 12 })
+    .border({ width: { top: 1, right: 1, bottom: 1 }, color: this.palette.line })
+    .transition(TransitionEffect.translate({ x: -TOC_SLIDE_VP })
+      .animation({ duration: PANEL_ANIM_MS, curve: Curve.FastOutSlowIn }))
+    .onClick(() => {
+    })
+  }
+
+  /** 一行档位芯片（0 圆角、选中反白 —— 与独立设置页同一套视觉） */
+  @Builder
+  chipRow(kind: string, cur: number, max: number) {
+    Row({ space: 8 }) {
+      ForEach(this.rangeOf(max), (n: number) => {
+        Text(`${n}`)
+          .fontSize(13)
+          .fontFamily('monospace')
+          .fontColor(n === cur ? this.palette.bg : this.palette.text2)
+          .backgroundColor(n === cur ? this.palette.text : this.palette.card)
+          .borderWidth(1)
+          .borderColor(n === cur ? this.palette.text : this.palette.line)
+          .width(44)
+          .height(34)
+          .textAlign(TextAlign.Center)
+          .onClick(() => this.pickLevel(kind, n))
+      }, (n: number) => kind + '-' + n)
+    }
     .width('100%')
-    .height('62%')
+  }
+
+  @Builder
+  settingsRow(label: string, cur: number, max: number, kind: string) {
+    Column() {
+      Row() {
+        Text(label)
+          .fontSize(13.5)
+          .fontColor(this.palette.text)
+        Blank()
+        Text(`${cur}/${max}`)
+          .fontSize(9.5)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .margin({ bottom: 10 })
+      this.chipRow(kind, cur, max)
+    }
+    .width('100%')
+    .padding({ top: 16, bottom: 16 })
+    .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+  }
+
+  @Builder
+  themeChip(label: string, dark: boolean) {
+    Text(label)
+      .fontSize(12.5)
+      .fontColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.bg : this.palette.text2)
+      .backgroundColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.text : this.palette.card)
+      .borderWidth(1)
+      .borderColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.text : this.palette.line)
+      .height(34)
+      .padding({ left: 18, right: 18 })
+      .textAlign(TextAlign.Center)
+      .onClick(() => this.pickTheme(dark ? THEME_DARK : THEME_LIGHT))
+  }
+
+  @Builder
+  fontChip(label: string, family: string) {
+    Text(label)
+      .fontSize(12.5)
+      .fontColor(this.fontFamily === family ? this.palette.bg : this.palette.text2)
+      .backgroundColor(this.fontFamily === family ? this.palette.text : this.palette.card)
+      .borderWidth(1)
+      .borderColor(this.fontFamily === family ? this.palette.text : this.palette.line)
+      .height(34)
+      .padding({ left: 16, right: 16 })
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .onClick(() => this.pickFont(family))
+  }
+
+  /** 设置抽屉：底出、不遮满（上半透出正文），改一下上面立刻跟着变 */
+  @Builder
+  settingsPanel() {
+    Column() {
+      Row() {
+        Text('排版')
+          .fontSize(11)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text2)
+        Blank()
+        Text('边改边看')
+          .fontSize(9.5)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+      }
+      .width('100%')
+      .padding({ left: 20, right: 20, top: 16, bottom: 4 })
+
+      this.settingsRow('字号', this.levels.fontSizeLevel, LEVEL_MAX, 'font')
+      this.settingsRow('行距', this.levels.lineHeightLevel, LEVEL_MAX, 'line')
+      this.settingsRow('页边距', this.levels.marginLevel, LEVEL_MAX, 'margin')
+      this.settingsRow('字重', this.levels.fontWeightLevel, WEIGHT_MAX, 'weight')
+
+      Row({ space: 8 }) {
+        Text('主题')
+          .fontSize(13.5)
+          .fontColor(this.palette.text)
+          .layoutWeight(1)
+        this.themeChip('深色', true)
+        this.themeChip('浅色', false)
+      }
+      .width('100%')
+      .padding({ top: 16, bottom: 16 })
+      .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+      Column() {
+        Row() {
+          Text('字体')
+            .fontSize(13.5)
+            .fontColor(this.palette.text)
+          Blank()
+          Text(this.fontFamily.length === 0 ? '系统默认' : this.fontFamily)
+            .fontSize(9.5)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .width('100%')
+        .margin({ bottom: 10 })
+
+        Scroll() {
+          Row({ space: 8 }) {
+            this.fontChip('系统默认', '')
+            ForEach(this.fontChoices(), (f: FontEntry) => {
+              this.fontChip(f.displayName, f.familyName)
+            }, (f: FontEntry) => 'fc-' + f.id)
+          }
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .width('100%')
+      }
+      .width('100%')
+      .padding({ top: 16, bottom: 16 })
+      .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+      Text('更多设置（字体下载 / 隐私）›')
+        .fontSize(12.5)
+        .fontColor(this.palette.text2)
+        .width('100%')
+        .height(48)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.showSettings = false;
+          router.pushUrl({ url: 'pages/Settings' });
+        })
+    }
+    .width('100%')
     .backgroundColor(this.palette.overlay)
     .borderRadius({ topLeft: 12, topRight: 12 })
     .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
+    .transition(TransitionEffect.translate({ y: SETTINGS_SLIDE_VP })
+      .animation({ duration: PANEL_ANIM_MS, curve: Curve.FastOutSlowIn }))
     .onClick(() => {
     })
   }
@@ -859,6 +1105,10 @@ struct Reader {
           this.showToc = false;
           return;
         }
+        if (this.showSettings) {
+          this.showSettings = false;
+          return;
+        }
         if (this.showMenu) {
           this.showMenu = false;
           return;
@@ -878,7 +1128,7 @@ struct Reader {
         PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
           .onActionStart(() => {
             // 菜单/目录开着时整轮忽略：否则拖拽会把浮层和正文一起拖
-            this.dragging = !this.showMenu && !this.showToc && this.hint.length === 0;
+            this.dragging = !this.showMenu && !this.showToc && !this.showSettings && this.hint.length === 0;
             this.dragX = 0;
           })
           .onActionUpdate((event: GestureEvent) => {
@@ -941,16 +1191,31 @@ struct Reader {
         })
       }
 
-      // ---- 目录 ----
+      // ---- 目录（左抽屉：不铺满窗口，右侧留白透出正文，点右侧关闭）----
       if (this.showToc) {
+        Row() {
+          this.tocPanel()
+          Column()
+            .layoutWeight(1)
+            .height('100%')
+            .onClick(() => {
+              this.showToc = false;
+            })
+        }
+        .width('100%')
+        .height('100%')
+      }
+
+      // ---- 设置抽屉（底出、不遮满：上半透出正文，改一下上面立刻跟着变）----
+      if (this.showSettings) {
         Column() {
           Column()
             .width('100%')
             .layoutWeight(1)
             .onClick(() => {
-              this.showToc = false;
+              this.showSettings = false;
             })
-          this.tocPanel()
+          this.settingsPanel()
         }
         .width('100%')
         .height('100%')
