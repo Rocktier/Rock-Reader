@@ -124,6 +124,10 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     }
     if (isTocDocument(zip, probePath, pkg.navItemHref, pkg.guideTocHref)) {
       tocPaths.add(probePath);
+    } else if (probePath === pkg.guideCoverHref) {
+      // 封面页（guide type="cover"）：与目录页同一处置 —— 不进正文流。
+      // 不并入 isTocDocument 是因为它语义上是"封面"不是"目录"，但处置方式一致。
+      tocPaths.add(probePath);
     } else if (pkg.spineNoLinear.has(probeId)) {
       noLinearCount += 1;
     } else {

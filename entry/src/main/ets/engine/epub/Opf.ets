@@ -43,6 +43,11 @@ export interface EpubPackage {
   spineNoLinear: Set<string>;
   /** EPUB2 `guide` 里 `<reference type="toc">` 指向的 zip 内路径；'' = 没有 */
   guideTocHref: string;
+  /**
+   * EPUB2 `guide` 里 `<reference type="cover">` 指向的**封面页**；'' = 没有。
+   * 它是一张图（或一页图），不是可读内容 —— 不剔的话目录开头会多一条「Cover」（真机反馈 #6）。
+   */
+  guideCoverHref: string;
   coverHref: string;
   navItemHref: string;
   ncxHref: string;
@@ -143,17 +148,23 @@ export function parseOpf(xml: string, opfDir: string): EpubPackage {
     throw new Error('EPUB_BAD_SPINE');
   }
 
-  // guide（EPUB2）：`<reference type="toc" href="...">` 是**规范定义**的目录页指针 ——
-  // 比"文件名像 toc + 链接数"的启发式可靠得多，所以单独取出来当第一判据。
+  // guide（EPUB2）：`<reference type="toc">` 是目录页指针，`<reference type="cover">` 是封面页 ——
+  // 两者都是**规范定义的标记**，比文件名启发式可靠，优先用它们。
+  // 实测样书（暗恋·橘生淮南，EPUB2）102 个 itemref 里一个 linear 属性都没有 ——
+  // 所以对老书来说，guide 几乎是唯一能认出封面页/目录页的硬依据。
   let guideTocHref: string = '';
+  let guideCoverHref: string = '';
   const guideTags: string[] = findTags(clean, 'reference');
   for (let i: number = 0; i < guideTags.length; i++) {
-    if (attrOf(guideTags[i], 'type').toLowerCase() === 'toc') {
-      const guideHref: string = attrOf(guideTags[i], 'href');
-      if (guideHref.length > 0) {
-        guideTocHref = resolveHref(opfDir, guideHref);
-        break;
-      }
+    const href: string = attrOf(guideTags[i], 'href');
+    if (href.length === 0) {
+      continue;
+    }
+    const type: string = attrOf(guideTags[i], 'type').toLowerCase();
+    if (type === 'toc' && guideTocHref.length === 0) {
+      guideTocHref = resolveHref(opfDir, href);
+    } else if (type === 'cover' && guideCoverHref.length === 0) {
+      guideCoverHref = resolveHref(opfDir, href);
     }
   }
 
@@ -197,6 +208,7 @@ export function parseOpf(xml: string, opfDir: string): EpubPackage {
     spine: spine,
     spineNoLinear: spineNoLinear,
     guideTocHref: guideTocHref,
+    guideCoverHref: guideCoverHref,
     coverHref: coverHref,
     navItemHref: navItemHref,
     ncxHref: ncxHref

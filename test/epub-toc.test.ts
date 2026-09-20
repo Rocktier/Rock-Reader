@@ -25,7 +25,7 @@ interface Doc {
 }
 
 /** 造一本 spine 完全可控的 EPUB，用来验证"哪些条目会进正文流" */
-function makeEpub(docs: Doc[], guideTocHref?: string): Uint8Array {
+function makeEpub(docs: Doc[], guideTocHref?: string, guideCoverHref?: string): Uint8Array {
   const manifest: string[] = [];
   const spine: string[] = [];
   const files: Array<{ name: string; data: Uint8Array }> = [];
@@ -40,8 +40,9 @@ function makeEpub(docs: Doc[], guideTocHref?: string): Uint8Array {
     files.push({ name: 'OEBPS/' + d.href, data: bytesOf(`<html><body>${d.body}</body></html>`) });
   }
 
-  const guide: string = guideTocHref === undefined
-    ? '' : `<guide><reference type="toc" href="${guideTocHref}"/></guide>`;
+  const refs: string = (guideTocHref === undefined ? '' : `<reference type="toc" href="${guideTocHref}"/>`) +
+    (guideCoverHref === undefined ? '' : `<reference type="cover" href="${guideCoverHref}"/>`);
+  const guide: string = refs.length === 0 ? '' : `<guide>${refs}</guide>`;
   const opf = `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>目录测试书</dc:title></metadata>
   <manifest>${manifest.join('')}</manifest>
@@ -96,6 +97,17 @@ test('properties="nav"（EPUB3 规范标记）仍然生效', () => {
   ]));
   const parsed = parseEpubArchive(zip);
   assert.equal(parsed.chapters.length, 1);
+});
+
+test('guide 的 <reference type="cover"> 指向的封面页被剔除（EPUB2 老书全靠它）', () => {
+  // 实测样书：102 个 itemref 里一个 linear 属性都没有，cover 页只能靠 guide 的 type="cover" 认出来
+  const zip = ZipArchive.parse(makeEpub([
+    { id: 'tp', href: 'titlepage.xhtml', body: '<p>封面图</p>' },
+    { id: 'c1', href: 'c1.xhtml', body: '<h1>第一章</h1><p>正文</p>' }
+  ], undefined, 'titlepage.xhtml'));
+  const parsed = parseEpubArchive(zip);
+  assert.equal(parsed.chapters.length, 1, '封面页不该进正文流');
+  assert.ok(parsed.chapters[0].href.indexOf('c1.xhtml') >= 0);
 });
 
 test('linear="yes" 与不写该属性一样：正常进正文流（别把默认值当排除条件）', () => {
