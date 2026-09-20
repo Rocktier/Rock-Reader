@@ -196,7 +196,7 @@ struct Index {
 
   private confirmDelete(book: BookRecord): void {
     promptAction.showDialog({
-      title: book.title,
+      title: book.title.length > 0 ? book.title : '这本书',
       message: '从书架移除这本书？（不会删除你的原文件）',
       buttons: [
         { text: '取消', color: '#A6A6A6' },
@@ -210,6 +210,10 @@ struct Index {
   }
 
   private async doDelete(book: BookRecord): Promise<void> {
+    // 兜底：拿不到书就直接返回 —— 否则会去删一个空 id，看起来"点了没反应"
+    if (book.id.length === 0) {
+      return;
+    }
     try {
       // 先删库（书架立刻干净），再清沙箱文件（书副本 + 预切章目录）。
       // 顺序反过来会在中途失败时留下"文件没了、书还在书架上"的脏状态
@@ -418,8 +422,14 @@ struct Index {
       .padding({ top: 10, bottom: 10 })
       .onClick(() => {
         if (nextMode === '') {
+          // 顺序要紧：closeEditor() 会清空 editorBookId —— 必须先把书取出来再关，
+          // 否则拿到的是空记录，弹出来的确认框没有书名、点了也不会真删（真机反馈 #5）
+          const target: BookRecord = this.bookOf(this.editorBookId);
           this.closeEditor();
-          this.confirmDelete(this.bookOf(this.editorBookId));
+          if (target.id.length === 0) {
+            return;
+          }
+          this.confirmDelete(target);
         } else {
           this.editorMode = nextMode;
           if (nextMode === MODE_RENAME) {
