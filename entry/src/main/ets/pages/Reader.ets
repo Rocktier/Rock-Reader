@@ -35,7 +35,7 @@ import { FontStore } from '../data/FontStore';
 import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
-import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 
 interface ReaderParams {
@@ -946,17 +946,17 @@ struct Reader {
   }
 
   @Builder
-  themeChip(label: string, dark: boolean) {
+  themeChip(label: string, theme: ThemeName) {
     Text(label)
       .fontSize(12.5)
-      .fontColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.bg : this.palette.text2)
-      .backgroundColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.text : this.palette.card)
+      .fontColor(this.theme === theme ? this.palette.bg : this.palette.text2)
+      .backgroundColor(this.theme === theme ? this.palette.text : this.palette.card)
       .borderWidth(1)
-      .borderColor(this.theme === (dark ? THEME_DARK : THEME_LIGHT) ? this.palette.text : this.palette.line)
+      .borderColor(this.theme === theme ? this.palette.text : this.palette.line)
       .height(34)
-      .padding({ left: 18, right: 18 })
+      .padding({ left: 16, right: 16 })
       .textAlign(TextAlign.Center)
-      .onClick(() => this.pickTheme(dark ? THEME_DARK : THEME_LIGHT))
+      .onClick(() => this.pickTheme(theme))
   }
 
   @Builder
@@ -1001,9 +1001,18 @@ struct Reader {
         Text('主题')
           .fontSize(13.5)
           .fontColor(this.palette.text)
-          .layoutWeight(1)
-        this.themeChip('深色', true)
-        this.themeChip('浅色', false)
+        // 四个主题横滚（与下面的字体行一致）：放不下的情况不会挤成一团
+        Scroll() {
+          Row({ space: 8 }) {
+            this.themeChip('深色', THEME_DARK)
+            this.themeChip('浅色', THEME_LIGHT)
+            this.themeChip('纸', THEME_SEPIA)
+            this.themeChip('绿', THEME_GREEN)
+          }
+        }
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .layoutWeight(1)
       }
       .width('100%')
       .padding({ top: 16, bottom: 16 })

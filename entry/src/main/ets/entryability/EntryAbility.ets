@@ -2,7 +2,7 @@ import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.Ab
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
+import { isLightTheme, THEME_DARK, ThemeName } from '../common/Theme';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -20,7 +20,8 @@ export default class EntryAbility extends UIAbility {
       hilog.warn(DOMAIN, TAG, 'read theme failed: %{public}s', JSON.stringify(e));
     }
     try {
-      this.context.getApplicationContext().setColorMode(theme === THEME_LIGHT
+      // 纸 / 绿 同属浅色系（isLightTheme），以后再加护眼色不用改这里
+      this.context.getApplicationContext().setColorMode(isLightTheme(theme)
         ? ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT
         : ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
     } catch (e) {

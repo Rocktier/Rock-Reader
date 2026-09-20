@@ -11,14 +11,15 @@
 import { window } from '@kit.ArkUI';
 import { ConfigurationConstant } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { THEME_LIGHT, ThemeName } from './Theme';
+import { isLightTheme, ThemeName } from './Theme';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
 /** 只应在主题**发生变化**时调用（避免无谓的配置变更） */
 export function applyThemeToSystem(ctx: Context, theme: ThemeName): void {
-  const light: boolean = theme === THEME_LIGHT;
+  // 纸 / 绿 都是浅色系 → 状态栏用深字（isLightTheme 的写法保证新增护眼色不会漏登记）
+  const light: boolean = isLightTheme(theme);
   const contentColor: string = light ? '#000000' : '#FFFFFF';
 
   try {

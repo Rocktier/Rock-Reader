@@ -12,3 +12,4 @@ import './shelf.test.ts';
 import './purify.test.ts';
 import './convert.test.ts';
 import './stats.test.ts';
+import './theme.test.ts';
