@@ -615,6 +615,25 @@ struct Reader {
     return out;
   }
 
+  /**
+   * 当前档位。抽屉里的选中态**必须经它读**，不能把数值当参数传进 @Builder：
+   * ArkUI 的 @Builder **按值传参不会驱动刷新**（真机已验证：点字号后正文变了、选中框不动 ——
+   * themeChip / fontChip 正常恰是因为它们在 Builder 内部直接读 this.theme / this.fontFamily）。
+   * 另外 ForEach 的键必须含选中态，否则状态变了、键没变，item 也不会重建（见 chipRow）。
+   */
+  private levelOf(kind: string): number {
+    if (kind === 'font') {
+      return this.levels.fontSizeLevel;
+    }
+    if (kind === 'line') {
+      return this.levels.lineHeightLevel;
+    }
+    if (kind === 'margin') {
+      return this.levels.marginLevel;
+    }
+    return this.levels.fontWeightLevel;
+  }
+
   // ------------------------------------------------------------------
   // 进度
   // ------------------------------------------------------------------
@@ -884,41 +903,42 @@ struct Reader {
 
   /** 一行档位芯片（0 圆角、选中反白 —— 与独立设置页同一套视觉） */
   @Builder
-  chipRow(kind: string, cur: number, max: number) {
+  chipRow(kind: string, max: number) {
     Row({ space: 8 }) {
       ForEach(this.rangeOf(max), (n: number) => {
         Text(`${n}`)
           .fontSize(13)
           .fontFamily('monospace')
-          .fontColor(n === cur ? this.palette.bg : this.palette.text2)
-          .backgroundColor(n === cur ? this.palette.text : this.palette.card)
+          // 选中判断必须读 this（@Builder 值传参不追踪，见 levelOf 的注释）
+          .fontColor(n === this.levelOf(kind) ? this.palette.bg : this.palette.text2)
+          .backgroundColor(n === this.levelOf(kind) ? this.palette.text : this.palette.card)
           .borderWidth(1)
-          .borderColor(n === cur ? this.palette.text : this.palette.line)
+          .borderColor(n === this.levelOf(kind) ? this.palette.text : this.palette.line)
           .width(44)
           .height(34)
           .textAlign(TextAlign.Center)
           .onClick(() => this.pickLevel(kind, n))
-      }, (n: number) => kind + '-' + n)
+      }, (n: number) => kind + '-' + n + (n === this.levelOf(kind) ? '-on' : '-off'))
     }
     .width('100%')
   }
 
   @Builder
-  settingsRow(label: string, cur: number, max: number, kind: string) {
+  settingsRow(label: string, max: number, kind: string) {
     Column() {
       Row() {
         Text(label)
           .fontSize(13.5)
           .fontColor(this.palette.text)
         Blank()
-        Text(`${cur}/${max}`)
+        Text(`${this.levelOf(kind)}/${max}`)
           .fontSize(9.5)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
       .margin({ bottom: 10 })
-      this.chipRow(kind, cur, max)
+      this.chipRow(kind, max)
     }
     .width('100%')
     .padding({ top: 16, bottom: 16 })
@@ -972,10 +992,10 @@ struct Reader {
       .width('100%')
       .padding({ left: 20, right: 20, top: 16, bottom: 4 })
 
-      this.settingsRow('字号', this.levels.fontSizeLevel, LEVEL_MAX, 'font')
-      this.settingsRow('行距', this.levels.lineHeightLevel, LEVEL_MAX, 'line')
-      this.settingsRow('页边距', this.levels.marginLevel, LEVEL_MAX, 'margin')
-      this.settingsRow('字重', this.levels.fontWeightLevel, WEIGHT_MAX, 'weight')
+      this.settingsRow('字号', LEVEL_MAX, 'font')
+      this.settingsRow('行距', LEVEL_MAX, 'line')
+      this.settingsRow('页边距', LEVEL_MAX, 'margin')
+      this.settingsRow('字重', WEIGHT_MAX, 'weight')
 
       Row({ space: 8 }) {
         Text('主题')
