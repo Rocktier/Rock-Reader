@@ -258,6 +258,12 @@ struct Index {
     Row({ space: 14 }) {
       this.bookCover(item.book, 58)
       Column({ space: 6 }) {
+        // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
+        Text('继续阅读')
+          .fontSize(9)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+          .letterSpacing(1)
         Text(item.book.title)
           .fontSize(15)
           .fontWeight(FontWeight.Bold)
@@ -526,8 +532,10 @@ struct Index {
           .margin({ bottom: 12 })
         }
 
-        // 继续阅读
-        if (this.resume !== null && this.activeGroup === GROUP_ALL) {
+        // 继续阅读只在「全部」时显示：它是快捷入口，不是列表项 ——
+        // 筛「未读」时顶部还杵着一张在读的书，会让人以为状态判定错了（真机反馈 #2：
+        // 用户正是因此以为那本 EPUB 同时出现在未读/在读/已读里）
+        if (this.resume !== null && this.activeGroup === GROUP_ALL && this.statusFilter === STATUS_ALL) {
           this.resumeCard(this.resume)
           Row()
             .height(14)
