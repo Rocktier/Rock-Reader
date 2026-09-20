@@ -266,6 +266,19 @@ export function parseNav(xhtml: string, baseDir: string): TitleMap {
   return map;
 }
 
+/**
+ * 文件名是否"像目录页"：toc / nav / contents / 目录（忽略扩展名与大小写）。
+ *
+ * ⚠️ 这只是**必要条件**，不是结论 —— 有的书正文章节也叫 `contents.xhtml`。
+ * 是否真是目录页，还要看内容（见 `EpubParse.isTocDocument` 的链接密度判据）。
+ */
+export function looksLikeTocPath(zipPath: string): boolean {
+  const name: string = baseNameOf(zipPath).toLowerCase();
+  const dot: number = name.lastIndexOf('.');
+  const stem: string = dot > 0 ? name.substring(0, dot) : name;
+  return stem === 'toc' || stem === 'nav' || stem === 'contents' || stem === '目录';
+}
+
 /** 章标题兜底：用文件名（去扩展名），保证目录里不出现空标题 */
 export function fallbackTitleOf(zipPath: string): string {
   const name: string = baseNameOf(zipPath);

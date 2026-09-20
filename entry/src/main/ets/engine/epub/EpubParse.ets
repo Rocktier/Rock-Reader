@@ -14,6 +14,7 @@ import {
   dirOf,
   EpubPackage,
   fallbackTitleOf,
+  looksLikeTocPath,
   ManifestItem,
   parseContainer,
   parseNcx,
@@ -34,6 +35,34 @@ export interface EpubParseResult {
 function isHtml(mediaType: string): boolean {
   const t: string = mediaType.toLowerCase();
   return t.indexOf('xhtml') >= 0 || t.indexOf('html') >= 0;
+}
+
+/**
+ * 是否是"目录页"（P11-1）。
+ *
+ * EPUB 自带的目录页（EPUB3 的 nav 文档、EPUB2 的 `toc.xhtml`）通常就列在 OPF spine 里，
+ * 早期实现把它们当普通章节转文本 → 读者打开书先看到一长串目录，得翻很多页才到正文。
+ *
+ * 判据（从强到弱）：
+ *   ① OPF manifest 里标了 `properties="nav"` 的文档 —— EPUB3 规范强制，最可靠；
+ *   ② 文件名像目录（toc / nav / contents / 目录）**且**页内有 ≥3 个跳转链接 ——
+ *      只看文件名会误伤（有的书正文章节也叫 contents.xhtml），加链接密度才下结论。
+ *
+ * 拿不准时**一律不剔除**：多留一页目录顶多难看，删掉正文不可接受。
+ */
+function isTocDocument(zip: ZipArchive, zipPath: string, navHref: string): boolean {
+  if (navHref.length > 0 && zipPath === navHref) {
+    return true;
+  }
+  if (!looksLikeTocPath(zipPath)) {
+    return false;
+  }
+  try {
+    const links: RegExpMatchArray | null = zip.readText(zipPath).match(/<a\b[^>]*\bhref=/gi);
+    return links !== null && links.length >= 3;
+  } catch (e) {
+    return false;
+  }
 }
 
 /** 把已解析的 zip 变成章节清单 */
@@ -62,6 +91,27 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     byId.set(item.id, item);
   }
 
+  // ---- 目录页识别（P11-1）：EPUB 自带的目录页只供目录浮层用，不许进正文流 ----
+  const tocPaths: Set<string> = new Set<string>();
+  let bodyCount: number = 0;
+  for (let i: number = 0; i < pkg.spine.length; i++) {
+    const probe: ManifestItem | undefined = byId.get(pkg.spine[i]);
+    if (probe === undefined || !isHtml(probe.mediaType)) {
+      continue;
+    }
+    const probePath: string = resolveHref(opfDir, probe.href);
+    if (!zip.has(probePath)) {
+      continue;
+    }
+    if (isTocDocument(zip, probePath, pkg.navItemHref)) {
+      tocPaths.add(probePath);
+    } else {
+      bodyCount += 1;
+    }
+  }
+  // 保底：若判据把整本书都算成了目录（说明踩空），就整体放弃剔除 —— 宁可能读，不能空手
+  const skipToc: boolean = bodyCount > 0;
+
   const chapters: ChapterRow[] = [];
   for (let i: number = 0; i < pkg.spine.length; i++) {
     const item: ManifestItem | undefined = byId.get(pkg.spine[i]);
@@ -70,6 +120,9 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     }
     const zipPath: string = resolveHref(opfDir, item.href);
     if (!zip.has(zipPath)) {
+      continue;
+    }
+    if (skipToc && tocPaths.has(zipPath)) {
       continue;
     }
     const fromNav: string | undefined = titles.get(zipPath);

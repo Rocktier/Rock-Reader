@@ -217,3 +217,97 @@ test('XHTML：空内容与纯空白不生成垃圾行', () => {
   assert.equal(xhtmlToText('<html><body>   \n\n  </body></html>'), '');
   assert.equal(xhtmlToText('<p>a</p><p></p><p>b</p>'), 'a\n\nb');
 });
+
+// ------------------------------------------------------------------
+// P11-1：EPUB 自带的目录页不许进正文流
+// （现象：打开书先看到一长串目录，要翻很多页才到正文）
+// ------------------------------------------------------------------
+
+/** 目录页样本：链接密集（≥3 个跳转） */
+const TOC_XHTML = `<html><head><title>目录</title></head><body>
+<nav epub:type="toc"><ol>
+  <li><a href="ch1.xhtml">第一章 雨夜</a></li>
+  <li><a href="ch2.xhtml">第二章 砾石</a></li>
+  <li><a href="ch1.xhtml#s1">第一节</a></li>
+</ol></nav>
+</body></html>`;
+
+/** 在标准 OPF 的 spine 最前面插一个目录页 */
+function opfWithToc(tocItem: string): string {
+  return OPF
+    .replace('<item href="ch1.xhtml" id="c1" media-type="application/xhtml+xml"/>',
+      tocItem + '\n    <item href="ch1.xhtml" id="c1" media-type="application/xhtml+xml"/>')
+    .replace('<itemref idref="c1"/>', '<itemref idref="toc"/>\n    <itemref idref="c1"/>');
+}
+
+test('P11-1：文件名像目录 + 链接密集 → 不进正文流', () => {
+  const zip = buildZip([
+    { name: 'META-INF/container.xml', data: bytesOf(CONTAINER) },
+    {
+      name: 'OEBPS/content.opf',
+      data: bytesOf(opfWithToc('<item href="toc.xhtml" id="toc" media-type="application/xhtml+xml"/>'))
+    },
+    { name: 'OEBPS/toc.ncx', data: bytesOf(NCX) },
+    { name: 'OEBPS/toc.xhtml', data: bytesOf(TOC_XHTML) },
+    { name: 'OEBPS/ch1.xhtml', data: bytesOf(CH1) },
+    { name: 'OEBPS/ch2.xhtml', data: bytesOf(CH2) }
+  ]);
+  const parsed = parseEpubArchive(ZipArchive.parse(zip));
+  assert.deepEqual(parsed.chapters.map((c) => c.href), ['OEBPS/ch1.xhtml', 'OEBPS/ch2.xhtml'],
+    '目录页不该出现在正文里');
+  assert.deepEqual(parsed.chapters.map((c) => c.index), [0, 1], '剔除后序号要重排连续');
+});
+
+test('P11-1：EPUB3 标了 properties="nav" 的文档 → 剔除（哪怕文件名不像目录、链接很少）', () => {
+  const opf3 = opfWithToc('<item href="guide.xhtml" id="toc" media-type="application/xhtml+xml" properties="nav"/>')
+    .replace('<item href="toc.ncx" id="ncx" media-type="application/x-dtbncx+xml"/>', '')
+    .replace('<spine toc="ncx">', '<spine>');
+  const zip = buildZip([
+    { name: 'META-INF/container.xml', data: bytesOf(CONTAINER) },
+    { name: 'OEBPS/content.opf', data: bytesOf(opf3) },
+    { name: 'OEBPS/guide.xhtml', data: bytesOf('<html><body><p>只有一个链接</p><a href="ch1.xhtml">开始</a></body></html>') },
+    { name: 'OEBPS/ch1.xhtml', data: bytesOf(CH1) },
+    { name: 'OEBPS/ch2.xhtml', data: bytesOf(CH2) }
+  ]);
+  const parsed = parseEpubArchive(ZipArchive.parse(zip));
+  assert.deepEqual(parsed.chapters.map((c) => c.href), ['OEBPS/ch1.xhtml', 'OEBPS/ch2.xhtml'],
+    'properties="nav" 是规范硬标记，链接少也必须剔');
+});
+
+test('P11-1：文件名像目录但内容不像目录 → 不剔（防误删正文）', () => {
+  const zip = buildZip([
+    { name: 'META-INF/container.xml', data: bytesOf(CONTAINER) },
+    {
+      name: 'OEBPS/content.opf',
+      data: bytesOf(opfWithToc('<item href="toc.xhtml" id="toc" media-type="application/xhtml+xml"/>'))
+    },
+    { name: 'OEBPS/toc.ncx', data: bytesOf(NCX) },
+    {
+      name: 'OEBPS/toc.xhtml',
+      data: bytesOf('<html><body><h1>序</h1><p>这不是目录，是正文。</p><a href="ch1.xhtml">下一章</a></body></html>')
+    },
+    { name: 'OEBPS/ch1.xhtml', data: bytesOf(CH1) },
+    { name: 'OEBPS/ch2.xhtml', data: bytesOf(CH2) }
+  ]);
+  const parsed = parseEpubArchive(ZipArchive.parse(zip));
+  assert.equal(parsed.chapters.length, 3, '只有 1 个链接 → 当作正文保留');
+  assert.equal(parsed.chapters[0].href, 'OEBPS/toc.xhtml');
+});
+
+test('P11-1：判据若把全书都算成目录 → 放弃剔除（不许变成空书）', () => {
+  const opfOnlyToc = OPF
+    .replace('<item href="ch1.xhtml" id="c1" media-type="application/xhtml+xml"/>',
+      '<item href="toc.xhtml" id="toc" media-type="application/xhtml+xml" properties="nav"/>')
+    .replace('<item href="ch2.xhtml" id="c2" media-type="application/xhtml+xml"/>', '')
+    .replace('<item href="toc.ncx" id="ncx" media-type="application/x-dtbncx+xml"/>', '')
+    .replace('<itemref idref="c1"/>', '<itemref idref="toc"/>')
+    .replace('<itemref idref="c2"/>', '')
+    .replace('<spine toc="ncx">', '<spine>');
+  const zip = buildZip([
+    { name: 'META-INF/container.xml', data: bytesOf(CONTAINER) },
+    { name: 'OEBPS/content.opf', data: bytesOf(opfOnlyToc) },
+    { name: 'OEBPS/toc.xhtml', data: bytesOf(TOC_XHTML) }
+  ]);
+  const parsed = parseEpubArchive(ZipArchive.parse(zip));
+  assert.equal(parsed.chapters.length, 1, '全是目录页时保底不剔除：宁可多留一页');
+});
