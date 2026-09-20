@@ -857,11 +857,6 @@ struct Reader {
           ForEach(this.tocFiltered, (item: ChapterRow) => {
             ListItem() {
               Row() {
-                Text(`${item.index + 1}`)
-                  .fontSize(9.5)
-                  .fontFamily('monospace')
-                  .fontColor(item.index === this.chapterIndex ? this.palette.red : this.palette.text3)
-                  .width(30)
                 Text(item.title)
                   .fontSize(13.5)
                   .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
@@ -871,6 +866,13 @@ struct Reader {
               }
               .width('100%')
               .padding({ left: 20, right: 20, top: 13, bottom: 13 })
+              // 当前章 = 左侧红竖条。原来的序号列去掉了：它是"第几个条目"，与章名里作者写的
+              // 「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
+              // 真实的位置指示由页脚 16/182 承担。
+              .border({
+                width: { left: 3 },
+                color: item.index === this.chapterIndex ? this.palette.red : Color.Transparent
+              })
               .onClick(() => this.jumpToChapter(item.index))
             }
           }, (item: ChapterRow) => 'ch' + item.index)
