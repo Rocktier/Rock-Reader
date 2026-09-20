@@ -35,7 +35,7 @@ import { FontStore } from '../data/FontStore';
 import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
-import { Palette, paletteOf, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, themeLabel, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 
 interface ReaderParams {
@@ -946,8 +946,8 @@ struct Reader {
   }
 
   @Builder
-  themeChip(label: string, theme: ThemeName) {
-    Text(label)
+  themeChip(theme: ThemeName) {
+    Text(themeLabel(theme))
       .fontSize(12.5)
       .fontColor(this.theme === theme ? this.palette.bg : this.palette.text2)
       .backgroundColor(this.theme === theme ? this.palette.text : this.palette.card)
@@ -1004,10 +1004,10 @@ struct Reader {
         // 四个主题横滚（与下面的字体行一致）：放不下的情况不会挤成一团
         Scroll() {
           Row({ space: 8 }) {
-            this.themeChip('深色', THEME_DARK)
-            this.themeChip('浅色', THEME_LIGHT)
-            this.themeChip('纸', THEME_SEPIA)
-            this.themeChip('绿', THEME_GREEN)
+            this.themeChip(THEME_DARK)
+            this.themeChip(THEME_LIGHT)
+            this.themeChip(THEME_SEPIA)
+            this.themeChip(THEME_GREEN)
           }
         }
         .scrollable(ScrollDirection.Horizontal)

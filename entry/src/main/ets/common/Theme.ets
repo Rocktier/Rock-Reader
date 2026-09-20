@@ -149,3 +149,24 @@ export function normalizeTheme(value: string): ThemeName {
 export function isLightTheme(theme: ThemeName): boolean {
   return theme !== THEME_DARK;
 }
+
+/**
+ * 主题的显示名（抽屉芯片用）。
+ *
+ * **放在这里而不是散在 UI 代码里**：名字和色板是一套，改名字不该去翻页面文件；
+ * 也避免"抽屉里叫旧纸、别处写成纸色"这种漂移。
+ *
+ * 深色 子夜 ／ 浅色 晴昼 ／ 纸 旧纸 ／ 绿 新苔（党哥 2026-09-20 选）
+ */
+export function themeLabel(theme: ThemeName): string {
+  if (theme === THEME_SEPIA) {
+    return '旧纸';
+  }
+  if (theme === THEME_GREEN) {
+    return '新苔';
+  }
+  if (theme === THEME_LIGHT) {
+    return '晴昼';
+  }
+  return '子夜';
+}

@@ -12,6 +12,7 @@ import {
   isLightTheme,
   normalizeTheme,
   paletteOf,
+  themeLabel,
   THEME_DARK,
   THEME_GREEN,
   THEME_LIGHT,
@@ -116,4 +117,13 @@ test('isLightTheme：只有深色算深色系（以后新增护眼色自动归�
   assert.equal(isLightTheme(THEME_SEPIA), true);
   assert.equal(isLightTheme(THEME_GREEN), true);
   assert.equal(isLightTheme('将来新增的护眼色'), true);
+});
+
+test('themeLabel：四个主题都有名字且互不相同（防"抽屉一个叫法、别处另一个"）', () => {
+  const labels: string[] = THEMES.map((t: ThemeName) => themeLabel(t));
+  for (const l of labels) {
+    assert.ok(l.length > 0, '主题名不该为空');
+  }
+  assert.equal(new Set(labels).size, labels.length,
+    `主题名必须互不相同，实际：${labels.join(' / ')}`);
 });
