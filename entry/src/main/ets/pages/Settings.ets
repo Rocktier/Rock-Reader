@@ -11,9 +11,7 @@
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { clampLevel, clampWeightLevel, LayoutLevels, LEVEL_MAX, LEVEL_MIN, WEIGHT_MAX } from '../common/LayoutStyle';
-import { Palette, paletteOf, THEME_DARK, THEME_LIGHT, ThemeName } from '../common/Theme';
-import { applyThemeToSystem } from '../common/SystemBar';
+import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { FontStore } from '../data/FontStore';
 import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
 
@@ -29,7 +27,6 @@ const MAX_FONT_ITEMS: number = 40;
 @Component
 struct Settings {
   @State palette: Palette = paletteOf(THEME_DARK);
-  @State levels: LayoutLevels = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 1 };
   @State theme: ThemeName = THEME_DARK;
   /** TXT 正文净化（去广告） */
   @State purifyOn: boolean = true;
@@ -50,7 +47,6 @@ struct Settings {
   aboutToAppear(): void {
     this.prefs.open(getContext(this) as Context);
     this.fontStore = new FontStore(getContext(this) as Context);
-    this.levels = this.prefs.getLevels();
     this.theme = this.prefs.getTheme();
     this.fontFamily = this.prefs.getFontFamily();
     this.purifyOn = this.prefs.isPurifyOn();
@@ -62,6 +58,14 @@ struct Settings {
   }
 
   onPageShow(): void {
+    // 主题/字体现在**也能在阅读页的抽屉里改** → 回来时重读，否则两页配色与字体会不一致
+    this.prefs.reload();
+    const theme: ThemeName = this.prefs.getTheme();
+    if (theme !== this.theme) {
+      this.theme = theme;
+      this.palette = paletteOf(theme);
+    }
+    this.fontFamily = this.prefs.getFontFamily();
     this.loadSystemFonts();
   }
 
@@ -167,20 +171,6 @@ struct Settings {
     return this.downloadedIds.indexOf(id) >= 0;
   }
 
-  /** row: 'font' | 'line' | 'margin'；n: 档位序号 */
-  private pick(row: string, n: number): void {
-    const level: number = clampLevel(n);
-    const next: LayoutLevels = {
-      fontSizeLevel: row === 'font' ? level : this.levels.fontSizeLevel,
-      lineHeightLevel: row === 'line' ? level : this.levels.lineHeightLevel,
-      marginLevel: row === 'margin' ? level : this.levels.marginLevel,
-      // 字重只有 3 档，用单独的夹取（clampLevel 会夹到 1..5，对字重不适用）
-      fontWeightLevel: row === 'weight' ? clampWeightLevel(n) : this.levels.fontWeightLevel
-    };
-    this.levels = next;
-    this.prefs.saveLevels(next);
-  }
-
   private pickPurify(on: boolean): void {
     this.purifyOn = on;
     this.prefs.setPurify(on);
@@ -189,101 +179,6 @@ struct Settings {
   private pickConvert(mode: string): void {
     this.convertMode = mode;
     this.prefs.setConvertMode(mode);
-  }
-
-  private pickTheme(theme: ThemeName): void {
-    this.theme = theme;
-    this.palette = paletteOf(theme);
-    this.prefs.saveTheme(theme);
-    // 同步系统层：浅色主题下必须把状态栏文字改成黑色，否则白底白字
-    applyThemeToSystem(getContext(this) as Context, theme);
-    this.loadSystemFonts();
-  }
-
-  private currentOf(row: string): number {
-    if (row === 'font') {
-      return this.levels.fontSizeLevel;
-    }
-    if (row === 'weight') {
-      return this.levels.fontWeightLevel;
-    }
-    return row === 'line' ? this.levels.lineHeightLevel : this.levels.marginLevel;
-  }
-
-  @Builder
-  levelRow(label: string, row: string, hint: string) {
-    Column() {
-      Row() {
-        Text(label)
-          .fontSize(13.5)
-          .fontColor(this.palette.text)
-        Blank()
-        Text(hint)
-          .fontSize(9.5)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-      }
-      .width('100%')
-      .margin({ bottom: 10 })
-
-      Row({ space: 8 }) {
-        ForEach([1, 2, 3, 4, 5], (n: number) => {
-          Text(`${n}`)
-            .fontSize(13)
-            .fontFamily('monospace')
-            .fontColor(this.currentOf(row) === n ? this.palette.bg : this.palette.text2)
-            .backgroundColor(this.currentOf(row) === n ? this.palette.text : this.palette.card)
-            .border({ width: 1, color: this.currentOf(row) === n ? this.palette.text : this.palette.line })
-            .borderRadius(0)
-            .width(CHIP_SIZE)
-            .height(CHIP_HEIGHT)
-            .textAlign(TextAlign.Center)
-            .onClick(() => this.pick(row, n))
-        }, (n: number) => row + n)
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .padding({ top: 16, bottom: 16 })
-  }
-
-  /** 字重：3 档（常规 / 中粗 / 加粗）—— 与字号等 5 档不同，单独一行 */
-  @Builder
-  weightRow() {
-    Column() {
-      Row() {
-        Text('字重')
-          .fontSize(13.5)
-          .fontColor(this.palette.text)
-        Blank()
-        Text(`${this.levels.fontWeightLevel}/${WEIGHT_MAX}`)
-          .fontSize(9.5)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-      }
-      .width('100%')
-      .margin({ bottom: 10 })
-
-      Row({ space: 8 }) {
-        ForEach([1, 2, 3], (n: number) => {
-          Text(n === 1 ? '常规' : (n === 2 ? '中粗' : '加粗'))
-            .fontSize(12)
-            .fontFamily('monospace')
-            .fontColor(this.currentOf('weight') === n ? this.palette.bg : this.palette.text2)
-            .backgroundColor(this.currentOf('weight') === n ? this.palette.text : this.palette.card)
-            .border({ width: 1, color: this.currentOf('weight') === n ? this.palette.text : this.palette.line })
-            .borderRadius(0)
-            .height(CHIP_HEIGHT)
-            .padding({ left: 14, right: 14 })
-            .onClick(() => this.pick('weight', n))
-        }, (n: number) => 'w' + n)
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .padding({ top: 16, bottom: 16 })
   }
 
   /** 正文处理：去广告（净化）+ 简繁转换 */
@@ -485,19 +380,6 @@ struct Settings {
     return this.isDownloaded(entry.id) ? '移除' : '下载';
   }
 
-  @Builder
-  themeChip(label: string, value: ThemeName) {
-    Text(label)
-      .fontSize(12.5)
-      .fontColor(this.theme === value ? this.palette.bg : this.palette.text2)
-      .backgroundColor(this.theme === value ? this.palette.text : this.palette.card)
-      .border({ width: 1, color: this.theme === value ? this.palette.text : this.palette.line })
-      .borderRadius(0)
-      .height(CHIP_HEIGHT)
-      .padding({ left: 18, right: 18 })
-      .onClick(() => this.pickTheme(value))
-  }
-
   build() {
     Column() {
       Row() {
@@ -525,38 +407,17 @@ struct Settings {
       // 内容可能超过一屏（尤其加了字体下载区之后）→ 整段可滚动
       Scroll() {
         Column() {
-          Text('排版')
-            .fontSize(11)
-            .fontFamily('monospace')
+          // 排版档位已移到**阅读页的抽屉**：那里改一下正文立刻跟着变（能边看边调），
+          // 本页只留"与正文内容/资源相关"的设置，避免同一项两处维护。
+          Text('字号 / 行距 / 边距 / 字重 / 主题 ⭢ 在阅读页里调（点屏幕中间 → A a）')
+            .fontSize(10)
             .fontColor(this.palette.text3)
             .width('100%')
-            .margin({ bottom: 4 })
+            .margin({ bottom: 12 })
 
-        this.levelRow('字号', 'font', `${this.levels.fontSizeLevel}/${LEVEL_MAX}`)
-        this.levelRow('行距', 'line', `${this.levels.lineHeightLevel}/${LEVEL_MAX}`)
-        this.levelRow('页边距', 'margin', `${this.levels.marginLevel}/${LEVEL_MAX}`)
-        this.weightRow()
+          this.textSection()
 
-        this.textSection()
-
-        this.fontSection()
-
-        Divider()
-          .color(this.palette.lineSoft)
-          .margin({ top: 8, bottom: 8 })
-
-        Text('主题')
-          .fontSize(11)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-          .width('100%')
-          .margin({ bottom: 12 })
-
-          Row({ space: 10 }) {
-            this.themeChip('深色', THEME_DARK)
-            this.themeChip('浅色', THEME_LIGHT)
-          }
-          .width('100%')
+          this.fontSection()
         }
         .width('100%')
         .padding({ left: 22, right: 22, top: 18, bottom: 8 })
