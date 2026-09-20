@@ -9,7 +9,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { BookImporter, ImportResult } from '../engine/importer/BookImporter';
+import { BookImporter, ImportResult, removeBookFiles } from '../engine/importer/BookImporter';
 import {
   collectGroups,
   filterByStatus,
@@ -211,7 +211,10 @@ struct Index {
 
   private async doDelete(book: BookRecord): Promise<void> {
     try {
+      // 先删库（书架立刻干净），再清沙箱文件（书副本 + 预切章目录）。
+      // 顺序反过来会在中途失败时留下"文件没了、书还在书架上"的脏状态
       await this.db.deleteBook(book.id);
+      removeBookFiles(book);
       await this.load();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'delete failed: %{public}s', JSON.stringify(e));

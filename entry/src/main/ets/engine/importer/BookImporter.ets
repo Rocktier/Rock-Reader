@@ -12,7 +12,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BookDb } from '../../data/BookDb';
 import { BookRecord } from '../../common/Types';
-import { parseTxtSync, MAX_TXT_BYTES } from '../parser/TxtParser';
+import { parseTxtSync, MAX_TXT_BYTES, CHAPTER_DIR } from '../parser/TxtParser';
 import { parseEpub, MAX_EPUB_BYTES } from '../parser/EpubParser';
 
 const DOMAIN: number = 0x0000;
@@ -38,6 +38,51 @@ function fileExtension(name: string): string {
 function baseName(name: string): string {
   const i = name.lastIndexOf('.');
   return i > 0 ? name.substring(0, i) : name;
+}
+
+/**
+ * 删除一本书在沙箱里的文件（书副本 + 预切章目录）。
+ *
+ * 只动这本书自己那个目录（`book.path` 的父目录）—— 用户的**原文件在沙箱外，永不触碰**。
+ * 不抛错：文件删不掉不该拦住"从书架移除"这个用户意图（DB 里那行已经删了）。
+ * 做成模块函数而不是类方法：它只要 `book.path`，不需要 `Context`，静态些更好调用。
+ *
+ * ⚠️ 此前这个清理**根本不存在**：删书只删了数据库行，沙箱里的书文件永久残留
+ *    （台账却写着"删库与沙箱副本"）。加了预切章之后残留会翻倍，所以一并补上。
+ */
+export function removeBookFiles(book: BookRecord): void {
+  const slash: number = book.path.lastIndexOf('/');
+  if (slash <= 0) {
+    return;
+  }
+  const dir: string = book.path.substring(0, slash);
+  const chDir: string = `${dir}/${CHAPTER_DIR}`;
+  // 顺序：章文件 → 书文件 → 已空的书目录（部分平台 rmdir 要求目录为空）
+  try {
+    if (fs.accessSync(chDir)) {
+      const names: string[] = fs.listFileSync(chDir);
+      for (let i: number = 0; i < names.length; i++) {
+        fs.unlinkSync(`${chDir}/${names[i]}`);
+      }
+      fs.rmdirSync(chDir);
+    }
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'remove chapter files failed: %{public}s', JSON.stringify(e));
+  }
+  try {
+    if (fs.accessSync(book.path)) {
+      fs.unlinkSync(book.path);
+    }
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'remove book file failed: %{public}s', JSON.stringify(e));
+  }
+  try {
+    if (fs.accessSync(dir)) {
+      fs.rmdirSync(dir);
+    }
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'remove book dir failed: %{public}s', JSON.stringify(e));
+  }
 }
 
 export class BookImporter {

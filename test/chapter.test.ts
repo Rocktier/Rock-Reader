@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  chapterSliceOf,
   matchChapterTitle,
   splitChapters,
   utf8ByteLength
@@ -52,4 +53,28 @@ test('兜底切章：完全没有标题时按字数硬切且不丢字', () => {
   assert.equal(chapters.length, 3);
   assert.equal(chapters[chapters.length - 1].endChar, text.length);
   assert.equal(chapters[0].startChar, 0);
+});
+
+test('chapterSliceOf：相邻章拼起来必须与原文逐字一致（预切章与降级路径共用此算法）', () => {
+  const text = '第一章 雨夜\n内容一\n内容二\n第二章 砾石\n内容三\n';
+  const chapters = splitChapters(text);
+
+  let joined: string = '';
+  for (let i: number = 0; i < chapters.length; i++) {
+    joined += chapterSliceOf(text, chapters[i].startChar, chapters[i].endChar);
+  }
+  assert.equal(joined, text, '把所有章拼起来必须等于原文（不丢字、不重复）');
+
+  // 单章与 substring 等价
+  assert.equal(chapterSliceOf(text, chapters[0].startChar, chapters[0].endChar),
+    text.substring(chapters[0].startChar, chapters[0].endChar));
+});
+
+test('chapterSliceOf：尾越界 / 头负数 / 倒挂 一律夹紧，绝不抛', () => {
+  const text = 'abcdefghij';
+  assert.equal(chapterSliceOf(text, 3, 6), 'def');
+  assert.equal(chapterSliceOf(text, 7, 9999), 'hij');
+  assert.equal(chapterSliceOf(text, -5, 4), 'abcd');
+  assert.equal(chapterSliceOf(text, 5, 3), '');
+  assert.equal(chapterSliceOf('', 0, 10), '');
 });

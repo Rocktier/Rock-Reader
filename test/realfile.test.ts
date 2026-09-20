@@ -39,8 +39,8 @@ test('真实 GB18030 样本：判为非 UTF-8 → gb18030，解码后中文不�
 });
 
 test('设计决策守卫：GBK 文件的「UTF-8 字节偏移」大于磁盘真实字节数', () => {
-  // 正因为如此，TxtParser 取章用的是**字符偏移**（readChapterTextByChars），
-  // 而不是 ChapterSplitter 给出的 startByte/endByte —— 否则 GBK 书会取错段落。
+  // 正因为如此，取章走的是**字符区间切分**（chapterSliceOf：导入时预切落盘 / 降级时整本切），
+  // 而不是拿 ChapterSplitter 的 startByte/endByte 去 seek 磁盘 —— 否则 GBK 书会切在字符中间。
   const gbk = bytesOf('test/fixtures/sample-gbk.txt');
   const text = new TextDecoder('gb18030').decode(gbk);
   assert.ok(utf8ByteLength(text) > gbk.length, 'UTF-8 重编码长度应大于 GBK 原字节数');

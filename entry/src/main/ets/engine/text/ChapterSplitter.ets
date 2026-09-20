@@ -3,7 +3,8 @@
  *
  * 设计依据：docs/v1-design.md §1.1 —— 默认规则 `第[X]+[章回节卷]` 行首匹配；
  * 无匹配时按固定字数兜底切章，保证任何 TXT 都能读。
- * 同时产出**字节偏移**（UTF-8）供大文件按 offset 随机读。
+ * 同时产出**字节偏移**（UTF-8）—— ⚠️ 这是"解码后重编码"的长度，**不等于磁盘真实字节**，
+ * 只作诊断/预留，**不要拿去 seek 文件**（见 chapterSliceOf 与 TxtParser 的「内存路线」）。
  */
 
 export interface ChapterMeta {
@@ -16,6 +17,24 @@ export interface ChapterMeta {
   /** UTF-8 字节偏移 */
   startByte: number;
   endByte: number;
+}
+
+/**
+ * 按字符区间取出正文（越界一律夹紧，绝不抛）。
+ *
+ * 放在这里而不是 TxtParser：**它是纯逻辑**，而 TxtParser 拖了 fileIo —— 混在一起就没法 CI 单测。
+ * 预切章（导入时落盘）与降级路径（整本读）共用这一段区间算法，只有一份，不会漂。
+ *
+ * 参数是三个原始值而不是 `{startChar,endChar}` 对象：**ArkTS 不支持结构化类型**
+ * （`arkts-no-structural-typing`），传 `ChapterRow` / `ChapterMeta` 都会被判类型不符。
+ *
+ * ⚠️ 为什么不用 `startByte/endByte` 按磁盘字节切：见文件头与 TxtParser 的「内存路线」——
+ *   那两个值是「解码后按 UTF-8 重编码」的长度，对 GBK 文件与磁盘真实字节**不一致**。
+ */
+export function chapterSliceOf(text: string, startChar: number, endChar: number): string {
+  const s: number = Math.max(0, Math.min(startChar, text.length));
+  const e: number = Math.max(s, Math.min(endChar, text.length));
+  return text.substring(s, e);
 }
 
 const CHAPTER_LINE_RE: RegExp = new RegExp(

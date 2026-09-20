@@ -9,7 +9,7 @@
  * layoutSignature / 分页 / 进度 全部对"章内字符偏移"工作，因此两种格式共用同一条管线。
  */
 import { BookRecord, ChapterRow } from '../../common/Types';
-import { clearTextCache, readChapterTextByChars } from './TxtParser';
+import { readChapterText } from './TxtParser';
 import { clearEpubCache, readEpubChapterText } from './EpubParser';
 import { ReaderPrefs } from '../../data/ReaderPrefs';
 import { convertByMode } from '../text/ChineseConvert';
@@ -22,7 +22,7 @@ export interface BookSource {
   release(): void;
 }
 
-/** TXT：整本解码后缓存，按字符偏移随机切章 */
+/** TXT：读导入时预切好的章文件（缺失则降级整本读）—— 阅读期峰值 = 一章 */
 export class TxtSource implements BookSource {
   private path: string;
 
@@ -31,11 +31,11 @@ export class TxtSource implements BookSource {
   }
 
   chapterText(chapter: ChapterRow): string {
-    return readChapterTextByChars(this.path, chapter.startChar, chapter.endChar);
+    return readChapterText(this.path, chapter);
   }
 
   release(): void {
-    clearTextCache();
+    // 预切章后阅读期不持有整本缓存，无需释放（降级路径也是读完就丢）
   }
 }
 
