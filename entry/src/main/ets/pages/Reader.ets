@@ -941,7 +941,7 @@ struct Reader {
       this.chipRow(kind, max)
     }
     .width('100%')
-    .padding({ top: 16, bottom: 16 })
+    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
   }
 
@@ -1015,7 +1015,7 @@ struct Reader {
         .layoutWeight(1)
       }
       .width('100%')
-      .padding({ top: 16, bottom: 16 })
+      .padding({ left: 20, right: 20, top: 16, bottom: 16 })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Column() {
@@ -1047,7 +1047,7 @@ struct Reader {
         .width('100%')
       }
       .width('100%')
-      .padding({ top: 16, bottom: 16 })
+      .padding({ left: 20, right: 20, top: 16, bottom: 16 })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Text('更多设置（字体下载 / 隐私）›')
