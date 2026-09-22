@@ -72,6 +72,9 @@ struct Index {
   @State resume: ShelfItem | null = null;
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
+  // 「用其他应用打开」带进来的待导入 uri —— EntryAbility 收到后写进 AppStorage，这里接住。
+  // 键名两边都写死（ArkUI 装饰器只接受字面量，抽不成常量），改要一起改。
+  @StorageLink('pendingImportUri') @Watch('onIncomingFile') incomingUri: string = '';
 
   /** 长按后弹出的菜单/输入框 */
   @State editorMode: string = MODE_NONE;
@@ -140,6 +143,41 @@ struct Index {
       }
     }
     return filterByStatus(grouped, this.statusFilter);
+  }
+
+  /**
+   * 「用其他应用打开」一本书 → 直接导入。
+   * 这是导入的**保底入口**：系统 picker 不显示 .mobi/.azw3，但用户可以在文件管理器或
+   * 微信里长按那本书 → 用其他应用打开 → 选 RockReader。
+   */
+  onIncomingFile(): void {
+    const uri: string = this.incomingUri;
+    if (uri.length === 0) {
+      return;
+    }
+    // 立刻清掉：否则下次任何 AppStorage 同步都会重复导入同一本
+    AppStorage.setOrCreate('pendingImportUri', '');
+    this.importUri(uri);
+  }
+
+  private async importUri(uri: string): Promise<void> {
+    if (this.busy) {
+      return;
+    }
+    this.busy = true;
+    try {
+      const importer = new BookImporter(this.db, this.getUIContext().getHostContext() as Context);
+      const result: ImportResult = await importer.importFromUri(uri);
+      const msg = reasonText(result.reason);
+      if (msg.length > 0) {
+        this.getUIContext().getPromptAction().showToast({ message: msg });
+      }
+      await this.load();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'import uri failed: %{public}s', JSON.stringify(e));
+    } finally {
+      this.busy = false;
+    }
   }
 
   private async onImport(): Promise<void> {

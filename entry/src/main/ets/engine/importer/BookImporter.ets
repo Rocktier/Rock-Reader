@@ -186,8 +186,14 @@ export class BookImporter {
   async pickAndImport(): Promise<ImportResult> {
     const docPicker = new picker.DocumentViewPicker(this.ctx);
     const options = new picker.DocumentSelectOptions();
-    options.maxSelectNumber = 1;
-    options.fileSuffixFilters = ['.txt', '.epub'];
+    // 支持多选：一次把整个下载目录的书都导进来
+    options.maxSelectNumber = 20;
+    // ⚠️ **不要在这里限制后缀**。
+    // 实测（2026-09-22）：华为的 picker 对 `.mobi` / `.azw3` 这类它没登记过的后缀会
+    // **直接不显示** —— 把后缀列进 fileSuffixFilters 也没用，等于把新格式挡在门外。
+    // 所以改为不限制，让用户能看到全部文件；能不能读由 importFromUri 按扩展名判断，
+    // 不支持时给明确提示（NOT_SUPPORTED），而不是让文件"凭空消失"。
+    // （代价：选择器里会看到图片等无关文件，选错了会提示不支持 —— 比看不见好。）
     let uris: string[] = [];
     try {
       uris = await docPicker.select(options);
@@ -197,7 +203,19 @@ export class BookImporter {
     if (uris.length === 0) {
       return { ok: false, reason: 'CANCELLED', book: null };
     }
-    return await this.importFromUri(uris[0]);
+    // 多选时逐本导入；全部成功返回最后一本，有任何失败把最后一个失败原因带回去
+    let last: ImportResult = { ok: false, reason: 'CANCELLED', book: null };
+    let okCount: number = 0;
+    for (let i: number = 0; i < uris.length; i++) {
+      last = await this.importFromUri(uris[i]);
+      if (last.ok) {
+        okCount += 1;
+      }
+    }
+    if (okCount === uris.length) {
+      return { ok: true, reason: '', book: last.book };
+    }
+    return last;
   }
 
   /** 文件名：优先从 uri 末段解码（uri 形如 file://docs/.../书名.epub） */
