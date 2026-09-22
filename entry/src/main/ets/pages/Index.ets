@@ -288,6 +288,13 @@ struct Index {
         .objectFit(ImageFit.Contain)
         .backgroundColor(this.palette.cover)
         .borderRadius(0)
+        // ⚠️ **必须关掉 Image 自带的拖拽（默认 true）**：长按时它会先被识别成"准备拖拽"，
+        // 把父级 Column 的 LongPressGesture 抢走 —— 症状是**有封面的书长按弹不出菜单**，
+        // 而没有封面（首字占位走 Column 分支）的书一切正常。
+        // 2026-09-22 实测：0 字节封面（加载失败、无内容可拖）长按正常，真封面加载出来后才坏，
+        // 所以曾误判成"MOBI/AZW3 格式的问题"（其实是封面渲染带出来的）。
+        // 书架封面本来也不该被拖走 —— 否则会出现"半透明图片跟着手指飘"的怪效果。
+        .draggable(false)
     } else {
       Column() {
         Text(book.title.length > 0 ? book.title.substring(0, 1) : '书')
