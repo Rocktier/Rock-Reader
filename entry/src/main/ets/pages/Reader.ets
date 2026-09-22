@@ -250,7 +250,8 @@ struct Reader {
       return;
     }
     for (let i: number = 0; i < list.length; i++) {
-      const path: string = store.pathOf(list[i]);
+      // registerFont 必须用 file:// uri（裸路径静默失败 —— 2026-09-22 字体切换不生效的根因）
+      const path: string = store.uriOf(list[i]);
       try {
         this.getUIContext().getFont().registerFont({
           familyName: list[i].familyName,
@@ -297,7 +298,7 @@ struct Reader {
     const family: string = this.prefs.getFontFamily();
     if (family !== this.fontFamily) {
       this.fontFamily = family;
-      this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(family);
+      this.fontPath = this.fontStore === null ? '' : this.fontStore.uriForFamily(family);
     }
     hilog.info(DOMAIN, TAG, 'applyPrefs: family=[%{public}s] path=[%{public}s] key=%{public}s',
       this.fontFamily, this.fontPath, this.currentKey);
@@ -354,7 +355,7 @@ struct Reader {
       this.source = createBookSource(book, this.prefs);
 
       this.fontFamily = this.prefs.getFontFamily();
-      this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(this.fontFamily);
+      this.fontPath = this.fontStore === null ? '' : this.fontStore.uriForFamily(this.fontFamily);
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
       if (this.chapterCount === 0) {

@@ -148,8 +148,9 @@ export function coverPathOf(book: BookRecord): string {
  * 为什么不留到渲染时再解压：书架 Grid 会反复重建 item，那样等于每滚一下都解一次 zip。
  * 失败一律忽略：没封面只是回退首字占位，**不该拦住导入**。
  */
-export function writeCover(bookPath: string, coverHref: string): void {
-  if (coverHref.length === 0) {
+/** 把封面字节写到书目录。任何失败都忽略 —— 没封面只是回退首字占位，不该拦导入 */
+export function writeCoverBytes(bookPath: string, bytes: Uint8Array): void {
+  if (bytes.length === 0) {
     return;
   }
   const slash: number = bookPath.lastIndexOf('/');
@@ -158,16 +159,24 @@ export function writeCover(bookPath: string, coverHref: string): void {
   }
   const out: string = bookPath.substring(0, slash + 1) + COVER_FILE;
   try {
-    const bytes: Uint8Array = readEpubResource(bookPath, coverHref);
-    if (bytes.length === 0) {
-      return;
-    }
     const f = fs.openSync(out, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
     try {
       fs.writeSync(f.fd, bytes);
     } finally {
       fs.closeSync(f);
     }
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'extract cover failed: %{public}s', JSON.stringify(e));
+  }
+}
+
+/** EPUB：按 coverHref 从 zip 里取封面字节再落盘 */
+export function writeCover(bookPath: string, coverHref: string): void {
+  if (coverHref.length === 0) {
+    return;
+  }
+  try {
+    writeCoverBytes(bookPath, readEpubResource(bookPath, coverHref));
   } catch (e) {
     hilog.warn(DOMAIN, TAG, 'extract cover failed: %{public}s', JSON.stringify(e));
   }
@@ -370,6 +379,10 @@ export class BookImporter {
           groupName: ''
         };
         await this.db.addChapters(id, parsed.chapters);
+        // MOBI 的封面：解析时已按 firstImageIndex + EXTH201 定位取出，这里只管落盘
+        if (parsed.coverBytes !== null) {
+          writeCoverBytes(dstPath, parsed.coverBytes);
+        }
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'parse mobi failed: %{public}s', JSON.stringify(e));
         await this.db.addBook(book);

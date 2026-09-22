@@ -35,6 +35,8 @@ export interface MobiResult {
   author: string;
   charCount: number;
   chapters: ChapterRow[];
+  /** 封面图片字节（书架用）；没有则 null */
+  coverBytes: Uint8Array | null;
 }
 
 /** PDB 头前 32 字节是数据库名（通常是书名），EXTH 没书名时用它兜底 */
@@ -115,5 +117,24 @@ export function parseMobiSync(path: string): MobiResult {
   if (title.length === 0) {
     title = pdbName(bytes);
   }
-  return { title: title, author: meta.author, charCount: text.length, chapters: rows };
+
+  // 封面：EXTH 201(coveroffset) + MOBI header 的 firstImageIndex 定位到图片记录，
+  // 那条记录的字节就是图片本体（jpg / png）。取不到就让书架回退首字占位，不拦导入。
+  let coverBytes: Uint8Array | null = null;
+  if (meta.firstImageIndex >= 0 && meta.coverOffset >= 0) {
+    const idx: number = meta.firstImageIndex + meta.coverOffset;
+    if (idx < entries.length) {
+      const ce = entries[idx];
+      if (ce.offset + ce.size <= bytes.length && ce.size > 0) {
+        coverBytes = bytes.subarray(ce.offset, ce.offset + ce.size);
+      }
+    }
+  }
+  return {
+    title: title,
+    author: meta.author,
+    charCount: text.length,
+    chapters: rows,
+    coverBytes: coverBytes
+  };
 }

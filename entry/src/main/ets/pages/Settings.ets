@@ -118,7 +118,8 @@ struct Settings {
       try {
         this.getUIContext().getFont().registerFont({
           familyName: list[i].familyName,
-          familySrc: store.pathOf(list[i])
+          // file:// uri：裸路径静默失败（字体切换不生效的根因，见 FontStore.uriOf）
+          familySrc: store.uriOf(list[i])
         });
       } catch (e) {
         hilog.warn(DOMAIN, TAG, 'registerFont failed: %{public}s', JSON.stringify(e));

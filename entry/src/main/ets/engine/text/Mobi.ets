@@ -46,6 +46,10 @@ export interface MobiMeta {
   firstContent: number;
   /** 记录尾部附加数据标志 */
   extraFlags: number;
+  /** 第一张图片的记录号（MOBI header 偏移 108）；-1 = 没有 */
+  firstImageIndex: number;
+  /** EXTH 201（coveroffset）：封面记录号 = firstImageIndex + coverOffset；-1 = 没有 */
+  coverOffset: number;
   title: string;
   author: string;
 }
@@ -264,6 +268,23 @@ function exthString(rec0: Uint8Array, start: number, end: number, type: number):
   return '';
 }
 
+/** EXTH 里取某个 type 的 4 字节整数（如 201 = 封面偏移）；没有返回 -1 */
+function exthU32(rec0: Uint8Array, start: number, end: number, type: number): number {
+  let p: number = start;
+  while (p + 8 <= end) {
+    const t: number = u32(rec0, p);
+    const l: number = u32(rec0, p + 4);
+    if (l < 8 || p + l > end) {
+      break;
+    }
+    if (t === type && l >= 12) {
+      return u32(rec0, p + 8);
+    }
+    p += l;
+  }
+  return -1;
+}
+
 /**
  * 解析 record 0（PalmDOC Header + MOBI Header + EXTH）。
  * 缺字段一律给默认值 —— 元数据拿不到不该让整本书读不了。
@@ -278,6 +299,8 @@ export function parseRecord0(rec0: Uint8Array): MobiMeta {
   let encoding: number = 65001;
   let firstContent: number = 1;
   let extraFlags: number = 0;
+  let firstImageIndex: number = -1;
+  let coverOffset: number = -1;
   let title: string = '';
   let author: string = '';
 
@@ -290,6 +313,13 @@ export function parseRecord0(rec0: Uint8Array): MobiMeta {
     const exthFlags: number = rec0.length >= 132 ? u32(rec0, 128) : 0;
     if (rec0.length >= 194) {
       firstContent = u16(rec0, 192);
+    }
+    if (rec0.length >= 112) {
+      firstImageIndex = u32(rec0, 108);
+      // 0xFFFFFFFF 是"未设置"的约定值
+      if (firstImageIndex === 0xFFFFFFFF) {
+        firstImageIndex = -1;
+      }
     }
     // 实测 AZW3 样本这里写的是 0 —— 0 不是合法的正文字号（0 号是 header 本身），兜底为 1
     if (firstContent <= 0) {
@@ -309,6 +339,8 @@ export function parseRecord0(rec0: Uint8Array): MobiMeta {
         title = exthString(rec0, at + 12, end, 505);
       }
       author = exthString(rec0, at + 12, end, 100);
+      // 封面指针（实测样本 = 6）：封面记录号 = firstImageIndex + coverOffset
+      coverOffset = exthU32(rec0, at + 12, end, 201);
     }
   }
   return {
@@ -320,6 +352,8 @@ export function parseRecord0(rec0: Uint8Array): MobiMeta {
     encoding: encoding,
     firstContent: firstContent,
     extraFlags: extraFlags,
+    firstImageIndex: firstImageIndex,
+    coverOffset: coverOffset,
     title: title,
     author: author
   };

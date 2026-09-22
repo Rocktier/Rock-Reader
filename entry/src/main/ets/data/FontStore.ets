@@ -37,6 +37,21 @@ export class FontStore {
     return `${this.dir()}/${entry.fileName}`;
   }
 
+  /**
+   * 字体的 `file://` uri —— **只给 registerFont / loadFontSync 用**。
+   *
+   * 为什么必须带前缀：SDK 里两处白纸黑字 ——
+   *   - `@ohos.graphics.text.d.ts`（loadFontSync）："path **must** be in the format of
+   *     **file:// + Absolute path**"
+   *   - `@ohos.font.d.ts`（registerFont.familySrc）：sandbox 目录 **advised to use a
+   *     string with the file:// path prefix**
+   * 传裸路径**不报错但静默失败**（2026-09-22 实测：字体切换后正文毫无变化，就是它）。
+   * `fs.*` 系列**仍然要用 pathOf 的裸路径** —— 别把 uri 传给 fs。
+   */
+  uriOf(entry: FontEntry): string {
+    return 'file://' + this.pathOf(entry);
+  }
+
   /** 是否已下载（只看本地文件，不联网） */
   isDownloaded(entry: FontEntry): boolean {
     return fs.accessSync(this.pathOf(entry));
@@ -57,14 +72,15 @@ export class FontStore {
    * 字体族 → 沙箱路径；系统字体 / 未下载都返回 ''。
    * 排版测量要用这个路径把字体挂进 FontCollection（保证测量与渲染同一个文件）。
    */
-  pathForFamily(family: string): string {
+  /** 按族名取字体的 `file://` uri（给**测量端 loadFontSync** 用；裸路径会静默失败，见 uriOf） */
+  uriForFamily(family: string): string {
     if (family.length === 0) {
       return '';
     }
     for (let i: number = 0; i < FONT_CATALOG.length; i++) {
       const entry: FontEntry = FONT_CATALOG[i];
       if (entry.familyName === family && fs.accessSync(this.pathOf(entry))) {
-        return this.pathOf(entry);
+        return this.uriOf(entry);
       }
     }
     return '';
