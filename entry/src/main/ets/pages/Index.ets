@@ -278,7 +278,10 @@ struct Index {
     // 注意：@Builder 里**只能写 UI 组件语法** —— 不能先 `const cover = ...` 再判断
     // （ArkTS 会报 "Only UI component syntax can be written here"），所以这里调用两次
     if (coverPathOf(book).length > 0) {
-      Image(coverPathOf(book))
+      // ⚠️ `Image` 加载沙箱里的文件**必须带 `file://` 前缀** —— 传裸路径不报错、也不显示，
+      // 只是默默空白。这与 `registerFont` / `loadFontSync` 是同一条规则（字体那次就是这么坑的），
+      // 本项目在"自定义字体"和"封面图"上各踩了一次。
+      Image('file://' + coverPathOf(book))
         .width(size)
         .height(size * 1.4)
         // Contain：各书封面比例不一，绝不裁切（把书名裁掉是最难看的失败）
