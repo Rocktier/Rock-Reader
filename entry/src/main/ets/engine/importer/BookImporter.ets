@@ -158,10 +158,17 @@ export function writeCoverBytes(bookPath: string, bytes: Uint8Array): void {
     return;
   }
   const out: string = bookPath.substring(0, slash + 1) + COVER_FILE;
+  // ⚠️ `fs.writeSync` 的签名是 `buffer: ArrayBuffer | string` —— **不认 `Uint8Array`**，
+  // 传它**不抛错、静默写 0 字节**（2026-09-22 实测：封面文件建出来了却一直是 0 字节，
+  // 而且连 catch 里的告警都没有，非常难查）。
+  // 也**不能用 `bytes.buffer`**：MOBI 的封面是 `subarray` 出来的视图，`.buffer` 指向**整个文件**，
+  // 直接写会把整本书塞进封面里。所以按长度新建一块 ArrayBuffer 再拷进去。
+  const ab: ArrayBuffer = new ArrayBuffer(bytes.length);
+  new Uint8Array(ab).set(bytes);
   try {
     const f = fs.openSync(out, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
     try {
-      fs.writeSync(f.fd, bytes);
+      fs.writeSync(f.fd, ab);
     } finally {
       fs.closeSync(f);
     }
