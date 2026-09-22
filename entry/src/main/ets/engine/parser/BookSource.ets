@@ -95,12 +95,21 @@ export class ProcessedSource implements BookSource {
   }
 }
 
+/**
+ * 这些后缀在**导入时**已被转成纯文本并预切章（见 MarkupParser），
+ * 磁盘上的章文件与 TXT 完全同构 —— 所以共用 `TxtSource`。
+ */
+function isPlainTextFormat(format: string): boolean {
+  return format === 'txt' || format === 'html' || format === 'htm' ||
+    format === 'md' || format === 'markdown' || format === 'fb2';
+}
+
 function rawSource(book: BookRecord): BookSource {
-  if (book.format === 'txt') {
-    return new TxtSource(book.path);
-  }
   if (book.format === 'epub') {
     return new EpubSource(book.path);
+  }
+  if (isPlainTextFormat(book.format)) {
+    return new TxtSource(book.path);
   }
   return new UnsupportedSource();
 }

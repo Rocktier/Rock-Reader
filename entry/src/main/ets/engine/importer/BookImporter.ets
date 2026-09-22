@@ -14,6 +14,7 @@ import { BookDb } from '../../data/BookDb';
 import { BookRecord } from '../../common/Types';
 import { parseTxtSync, MAX_TXT_BYTES, CHAPTER_DIR } from '../parser/TxtParser';
 import { parseEpub, MAX_EPUB_BYTES, readEpubResource } from '../parser/EpubParser';
+import { parseMarkupSync } from '../parser/MarkupParser';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -33,6 +34,29 @@ export interface ImportResult {
 function fileExtension(name: string): string {
   const i = name.lastIndexOf('.');
   return i >= 0 ? name.substring(i + 1).toLowerCase() : '';
+}
+
+/**
+ * 扩展名 → 解析种类；`''` = 不支持。
+ * 集中放在这里：新加一种格式只改这一处，导入校验与解析分派自动跟上。
+ */
+function parseKindOf(ext: string): string {
+  if (ext === 'txt') {
+    return 'txt';
+  }
+  if (ext === 'epub') {
+    return 'epub';
+  }
+  if (ext === 'html' || ext === 'htm') {
+    return 'html';
+  }
+  if (ext === 'md' || ext === 'markdown') {
+    return 'md';
+  }
+  if (ext === 'fb2') {
+    return 'fb2';
+  }
+  return '';
 }
 
 function baseName(name: string): string {
@@ -283,7 +307,7 @@ export class BookImporter {
         await this.db.addBook(book);
         return { ok: false, reason: 'PARSE_FAILED', book: book };
       }
-    } else {
+    } else if (ext === 'epub') {
       try {
         const parsed = parseEpub(dstPath);
         // 用 OPF 里的书名/作者（比文件名的可读性好得多）
@@ -306,6 +330,28 @@ export class BookImporter {
         await this.db.addBook(book);
         return { ok: false, reason: 'PARSE_FAILED', book: book };
       }
+    } else {
+      // html / md / fb2：**导入时**转成纯文本并预切章落盘 —— 阅读端直接走 TxtSource，
+      // 所以阅读页对这三种格式零改动（详见 MarkupParser 文件头）
+      try {
+        const parsed = parseMarkupSync(dstPath, parseKindOf(ext));
+        book = {
+          id: id,
+          title: parsed.title.length > 0 ? parsed.title : book.title,
+          author: parsed.author,
+          format: ext,
+          path: dstPath,
+          size: srcSize,
+          addedAt: now,
+          lastReadAt: now,
+          groupName: ''
+        };
+        await this.db.addChapters(id, parsed.chapters);
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, 'parse markup failed: %{public}s', JSON.stringify(e));
+        await this.db.addBook(book);
+        return { ok: false, reason: 'PARSE_FAILED', book: book };
+      }
     }
     await this.db.addBook(book);
     return { ok: true, reason: '', book: book };
@@ -319,13 +365,15 @@ export class BookImporter {
     if (size > MAX_FILE_BYTES) {
       return 'TOO_LARGE';
     }
-    if (ext !== 'txt' && ext !== 'epub') {
+    const kind: string = parseKindOf(ext);
+    if (kind.length === 0) {
       return 'NOT_SUPPORTED';
     }
-    if (ext === 'txt' && size > MAX_TXT_BYTES) {
+    // TXT 与标记类（html / md / fb2）同为纯文本，共用同一个上限
+    if (kind !== 'epub' && size > MAX_TXT_BYTES) {
       return 'TOO_LARGE';
     }
-    if (ext === 'epub' && size > MAX_EPUB_BYTES) {
+    if (kind === 'epub' && size > MAX_EPUB_BYTES) {
       return 'TOO_LARGE';
     }
     return '';

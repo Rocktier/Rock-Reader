@@ -78,7 +78,8 @@ export function readAllBytes(path: string): Uint8Array {
 }
 
 /** 按编码解码；TextDecoder 不支持该编码时抛错，由调用方降级 */
-function decodeBytes(bytes: Uint8Array, encoding: string): string {
+/** 按检测出的编码解码（导出给 MarkupParser 复用 —— 解码逻辑只能有一份） */
+export function decodeBytes(bytes: Uint8Array, encoding: string): string {
   const decoder = util.TextDecoder.create(encoding);
   let text = decoder.decodeToString(bytes);
   // 剥掉 BOM
