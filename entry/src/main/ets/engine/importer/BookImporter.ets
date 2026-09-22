@@ -13,7 +13,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BookDb } from '../../data/BookDb';
 import { BookRecord } from '../../common/Types';
 import { parseTxtSync, MAX_TXT_BYTES, CHAPTER_DIR } from '../parser/TxtParser';
-import { parseEpub, MAX_EPUB_BYTES } from '../parser/EpubParser';
+import { parseEpub, MAX_EPUB_BYTES, readEpubResource } from '../parser/EpubParser';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -82,6 +82,65 @@ export function removeBookFiles(book: BookRecord): void {
     }
   } catch (e) {
     hilog.warn(DOMAIN, TAG, 'remove book dir failed: %{public}s', JSON.stringify(e));
+  }
+}
+
+/**
+ * 封面文件名（书目录内，与书文件同级）。
+ *
+ * 统一 `.jpg` 后缀：封面原图可能是 jpg / png，而 `Image` 是按**文件内容**解码的，
+ * 后缀在这里只是占位 —— 统一后缀省掉了"读的时候要猜扩展名/列举目录"的麻烦。
+ * （若将来发现某本书的封面加载不出来，先改成保留原扩展名。）
+ */
+export const COVER_FILE: string = 'cover.jpg';
+
+/**
+ * 这本书的封面图路径；没有则 `''` —— 书架据此回退首字占位。
+ *
+ * 每次调用都 `accessSync` 一次：书架可见项只有几十个，比维护一份会失效的缓存省心
+ * （缓存还要处理"删书 / 重导入"的失效，不划算）。
+ */
+export function coverPathOf(book: BookRecord): string {
+  const slash: number = book.path.lastIndexOf('/');
+  if (slash <= 0) {
+    return '';
+  }
+  const p: string = book.path.substring(0, slash + 1) + COVER_FILE;
+  try {
+    return fs.accessSync(p) ? p : '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 把 EPUB 封面抽出来落盘 —— **导入时做一次**。
+ *
+ * 为什么不留到渲染时再解压：书架 Grid 会反复重建 item，那样等于每滚一下都解一次 zip。
+ * 失败一律忽略：没封面只是回退首字占位，**不该拦住导入**。
+ */
+export function writeCover(bookPath: string, coverHref: string): void {
+  if (coverHref.length === 0) {
+    return;
+  }
+  const slash: number = bookPath.lastIndexOf('/');
+  if (slash <= 0) {
+    return;
+  }
+  const out: string = bookPath.substring(0, slash + 1) + COVER_FILE;
+  try {
+    const bytes: Uint8Array = readEpubResource(bookPath, coverHref);
+    if (bytes.length === 0) {
+      return;
+    }
+    const f = fs.openSync(out, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+    try {
+      fs.writeSync(f.fd, bytes);
+    } finally {
+      fs.closeSync(f);
+    }
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'extract cover failed: %{public}s', JSON.stringify(e));
   }
 }
 
@@ -240,6 +299,8 @@ export class BookImporter {
           groupName: ''
         };
         await this.db.addChapters(id, parsed.chapters);
+        // 封面：趁这次已经打开过 zip，把封面字节抽出来落盘（书架渲染就不用再解压了）
+        writeCover(dstPath, parsed.coverHref);
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'parse epub failed: %{public}s', JSON.stringify(e));
         await this.db.addBook(book);

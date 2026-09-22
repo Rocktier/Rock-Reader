@@ -9,7 +9,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { BookImporter, ImportResult, removeBookFiles } from '../engine/importer/BookImporter';
+import { BookImporter, ImportResult, coverPathOf, removeBookFiles } from '../engine/importer/BookImporter';
 import {
   collectGroups,
   filterByStatus,
@@ -236,17 +236,30 @@ struct Index {
 
   @Builder
   bookCover(book: BookRecord, size: number) {
-    Column() {
-      Text(book.title.length > 0 ? book.title.substring(0, 1) : '书')
-        .fontSize(size * 0.42)
-        .fontColor(this.palette.text3)
-        .fontWeight(FontWeight.Bold)
+    // 有封面图就渲染图；没有（TXT / EPUB 没写封面 / 抽图失败）才回退首字占位。
+    // 注意：@Builder 里**只能写 UI 组件语法** —— 不能先 `const cover = ...` 再判断
+    // （ArkTS 会报 "Only UI component syntax can be written here"），所以这里调用两次
+    if (coverPathOf(book).length > 0) {
+      Image(coverPathOf(book))
+        .width(size)
+        .height(size * 1.4)
+        // Contain：各书封面比例不一，绝不裁切（把书名裁掉是最难看的失败）
+        .objectFit(ImageFit.Contain)
+        .backgroundColor(this.palette.cover)
+        .borderRadius(0)
+    } else {
+      Column() {
+        Text(book.title.length > 0 ? book.title.substring(0, 1) : '书')
+          .fontSize(size * 0.42)
+          .fontColor(this.palette.text3)
+          .fontWeight(FontWeight.Bold)
+      }
+      .width(size)
+      .height(size * 1.4)
+      .backgroundColor(this.palette.cover)
+      .borderRadius(0)                       // 书封 0 圆角（已确认）
+      .justifyContent(FlexAlign.Center)
     }
-    .width(size)
-    .height(size * 1.4)
-    .backgroundColor(this.palette.cover)
-    .borderRadius(0)                       // 书封 0 圆角（已确认）
-    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
