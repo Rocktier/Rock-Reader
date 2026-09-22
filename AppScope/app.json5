@@ -4,7 +4,10 @@
     "vendor": "Rocktier",
     "versionCode": 1000000,
     "versionName": "1.0.0",
-    "icon": "$media:app_icon",
+    // 分层图标（foreground / background + layered_image.json）：
+    // 系统据此做遮罩、视差与深浅色适配。之前是**单张纯色占位块**（0.5KB、无图形），
+    // 桌面上看起来"没同步 / 很粗糙"就是这个原因 —— 不是设计问题，是根本没有图。
+    "icon": "$media:layered_image",
     "label": "$string:app_name"
   }
 }

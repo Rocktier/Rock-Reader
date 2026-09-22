@@ -223,8 +223,19 @@ export class BookImporter {
     let last: ImportResult = { ok: false, reason: 'CANCELLED', book: null };
     let okCount: number = 0;
     for (let i: number = 0; i < uris.length; i++) {
-      last = await this.importFromUri(uris[i]);
-      if (last.ok) {
+      // ⚠️ **逐本兜异常**：导入是"一本一落库"的，中途任何一本抛异常都不能拖垮整批 ——
+      // 否则会出现最难解释的现象：**书全都进了书架，界面却弹"导入失败"**
+      // （异常把 `importFromUri` 后面的收尾全跳过了，包括"已成功导入"的提示与"已入库"的刷新）。
+      // 2026-09-23 用户反馈的这个症状，先由这里收敛住。
+      let one: ImportResult;
+      try {
+        one = await this.importFromUri(uris[i]);
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, 'import one failed: %{public}s', JSON.stringify(e));
+        one = { ok: false, reason: 'PARSE_FAILED', book: null };
+      }
+      last = one;
+      if (one.ok) {
         okCount += 1;
       }
     }

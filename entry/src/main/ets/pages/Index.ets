@@ -47,7 +47,9 @@ function reasonText(reason: string): string {
     case 'CANCELLED':
       return '';
     case 'NOT_SUPPORTED':
-      return '只支持 TXT 与 EPUB';
+      // 文案跟着实际支持的格式走：早先只支持 TXT/EPUB 时写死了这句话，
+      // 后来加了 HTML/MD/FB2/MOBI/AZW3 —— 报不支持却不说清支持什么，用户会以为文件坏了
+      return '这个格式不支持（TXT/EPUB/HTML/MD/FB2/MOBI/AZW3 可以）';
     case 'TOO_LARGE':
       return '文件太大';
     case 'EMPTY':
@@ -185,20 +187,25 @@ struct Index {
       return;
     }
     this.busy = true;
+    let result: ImportResult = { ok: false, reason: 'CANCELLED', book: null };
+    let threw: boolean = false;
     try {
       const importer = new BookImporter(this.db, this.getUIContext().getHostContext() as Context);
-      const result: ImportResult = await importer.pickAndImport();
-      const msg = reasonText(result.reason);
-      if (msg.length > 0) {
-        this.getUIContext().getPromptAction().showToast({ message: msg });
-      }
-      await this.load();
+      result = await importer.pickAndImport();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'import failed: %{public}s', JSON.stringify(e));
-      this.getUIContext().getPromptAction().showToast({ message: '导入失败' });
-    } finally {
-      this.busy = false;
+      threw = true;
     }
+    // ⚠️ **刷新必须放在 try 之外**：导入是"一本一落库"的，抛异常时前面几本**已经进书架了**；
+    // 原来把 `load()` 写在 try 里，异常一旦发生它就被跳过 —— 书在库里、界面却没刷新、
+    // 还弹一句"导入失败"，用户看到的就是"明明导入成功了却报失败"（2026-09-23 反馈）。
+    await this.load();
+    // 文案也不再一律说"失败"：异常只代表"有文件没走完"，已经进去的照样在书架里
+    const msg: string = threw ? '有文件导入失败，已导入的在书架里' : reasonText(result.reason);
+    if (msg.length > 0) {
+      this.getUIContext().getPromptAction().showToast({ message: msg });
+    }
+    this.busy = false;
   }
 
   private openEditor(mode: string, item: ShelfItem): void {
