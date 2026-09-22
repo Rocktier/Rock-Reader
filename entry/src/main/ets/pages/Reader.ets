@@ -82,6 +82,48 @@ class ChapterDataSource implements IDataSource {
   }
 }
 
+/**
+ * 目录项 —— 标 **@Reusable**：长列表滚动时复用节点，省掉反复创建/销毁的开销
+ * （配合上面的 LazyForEach：一个管"只渲染可见的"，一个管"滚出去的别扔"）。
+ *
+ * 为什么不直接传 `Palette`：ArkTS 的 `@Prop` 只支持基础类型，而 Palette 是 interface，
+ * 所以把用到的几个色值逐个传进来（@Prop 会自动跟随父组件更新，不必写 aboutToReuse）。
+ */
+@Reusable
+@Component
+struct ChapterItem {
+  @Prop title: string = '';
+  @Prop index: number = 0;
+  @Prop current: boolean = false;
+  @Prop textColor: string = '';
+  @Prop text2Color: string = '';
+  @Prop redColor: string = '';
+  private onJump: (index: number) => void = () => {};
+
+  build() {
+    Row() {
+      Text(this.title)
+        .fontSize(13.5)
+        .fontColor(this.current ? this.textColor : this.text2Color)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // 无障碍：屏幕阅读器要能读出章名（AGC 审核会查）
+        .accessibilityText(this.title)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 20, right: 20, top: 13, bottom: 13 })
+    // 当前章 = 左侧红竖条。原来的序号列去掉了：它是"第几个条目"，与章名里作者写的
+    // 「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
+    // 真实的位置指示由页脚 16/182 承担。
+    .border({
+      width: { left: 3 },
+      color: this.current ? this.redColor : Color.Transparent
+    })
+    .onClick(() => this.onJump(this.index))
+  }
+}
+
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
@@ -194,7 +236,7 @@ struct Reader {
 
   aboutToAppear(): void {
     // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
-    const store: FontStore = new FontStore(getContext(this) as Context);
+    const store: FontStore = new FontStore(this.getUIContext().getHostContext() as Context);
     this.fontStore = store;
     this.registerLocalFonts(store);
     this.init();
@@ -225,13 +267,13 @@ struct Reader {
 
   onPageShow(): void {
     // 从独立设置页返回：主题/档位/字体可能变了
-    this.prefs.open(getContext(this) as Context);
+    this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
     // **字体可能刚下载完** —— registerFont 只在进程内/本 UIContext 存活，
     // aboutToAppear 那次注册时字体还不存在；而设置页自己的注册不影响阅读页
     // （实测：下载后回来选楷体，正文毫无变化 —— 就是漏了这次补注册）。幂等，重复调用无害。
     if (this.fontStore === null) {
-      this.fontStore = new FontStore(getContext(this) as Context);
+      this.fontStore = new FontStore(this.getUIContext().getHostContext() as Context);
     }
     this.registerLocalFonts(this.fontStore);
     this.applyPrefsToLayout();
@@ -250,7 +292,7 @@ struct Reader {
     if (theme !== this.theme) {
       this.theme = theme;
       this.palette = paletteOf(theme);
-      applyThemeToSystem(getContext(this) as Context, theme);
+      applyThemeToSystem(this.getUIContext().getHostContext() as Context, theme);
     }
     const family: string = this.prefs.getFontFamily();
     if (family !== this.fontFamily) {
@@ -295,12 +337,12 @@ struct Reader {
 
   private async init(): Promise<void> {
     try {
-      const params = router.getParams() as ReaderParams;
-      this.prefs.open(getContext(this) as Context);
+      const params = this.getUIContext().getRouter().getParams() as ReaderParams;
+      this.prefs.open(this.getUIContext().getHostContext() as Context);
       this.theme = this.prefs.getTheme();
       this.palette = paletteOf(this.theme);
 
-      await this.db.open(getContext(this) as Context);
+      await this.db.open(this.getUIContext().getHostContext() as Context);
       const book: BookRecord | null = await this.db.getBook(params.bookId);
       if (book === null) {
         this.hint = '找不到这本书';
@@ -338,11 +380,11 @@ struct Reader {
   private boxOf(levels: LayoutLevels): LayoutBox {
     // 字号先取 fp，再换 px —— 两个单位同时放进 box，渲染端就不必自己再查一次档位表
     const fontSizeFp: number = fontSizeFpOf(levels.fontSizeLevel);
-    const fontSizePx: number = fp2px(fontSizeFp);
+    const fontSizePx: number = this.getUIContext().fp2px(fontSizeFp);
     const lineHeightPx: number = fontSizePx * lineHeightRatioOf(levels.lineHeightLevel);
     const marginVp: number = marginVpOf(levels.marginLevel);
-    const widthPx: number = vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
-    const heightPx: number = vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
+    const widthPx: number = this.getUIContext().vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
+    const heightPx: number = this.getUIContext().vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
     return {
       fontSizeFp: fontSizeFp,
       fontSizePx: fontSizePx,
@@ -424,7 +466,7 @@ struct Reader {
     // 渲染用的量全部**从 box 派生**（而不是在这里再查一遍档位表）——
     // 否则渲染端与测量端就是两个各算一遍的真源，任何一处表值/换算改动都会悄悄分叉
     this.fontSizeFp = box.fontSizeFp;
-    this.lineHeightVp = px2vp(box.lineHeightPx);
+    this.lineHeightVp = this.getUIContext().px2vp(box.lineHeightPx);
     this.marginVp = marginVpOf(levels.marginLevel);
 
     const cacheKey: string = index + '|' + box.signature;
@@ -697,6 +739,20 @@ struct Reader {
     return this.levels.fontWeightLevel;
   }
 
+  /** 档位 kind 的中文名 —— 无障碍朗读要读"字号 5"而不是光一个"5" */
+  private kindLabel(kind: string): string {
+    if (kind === 'font') {
+      return '字号';
+    }
+    if (kind === 'line') {
+      return '行距';
+    }
+    if (kind === 'margin') {
+      return '页边距';
+    }
+    return '字重';
+  }
+
   // ------------------------------------------------------------------
   // 进度
   // ------------------------------------------------------------------
@@ -744,7 +800,7 @@ struct Reader {
         .height(34)
         .textAlign(TextAlign.Center)
         .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
-        .onClick(() => router.back())
+        .onClick(() => this.getUIContext().getRouter().back())
       Text(this.title)
         .fontSize(13)
         .fontWeight(FontWeight.Bold)
@@ -798,12 +854,16 @@ struct Reader {
       .margin({ bottom: 10 })
 
       Row() {
+        // 视觉 34vp，热区 44vp：触摸标准 ≥44，用 responseRegion 上下各撑 5
+        // （.+ accessibilityText：屏幕朗读要能说出按钮名字，AGC 审核会查）
         Text('上一章')
           .fontSize(12.5)
           .fontColor(this.chapterIndex <= 0 ? this.palette.text3 : this.palette.text)
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .accessibilityText('上一章')
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex - 1))
         Text('目录')
           .fontSize(12.5)
@@ -811,6 +871,8 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .accessibilityText('目录')
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => {
             this.openToc();
           })
@@ -820,6 +882,8 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .accessibilityText('排版设置')
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => {
             this.openSettings();
           })
@@ -829,6 +893,8 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .accessibilityText('下一章')
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex + 1))
       }
       .width('100%')
@@ -919,26 +985,15 @@ struct Reader {
         List({ scroller: this.tocScroller }) {
           LazyForEach(this.tocSource, (item: ChapterRow) => {
             ListItem() {
-              Row() {
-                Text(item.title)
-                  .fontSize(13.5)
-                  .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  // 无障碍：屏幕阅读器要能读出章名（AGC 审核会查）
-                  .accessibilityText(item.title)
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .padding({ left: 20, right: 20, top: 13, bottom: 13 })
-              // 当前章 = 左侧红竖条。原来的序号列去掉了：它是"第几个条目"，与章名里作者写的
-              // 「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
-              // 真实的位置指示由页脚 16/182 承担。
-              .border({
-                width: { left: 3 },
-                color: item.index === this.chapterIndex ? this.palette.red : Color.Transparent
+              ChapterItem({
+                title: item.title,
+                index: item.index,
+                current: item.index === this.chapterIndex,
+                textColor: this.palette.text,
+                text2Color: this.palette.text2,
+                redColor: this.palette.red,
+                onJump: (i: number) => this.jumpToChapter(i)
               })
-              .onClick(() => this.jumpToChapter(item.index))
             }
           }, (item: ChapterRow) => 'ch' + item.index)
         }
@@ -984,6 +1039,9 @@ struct Reader {
           .width(44)
           .height(34)
           .textAlign(TextAlign.Center)
+          // 视觉 44×34：宽度已达标，高度差 10 → 热区上下各撑 5 补到 44
+          .accessibilityText(`${this.kindLabel(kind)} ${n}`)
+          .responseRegion({ x: 0, y: -5, width: 44, height: 44 })
           .onClick(() => this.pickLevel(kind, n))
       }, (n: number) => kind + '-' + n + (n === this.levelOf(kind) ? '-on' : '-off'))
     }
@@ -1023,6 +1081,8 @@ struct Reader {
       .height(34)
       .padding({ left: 16, right: 16 })
       .textAlign(TextAlign.Center)
+      .accessibilityText(`主题 ${themeLabel(theme)}`)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickTheme(theme))
   }
 
@@ -1038,6 +1098,8 @@ struct Reader {
       .padding({ left: 16, right: 16 })
       .textAlign(TextAlign.Center)
       .maxLines(1)
+      .accessibilityText(`字体 ${label}`)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickFont(family))
   }
 
@@ -1123,9 +1185,10 @@ struct Reader {
         .width('100%')
         .height(48)
         .textAlign(TextAlign.Center)
+        .accessibilityText('更多设置')
         .onClick(() => {
           this.showSettings = false;
-          router.pushUrl({ url: 'pages/Settings' });
+          this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
         })
     }
     .width('100%')

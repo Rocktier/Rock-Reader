@@ -46,14 +46,14 @@ struct Stats {
   private prefs: ReaderPrefs = new ReaderPrefs();
 
   aboutToAppear(): void {
-    this.prefs.open(getContext(this) as Context);
+    this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.palette = paletteOf(this.prefs.getTheme());
     this.load();
   }
 
   private async load(): Promise<void> {
     try {
-      await this.db.open(getContext(this) as Context);
+      await this.db.open(this.getUIContext().getHostContext() as Context);
       const now: number = Date.now();
       // 顺手清掉 180 天前的会话：统计窗口只有 30 天，保留更久没有意义还拖慢查询
       await this.db.pruneSessions(now - 180 * 24 * 60 * 60 * 1000);
@@ -145,7 +145,7 @@ struct Stats {
           .borderWidth(1)
           .borderColor(this.palette.line)
           .onClick(() => {
-            router.back();
+            this.getUIContext().getRouter().back();
           })
         Text('阅读统计')
           .fontSize(18)

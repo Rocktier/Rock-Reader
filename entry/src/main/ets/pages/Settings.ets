@@ -45,8 +45,8 @@ struct Settings {
   private fontStore: FontStore | null = null;
 
   aboutToAppear(): void {
-    this.prefs.open(getContext(this) as Context);
-    this.fontStore = new FontStore(getContext(this) as Context);
+    this.prefs.open(this.getUIContext().getHostContext() as Context);
+    this.fontStore = new FontStore(this.getUIContext().getHostContext() as Context);
     this.theme = this.prefs.getTheme();
     this.fontFamily = this.prefs.getFontFamily();
     this.purifyOn = this.prefs.isPurifyOn();
@@ -228,6 +228,9 @@ struct Settings {
               .borderRadius(0)
               .height(CHIP_HEIGHT)
               .padding({ left: 14, right: 14 })
+              // 视觉 CHIP_HEIGHT(34) < 触摸标准 44 → 热区上下各撑 5；朗读要说出"简繁 不转换"
+              .accessibilityText(`简繁 ${it[1]}`)
+              .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
               .onClick(() => this.pickConvert(it[0]))
           }, (it: string[]) => 'c' + it[0])
         }
@@ -252,6 +255,8 @@ struct Settings {
       .borderRadius(0)
       .height(CHIP_HEIGHT)
       .padding({ left: 14, right: 14 })
+      .accessibilityText(`字体 ${label}`)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickFont(family))
   }
 
@@ -390,7 +395,7 @@ struct Settings {
           .height(34)
           .textAlign(TextAlign.Center)
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
-          .onClick(() => router.back())
+          .onClick(() => this.getUIContext().getRouter().back())
         Text('SETTINGS')
           .fontSize(12)
           .fontFamily('monospace')

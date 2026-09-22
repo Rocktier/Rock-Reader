@@ -83,17 +83,17 @@ struct Index {
   private theme: ThemeName = THEME_DARK;
 
   aboutToAppear(): void {
-    this.prefs.open(getContext(this) as Context);
+    this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.applyTheme();
     // 启动时也同步一次系统层：默认深色时状态栏内容色就是白的，但显式设一次可保证
     // "上次退出时是浅色"的情况下状态栏文字块也是黑的（EntryAbility 设了 colorMode，这里兜一道底）
-    applyThemeToSystem(getContext(this) as Context, this.theme);
+    applyThemeToSystem(this.getUIContext().getHostContext() as Context, this.theme);
     this.load();
   }
 
   onPageShow(): void {
     // 从设置页返回：主题可能改了
-    this.prefs.open(getContext(this) as Context);
+    this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
     this.applyTheme();
   }
@@ -104,13 +104,13 @@ struct Index {
       this.theme = theme;
       this.palette = paletteOf(theme);
       // 主题变了必须同步系统层（状态栏文字颜色 + 系统深色模式），否则浅色下白字白底看不见
-      applyThemeToSystem(getContext(this) as Context, theme);
+      applyThemeToSystem(this.getUIContext().getHostContext() as Context, theme);
     }
   }
 
   private async load(): Promise<void> {
     try {
-      await this.db.open(getContext(this) as Context);
+      await this.db.open(this.getUIContext().getHostContext() as Context);
       const list: BookRecord[] = await this.db.listBooks();
       const percents: Map<string, number> = await this.db.listAllProgress();
       // 组装交给 ShelfRules.toShelfItems：缺进度与 NaN 都记 0，脏数据漏不进进度条
@@ -148,7 +148,7 @@ struct Index {
     }
     this.busy = true;
     try {
-      const importer = new BookImporter(this.db, getContext(this) as Context);
+      const importer = new BookImporter(this.db, this.getUIContext().getHostContext() as Context);
       const result: ImportResult = await importer.pickAndImport();
       const msg = reasonText(result.reason);
       if (msg.length > 0) {
@@ -218,7 +218,7 @@ struct Index {
   }
 
   private openBook(book: BookRecord): void {
-    router.pushUrl({ url: 'pages/Reader', params: { bookId: book.id } });
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/Reader', params: { bookId: book.id } });
   }
 
   @Builder
@@ -289,16 +289,24 @@ struct Index {
   }
 
   @Builder
-  groupChip(name: string, active: boolean) {
+  /**
+   * 分组芯片。选中态**必须在 Builder 内部读 `this.activeGroup`**：
+   * @Builder 按值传参不驱动刷新（抽屉档位那个 bug 就是这么来的，见 findings）。
+   * 原来写成 `groupChip(name, active)` —— 点分组时选中框不会动。
+   */
+  groupChip(name: string) {
     Text(name)
       .fontSize(11)
       .fontFamily('monospace')
-      .fontColor(active ? this.palette.bg : this.palette.text3)
+      .fontColor(this.activeGroup === name ? this.palette.bg : this.palette.text3)
       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
       .borderRadius(10)
-      .backgroundColor(active ? this.palette.text : 'rgba(0,0,0,0)')
+      .backgroundColor(this.activeGroup === name ? this.palette.text : 'rgba(0,0,0,0)')
       .borderWidth(1)
-      .borderColor(active ? this.palette.text : this.palette.line)
+      .borderColor(this.activeGroup === name ? this.palette.text : this.palette.line)
+      // 视觉约 21vp（11pt + 上下 5 padding），远小于触摸标准 44 → 热区必须撑开
+      .accessibilityText(`分组 ${name}`)
+      .responseRegion({ x: 0, y: -12, width: '100%', height: 44 })
       .onClick(() => {
         this.activeGroup = name;
       })
@@ -315,6 +323,9 @@ struct Index {
       .backgroundColor(this.statusFilter === status ? this.palette.text : 'rgba(0,0,0,0)')
       .borderWidth(1)
       .borderColor(this.statusFilter === status ? this.palette.text : this.palette.line)
+      // 同 groupChip：视觉约 21vp，热区撑到 44；朗读要说出筛选名
+      .accessibilityText(`筛选 ${label}`)
+      .responseRegion({ x: 0, y: -12, width: '100%', height: 44 })
       .onClick(() => {
         this.statusFilter = status;
       })
@@ -344,6 +355,7 @@ struct Index {
             .fontColor(this.palette.text2)
             .alignSelf(ItemAlign.Start)
           Row({ space: 10 }) {
+            // 视觉约 29vp（13pt 文字 + 上下 8 padding），热区补到 44
             Text('取消')
               .fontSize(13)
               .fontColor(this.palette.text3)
@@ -352,6 +364,8 @@ struct Index {
               .padding({ top: 8, bottom: 8 })
               .borderWidth(1)
               .borderColor(this.palette.line)
+              .accessibilityText('取消')
+              .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
               .onClick(() => this.closeEditor())
             Text('移除')
               .fontSize(13)
@@ -360,6 +374,8 @@ struct Index {
               .textAlign(TextAlign.Center)
               .padding({ top: 8, bottom: 8 })
               .backgroundColor(this.palette.red)
+              .accessibilityText('移除这本书')
+              .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
               .onClick(() => {
                 // 顺序要紧：closeEditor() 会清空 editorBookId —— 先把书取出来再关。
                 // 这里不用系统的 promptAction.showDialog：它不受我们的色板控制，
@@ -457,6 +473,9 @@ struct Index {
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ top: 10, bottom: 10 })
+      // 视觉约 34vp → 热区补到 44；朗读要说出菜单项名字
+      .accessibilityText(label)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => {
         if (nextMode === MODE_DELETE) {
           this.editorMode = MODE_DELETE;
@@ -511,7 +530,7 @@ struct Index {
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: 8 })
             .onClick(() => {
-              router.pushUrl({ url: 'pages/Stats' });
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/Stats' });
             })
           Text('Aa')
             .fontSize(13)
@@ -524,7 +543,7 @@ struct Index {
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: 8 })
             .onClick(() => {
-              router.pushUrl({ url: 'pages/Settings' });
+              this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
             })
           Text(this.busy ? '···' : '＋')
             .fontSize(15)
@@ -548,10 +567,11 @@ struct Index {
         if (this.groups.length > 1) {
           Scroll() {
             Row({ space: 8 }) {
-              this.groupChip('全部', this.activeGroup === GROUP_ALL)
+              this.groupChip(GROUP_ALL)
               ForEach(this.groups, (g: string) => {
-                this.groupChip(g, this.activeGroup === g)
-              }, (g: string) => 'chip' + g)
+                this.groupChip(g)
+                // 键含选中态：键不变 item 不重建，选中样式就不更新
+              }, (g: string) => 'chip' + g + (g === this.activeGroup ? '-on' : '-off'))
             }
           }
           .scrollable(ScrollDirection.Horizontal)

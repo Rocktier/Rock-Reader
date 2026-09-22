@@ -34,6 +34,8 @@
         "label": "$string:EntryAbility_label",
         "startWindowIcon": "$media:startIcon",
         "startWindowBackground": "$color:start_window_background",
+        // 显式写启动模式：默认是 singleton，但写明白能避免后人误判"没配=多实例"
+        "launchType": "singleton",
         "exported": true,
         "skills": [
           {
