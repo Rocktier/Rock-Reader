@@ -254,9 +254,16 @@ export class BookImporter {
    * 这里开头 open 一次，拷贝与校验都在同一个 fd 上做完，最后才 close。
    */
   async importFromUri(uri: string): Promise<ImportResult> {
+    // 「用其他应用打开」传来的 uri 是 `file:///storage/...` 形态，fs **不认这个前缀**
+    // （实测：系统 want.uri 就是这个样子）。picker 给的 uri 本来就能直接用，
+    // 所以只对 `file:///` 做一次转换 —— 去掉前缀后剩下的以 / 开头，正好是绝对路径。
+    let openPath: string = uri;
+    if (uri.startsWith('file:///')) {
+      openPath = uri.substring(7);
+    }
     let src: fs.File;
     try {
-      src = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      src = fs.openSync(openPath, fs.OpenMode.READ_ONLY);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'open picked uri failed: %{public}s', JSON.stringify(e));
       return { ok: false, reason: 'COPY_FAILED', book: null };

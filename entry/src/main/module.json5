@@ -56,15 +56,26 @@
             "actions": [
               "ohos.want.action.viewData"
             ],
-            "entities": [
-              "entity.system.default"
-            ],
+            // ⚠️ **绝对不要写 entities 字段**。
+            // 实测（2026-09-22，BMS 日志）：系统文件管理器发来的 want 里 `entities` 是**空数组**，
+            // 而只要声明了 entities 就变成"必须项" → 一个都匹配不上 → 系统弹「暂无可用打开方式」。
+            // 这是本项目踩过的坑：写了 entity.system.default 反而把功能写没了。
             "uris": [
               {
-                // 用通配而不是逐个列 mime：mobi / azw3 没有标准 MIME/UTD，
-                // 写具体类型就等于把它们排除掉。选中不支持的文件时由导入逻辑明确提示。
+                // 实测系统给 .mobi / .azw3 判定的 MIME 是 **text/plain**（不是 octet-stream），
+                // 而 BMS 是按 **UTD** 查询的（日志 GetBundleInfoByUtd）—— 所以 utd 必须填，
+                // 且 text/plain 对应 general.plain-text。两者都写才稳。
                 "scheme": "file",
-                "type": "*/*"
+                "type": "text/plain",
+                "utd": "general.plain-text"
+              },
+              {
+                "scheme": "file",
+                "type": "application/epub+zip"
+              },
+              {
+                "scheme": "file",
+                "type": "application/octet-stream"
               }
             ]
           }
