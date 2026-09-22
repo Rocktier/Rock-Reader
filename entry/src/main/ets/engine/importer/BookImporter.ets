@@ -15,6 +15,7 @@ import { BookRecord } from '../../common/Types';
 import { parseTxtSync, MAX_TXT_BYTES, CHAPTER_DIR } from '../parser/TxtParser';
 import { parseEpub, MAX_EPUB_BYTES, readEpubResource } from '../parser/EpubParser';
 import { parseMarkupSync } from '../parser/MarkupParser';
+import { parseMobiSync } from '../parser/MobiParser';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -55,6 +56,10 @@ function parseKindOf(ext: string): string {
   }
   if (ext === 'fb2') {
     return 'fb2';
+  }
+  // AZW = Kindle 的 MOBI（无 DRM 时与 mobi 同构）；AZW3 = KF8
+  if (ext === 'mobi' || ext === 'azw' || ext === 'azw3') {
+    return 'mobi';
   }
   return '';
 }
@@ -327,6 +332,28 @@ export class BookImporter {
         writeCover(dstPath, parsed.coverHref);
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'parse epub failed: %{public}s', JSON.stringify(e));
+        await this.db.addBook(book);
+        return { ok: false, reason: 'PARSE_FAILED', book: book };
+      }
+    } else if (parseKindOf(ext) === 'mobi') {
+      // MOBI / AZW / AZW3：解 PDB 容器 + PalmDOC 解压 → HTML → 同样转成纯文本 + 预切章。
+      // 失败会抛明确错误（DRM / 不支持的压缩），书照样进书架，只是没有目录。
+      try {
+        const parsed = parseMobiSync(dstPath);
+        book = {
+          id: id,
+          title: parsed.title.length > 0 ? parsed.title : book.title,
+          author: parsed.author,
+          format: ext,
+          path: dstPath,
+          size: srcSize,
+          addedAt: now,
+          lastReadAt: now,
+          groupName: ''
+        };
+        await this.db.addChapters(id, parsed.chapters);
+      } catch (e) {
+        hilog.error(DOMAIN, TAG, 'parse mobi failed: %{public}s', JSON.stringify(e));
         await this.db.addBook(book);
         return { ok: false, reason: 'PARSE_FAILED', book: book };
       }

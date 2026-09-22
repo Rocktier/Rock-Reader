@@ -101,7 +101,8 @@ export class ProcessedSource implements BookSource {
  */
 function isPlainTextFormat(format: string): boolean {
   return format === 'txt' || format === 'html' || format === 'htm' ||
-    format === 'md' || format === 'markdown' || format === 'fb2';
+    format === 'md' || format === 'markdown' || format === 'fb2' ||
+    format === 'mobi' || format === 'azw' || format === 'azw3';
 }
 
 function rawSource(book: BookRecord): BookSource {

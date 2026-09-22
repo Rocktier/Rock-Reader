@@ -97,12 +97,18 @@ export function htmlToMarkdownish(html: string): string {
   s = s.replace(/<h1\b[^>]*>/gi, '\n# ');
   s = s.replace(/<h2\b[^>]*>/gi, '\n## ');
   s = s.replace(/<h3\b[^>]*>/gi, '\n### ');
+  // **MOBI(KF7) 没有 h1-h3** —— 它用 `<mbp:pagebreak/>` 分章（实测样本 ×122）。
+  // 不认它，MOBI 就一个标题都没有 → 只能退化成按字数硬切。
+  s = s.replace(/<mbp:pagebreak\s*\/?>/gi, '\n# ');
   // 块级结构 → 换行（否则整本书会粘成一坨）
   s = s.replace(/<br\s*\/?>/gi, '\n');
   s = s.replace(/<\/(p|div|li|tr|blockquote|section|article|h[1-6])\s*>/gi, '\n');
   s = decodeEntities(stripTags(s));
   // 压掉缩进产生的行尾空白与连续空行（保留段落间的一个空行）
   s = s.replace(/[ \t]+\n/g, '\n');
+  // pagebreak 后面常跟一个空段落占位（实测样本里每个都有），会让 `# ` 后面直接换行
+  // → 章名为空。把这种换行吃掉，让真正的章名接上来。
+  s = s.replace(/#([ \t]*)\n+/g, '# ');
   s = s.replace(/\n{3,}/g, '\n\n');
   return s;
 }
