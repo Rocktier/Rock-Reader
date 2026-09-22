@@ -10,6 +10,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookImporter, ImportResult, coverPathOf, removeBookFiles } from '../engine/importer/BookImporter';
+import { reasonText } from '../engine/importer/ImportReason';
 import {
   collectGroups,
   filterByStatus,
@@ -42,26 +43,9 @@ const MODE_DELETE: string = 'delete';
 /** 进度条格数（与「继续阅读」卡片一致） */
 const CELLS: number = 10;
 
-function reasonText(reason: string): string {
-  switch (reason) {
-    case 'CANCELLED':
-      return '';
-    case 'NOT_SUPPORTED':
-      // 文案跟着实际支持的格式走：早先只支持 TXT/EPUB 时写死了这句话，
-      // 后来加了 HTML/MD/FB2/MOBI/AZW3 —— 报不支持却不说清支持什么，用户会以为文件坏了
-      return '这个格式不支持（TXT/EPUB/HTML/MD/FB2/MOBI/AZW3 可以）';
-    case 'TOO_LARGE':
-      return '文件太大';
-    case 'EMPTY':
-      return '文件是空的';
-    case 'COPY_FAILED':
-      return '读取文件失败';
-    case 'PARSE_FAILED':
-      return '已导入，但目录解析失败';
-    default:
-      return '导入失败';
-  }
-}
+// reasonText 已抽到 engine/importer/ImportReason.ets：
+// 它是纯映射（不碰 fileIo / UI），挪出去才能进 CI 单测 ——
+// 那个"default 谎报导入失败"的 bug 就是靠测试守住的（见那边的文件说明）。
 
 @Entry
 @Component
