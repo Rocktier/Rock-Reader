@@ -152,12 +152,12 @@ struct Index {
       const result: ImportResult = await importer.pickAndImport();
       const msg = reasonText(result.reason);
       if (msg.length > 0) {
-        promptAction.showToast({ message: msg });
+        this.getUIContext().getPromptAction().showToast({ message: msg });
       }
       await this.load();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'import failed: %{public}s', JSON.stringify(e));
-      promptAction.showToast({ message: '导入失败' });
+      this.getUIContext().getPromptAction().showToast({ message: '导入失败' });
     } finally {
       this.busy = false;
     }
@@ -193,7 +193,7 @@ struct Index {
       await this.load();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'shelf edit failed: %{public}s', JSON.stringify(e));
-      promptAction.showToast({ message: '操作失败' });
+      this.getUIContext().getPromptAction().showToast({ message: '操作失败' });
     }
   }
 
@@ -618,6 +618,8 @@ struct Index {
                     .width('100%')
                   }
                   .width('100%')
+                  // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
+                  .accessibilityText(item.book.title)
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
                 }

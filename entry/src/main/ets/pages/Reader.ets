@@ -42,6 +42,46 @@ interface ReaderParams {
   bookId: string;
 }
 
+/**
+ * 目录数据源 —— LazyForEach 要求实现 IDataSource。
+ *
+ * 为什么换成懒加载：目录可能有几千章（`task_plan` 里按"三千章"量级设计），
+ * 一次性把每章都建成 ListItem 会明显卡顿；改成懒加载后只渲染可视区那几行。
+ */
+class ChapterDataSource implements IDataSource {
+  private list: ChapterRow[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  /** 换数据（切书 / 搜索过滤）后必须调它，否则 LazyForEach 不会刷新 */
+  update(list: ChapterRow[]): void {
+    this.list = list;
+    for (let i: number = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataReloaded();
+    }
+  }
+
+  totalCount(): number {
+    return this.list.length;
+  }
+
+  getData(index: number): ChapterRow {
+    return this.list[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const pos: number = this.listeners.indexOf(listener);
+    if (pos >= 0) {
+      this.listeners.splice(pos, 1);
+    }
+  }
+}
+
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
@@ -129,6 +169,8 @@ struct Reader {
   private cache: PageCache = new PageCache(4);
   /** 目录列表的滚动器：打开目录时用它把当前章定位到中间 */
   private tocScroller: Scroller = new Scroller();
+  /** 目录数据源（懒加载）；`tocFiltered` 仍保留，只用来判空 */
+  private tocSource: ChapterDataSource = new ChapterDataSource();
   private theme: ThemeName = THEME_DARK;
   private currentKey: string = '';
   /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
@@ -161,14 +203,22 @@ struct Reader {
   /** 把已下载字体注册进 ArkUI（渲染用）；测量端由 TextPaginator 用文件路径单独挂 */
   private registerLocalFonts(store: FontStore): void {
     const list: FontEntry[] = store.downloaded();
+    if (list.length === 0) {
+      hilog.info(DOMAIN, TAG, 'registerFont: no downloaded fonts');
+      return;
+    }
     for (let i: number = 0; i < list.length; i++) {
+      const path: string = store.pathOf(list[i]);
       try {
         this.getUIContext().getFont().registerFont({
           familyName: list[i].familyName,
-          familySrc: store.pathOf(list[i])
+          familySrc: path
         });
+        // 成功也要记：定位"字体切换不生效"时，成败本身就是最关键的判据
+        hilog.info(DOMAIN, TAG, 'registerFont OK: %{public}s -> %{public}s', list[i].familyName, path);
       } catch (e) {
-        hilog.warn(DOMAIN, TAG, 'registerFont failed: %{public}s', JSON.stringify(e));
+        hilog.error(DOMAIN, TAG, 'registerFont FAILED: %{public}s path=%{public}s err=%{public}s',
+          list[i].familyName, path, JSON.stringify(e));
       }
     }
   }
@@ -207,6 +257,8 @@ struct Reader {
       this.fontFamily = family;
       this.fontPath = this.fontStore === null ? '' : this.fontStore.pathForFamily(family);
     }
+    hilog.info(DOMAIN, TAG, 'applyPrefs: family=[%{public}s] path=[%{public}s] key=%{public}s',
+      this.fontFamily, this.fontPath, this.currentKey);
     // 抽屉里显示的档位跟着走（无论是否触发重排）
     this.levels = this.prefs.getLevels();
     if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
@@ -448,7 +500,7 @@ struct Reader {
 
   /** 淡出 → 换页 → 淡入（带微小位移，方向感来自位移方向） */
   private animateTurn(chapterIndex: number, pageIndex: number, dir: number): void {
-    animateTo({
+    this.getUIContext().animateTo({
       duration: FADE_OUT_MS,
       curve: Curve.EaseIn,
       onFinish: () => {
@@ -461,7 +513,7 @@ struct Reader {
           this.showPage(pageIndex);
         }
         this.shiftX = dir * FADE_SHIFT_VP;
-        animateTo({ duration: FADE_IN_MS, curve: Curve.EaseOut }, () => {
+        this.getUIContext().animateTo({ duration: FADE_IN_MS, curve: Curve.EaseOut }, () => {
           this.shiftX = 0;
           this.pageOpacity = 1;
         });
@@ -499,13 +551,13 @@ struct Reader {
     const passed: boolean = Math.abs(dx) >= this.viewWidthVp * DRAG_TURN_RATIO
       || Math.abs(velocityX) >= DRAG_TURN_VELOCITY;
     if (!passed || !this.canTurn(dir)) {
-      animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
+      this.getUIContext().animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
         this.dragX = 0;
       });
       return;
     }
     const out: number = dx > 0 ? this.viewWidthVp : -this.viewWidthVp;
-    animateTo({
+    this.getUIContext().animateTo({
       duration: DRAG_OUT_MS,
       curve: Curve.EaseOut,
       onFinish: () => {
@@ -513,7 +565,7 @@ struct Reader {
         this.applyTurn(dir);
         this.dragX = 0;
         this.pageOpacity = 0;
-        animateTo({ duration: DRAG_IN_MS, curve: Curve.EaseOut }, () => {
+        this.getUIContext().animateTo({ duration: DRAG_IN_MS, curve: Curve.EaseOut }, () => {
           this.pageOpacity = 1;
         });
       }
@@ -558,6 +610,7 @@ struct Reader {
     this.showSettings = false; // 与设置抽屉互斥
     this.tocQuery = '';
     this.tocFiltered = this.chapters;
+    this.tocSource.update(this.tocFiltered);
     this.showToc = true;
   }
 
@@ -569,11 +622,13 @@ struct Reader {
     const key: string = query.trim().toLowerCase();
     if (key.length === 0) {
       this.tocFiltered = this.chapters;
+      this.tocSource.update(this.tocFiltered);
       return;
     }
     this.tocFiltered = this.chapters.filter(
       (c: ChapterRow) => c.title.toLowerCase().indexOf(key) >= 0
     );
+    this.tocSource.update(this.tocFiltered);
   }
 
   // ------------------------------------------------------------------
@@ -605,6 +660,7 @@ struct Reader {
   }
 
   private pickFont(family: string): void {
+    hilog.info(DOMAIN, TAG, 'pickFont: %{public}s', family);
     this.prefs.saveFontFamily(family);
     this.applyPrefsToLayout();
   }
@@ -861,7 +917,7 @@ struct Reader {
           .margin({ top: 30 })
       } else {
         List({ scroller: this.tocScroller }) {
-          ForEach(this.tocFiltered, (item: ChapterRow) => {
+          LazyForEach(this.tocSource, (item: ChapterRow) => {
             ListItem() {
               Row() {
                 Text(item.title)
@@ -869,6 +925,8 @@ struct Reader {
                   .fontColor(item.index === this.chapterIndex ? this.palette.text : this.palette.text2)
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  // 无障碍：屏幕阅读器要能读出章名（AGC 审核会查）
+                  .accessibilityText(item.title)
                   .layoutWeight(1)
               }
               .width('100%')
@@ -1192,7 +1250,7 @@ struct Reader {
               return;
             }
             this.dragging = false;
-            animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
+            this.getUIContext().animateTo({ duration: DRAG_BACK_MS, curve: Curve.EaseOut }, () => {
               this.dragX = 0;
             });
           })
