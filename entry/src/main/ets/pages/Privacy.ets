@@ -119,7 +119,8 @@ struct Privacy {
         Column() {
           ForEach(PRIVACY_LINES, (line: string) => {
             this.lineView(line)
-          }, (line: string) => line)
+          // key 用序号：正文里可能有重复段落，拿内容当 key 会冲突（ForEach 键必须唯一）
+          }, (line: string, idx: number) => 'p' + idx)
         }
         .width('100%')
         .padding({ left: 22, right: 22, top: 14, bottom: 34 })
