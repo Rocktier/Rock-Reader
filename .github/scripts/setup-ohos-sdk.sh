@@ -11,7 +11,9 @@
 set -euo pipefail
 
 VER="${1:-6.0.0.2-Release}"
-ROOT="${PWD}/.ohos-sdk"
+# 第二参数 = 落到哪个目录。兼容性编译会同时用另一套 SDK（例如 API 15），
+# 两套必须分目录，否则缓存互相覆盖。
+ROOT="${2:-${PWD}/.ohos-sdk}"
 # 注意：hvigor 会校验 compileSdkVersion 对应的全部组件，即使本项目是纯 ArkTS（无 C++）、
 # CI 也不用预览器，native 与 previewer 仍必须存在，否则报 native:20 / previewer:20 缺失。
 COMPONENTS="ets js native previewer toolchains"

@@ -48,7 +48,67 @@ jobs:
           fi
 
   # ---------------------------------------------------------------
-  # 作业 2：ArkTS 编译校验 → HAP（tag 触发时同时发 Release）
+  # 作业 2：向下兼容的**编译证据**（API 15）
+  # ---------------------------------------------------------------
+  # 为什么要有这个作业（2026-09-24）：
+  #   正式 product 声明 compatibleSdkVersion = 5.0.4(16)，但本机 SDK 是 26、CI 是 20
+  #   → **16~19 这一段从来没有编译证据**。而公开 SDK 里没有 16（5.0.4 在镜像上 404），
+  #     所以用 **5.0.3-Release = API 15** 编译：通过 ⇒ 代码不含 16+ 的 API ⇒ 声明 16 成立。
+  compat-15:
+    name: 兼容性编译校验（API 15）
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      OHOS_SDK_VER: 5.0.3-Release
+      SDK_ROOT: ${{ github.workspace }}/.ohos-sdk15
+      DEVECO_SDK_HOME: ${{ github.workspace }}/.ohos-sdk15
+      HOS_SDK_HOME: ${{ github.workspace }}/.ohos-sdk15
+      OHOS_BASE_SDK_HOME: ${{ github.workspace }}/.ohos-sdk15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 缓存 OpenHarmony SDK 15
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SDK_ROOT }}
+          key: ohos-sdk15-${{ env.OHOS_SDK_VER }}-v1
+
+      - name: 准备 OpenHarmony SDK 15
+        run: bash .github/scripts/setup-ohos-sdk.sh "${OHOS_SDK_VER}" "${SDK_ROOT}"
+
+      - name: 安装 hvigor 构建链
+        run: |
+          npm install --no-audit --no-fund --no-save \
+            "@ohos/hvigor@${HVIGOR_VER}" "@ohos/hvigor-ohos-plugin@${HVIGOR_VER}" \
+            --registry=https://registry.npmmirror.com
+
+      - name: 用 API 15 编译（product=compat15）
+        run: |
+          export http_proxy=http://127.0.0.1:9
+          export https_proxy=http://127.0.0.1:9
+          export HTTP_PROXY=http://127.0.0.1:9
+          export HTTPS_PROXY=http://127.0.0.1:9
+          node node_modules/@ohos/hvigor/bin/hvigor.js assembleHap \
+            --mode module -p product=compat15 -p buildMode=debug --no-daemon --stacktrace
+
+      - name: 失败说明（这条失败意味着什么）
+        if: failure()
+        run: |
+          echo "::error::用 API 15 编译未通过 —— 说明代码里用到了 16 及以上的 API。"
+          echo "::error::后果：compatibleSdkVersion=5.0.4(16) 的声明站不住，5.0.4 设备上可能运行时崩溃。"
+          echo "::error::两条路：① 改代码去掉高版本 API ② 把 compatibleSdkVersion 抬到 20（放弃 API 16~19 设备）"
+
+  # ---------------------------------------------------------------
+  # 作业 3：ArkTS 编译校验 → HAP（tag 触发时同时发 Release）
   # ---------------------------------------------------------------
   build-hap:
     name: ArkTS 编译校验 → HAP
