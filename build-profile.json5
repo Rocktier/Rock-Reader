@@ -1,6 +1,36 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001BC891A25385E999ED8B6D21A61479AE61028751261B4B74D04EDA3DA9EC000C258A2E1B1E9E2DF4",
+          "profile": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p12",
+          "storePassword": "0000001B672341BD6F4F8FD056D3E8890C768599DECF65DA63D9184138132D93173C2FE6C9F8748AEF340C"
+        }
+      },
+      {
+        // 发布签名（上架 .app 包用）：材料在 f:\AI\HarmonyOS\keys\（**不进任何 git**）。
+        // ⚠️ 三个口令字段是**占位符**，真实值由 scripts/build-release.ps1 构建时从
+        //    keys/rockreader-release-password.txt 解析注入，构建完还原本文件 —— 密码永不入库。
+        "name": "release",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "f:/AI/HarmonyOS/keys/rockreader-release.cer",
+          "keyAlias": "__RELEASE_ALIAS__",
+          "keyPassword": "__RELEASE_KEY_PASSWORD__",
+          "profile": "f:/AI/HarmonyOS/keys/rockreader-release.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "f:/AI/HarmonyOS/keys/rockreader-release.p12",
+          "storePassword": "__RELEASE_STORE_PASSWORD__"
+        }
+      }
+    ],
     "products": [
       {
         // 正式产物：HarmonyOS 单框架（HarmonyOS 6+）
@@ -18,6 +48,29 @@
         "name": "ci",
         "compileSdkVersion": 20,
         "compatibleSdkVersion": 20,
+        "runtimeOS": "OpenHarmony",
+        "buildOption": {}
+      },
+      {
+        // **上架发布产物**：Build App 出 .app 包（AGC 提审用）。签名走上面的 release signingConfig。
+        // 与 default 的差异只有签名；日常调试仍用 default（调试证书链路不动）。
+        "name": "release",
+        "signingConfig": "release",
+        "compatibleSdkVersion": "5.0.4(16)",
+        "targetSdkVersion": "6.0.0(20)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {}
+      },
+      {
+        // **向下兼容的证据（2026-09-24）**：正式 product 声明 compatibleSdkVersion = 5.0.4(16)，
+        // 但本机 SDK 是 26、CI 是 20 —— **16~19 这一段从来没有被任何一次编译验证过**。
+        // 而公开可下载的 OpenHarmony SDK 里**没有 16**（5.0.4 不存在，镜像 404）。
+        // 所以拿 **5.0.3-Release = API 15** 来编译：能在 15 上编译通过 ⇒ 代码不含 16 及以上的 API
+        // ⇒ 声明 16 成立且还多 1 的余量（"用更严的条件证明更松的声明"）。
+        // ⚠️ 这个 product **只做编译校验**，不动正式包的任何配置。
+        "name": "compat15",
+        "compileSdkVersion": 15,
+        "compatibleSdkVersion": 15,
         "runtimeOS": "OpenHarmony",
         "buildOption": {}
       }
@@ -40,7 +93,9 @@
           "name": "default",
           "applyToProducts": [
             "default",
-            "ci"
+            "release",
+            "ci",
+            "compat15"
           ]
         }
       ]
