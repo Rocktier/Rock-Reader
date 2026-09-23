@@ -424,6 +424,25 @@ struct Settings {
           this.textSection()
 
           this.fontSection()
+
+          // 「关于」入口：隐私政策在里面（上架要求应用内可查看），
+          // 入口名写"关于"而不是"隐私政策" —— 用户找的是"这是什么应用"，顺路才看政策。
+          Row() {
+            Text('关于')
+              .fontSize(13)
+              .fontColor(this.palette.text)
+            Blank()
+            Text('›')
+              .fontSize(16)
+              .fontColor(this.palette.text3)
+          }
+          .width('100%')
+          .padding({ top: 18, bottom: 14 })
+          .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/About' });
+          })
+          .responseRegion({ x: 0, y: -4, width: '100%', height: 52 })
         }
         .width('100%')
         .padding({ left: 22, right: 22, top: 18, bottom: 8 })
@@ -434,10 +453,12 @@ struct Settings {
       .align(Alignment.TopStart)
 
       Column() {
-        Text('核心数据不联网')
+        // 底部这块是"用户一定会扫到的位置" → 放 slogan（党哥 2026-09-23 定）。
+        // 承诺细节（核心数据不联网 / 书籍与进度在本机）已迁到「关于」页，本页不重复。
+        Text('书在你手上，哪儿也不去')
           .fontSize(12)
           .fontColor(this.palette.text2)
-        Text('书籍与进度全部在本机处理')
+        Text('断网也能读完整本书')
           .fontSize(10)
           .fontColor(this.palette.text3)
           .margin({ top: 6 })

@@ -3,6 +3,8 @@
     "pages/Index",
     "pages/Reader",
     "pages/Settings",
-    "pages/Stats"
+    "pages/Stats",
+    "pages/About",
+    "pages/Privacy"
   ]
 }

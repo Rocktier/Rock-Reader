@@ -655,9 +655,15 @@ struct Index {
 
         // 书架网格
         if (this.items.length === 0) {
-          Column() {
-            Text($r('app.string.shelf_empty_hint'))
-              .fontSize(13)
+          // 空态放 slogan：这片空白唯一的作用，就是让人记住我们是谁。
+          // 不是营销文案 —— 是品牌承诺（党哥 2026-09-23 定「主句 + 副句」两句）。
+          // 主句讲"本地、不上传"，副句讲"断网完整"，两句合起来才是完整的承诺。
+          Column({ space: 8 }) {
+            Text('书在你手上，哪儿也不去')
+              .fontSize(14)
+              .fontColor(this.palette.text2)
+            Text('断网也能读完整本书')
+              .fontSize(11)
               .fontColor(this.palette.text3)
           }
           .width('100%')
