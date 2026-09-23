@@ -60,14 +60,23 @@
             // 实测（2026-09-22，BMS 日志）：系统文件管理器发来的 want 里 `entities` 是**空数组**，
             // 而只要声明了 entities 就变成"必须项" → 一个都匹配不上 → 系统弹「暂无可用打开方式」。
             // 这是本项目踩过的坑：写了 entity.system.default 反而把功能写没了。
+            // ⚠️ 2026-09-23 对照实验（Pura 90 Pro 模拟器 / HarmonyOS 7.0(26)）完整矩阵：
+            //   | want 形态                                    | Rock阅读 命中 |
+            //   |----------------------------------------------|---------------|
+            //   | 纯 type（-t text/plain，无 uri）              | ✅ 列表第一位  |
+            //   | file:// 无/有 host，无 type                   | ❌            |
+            //   | file:// 无/有 host + type                     | ❌            |
+            //   uris 先后试过：scheme:file±type / 纯 type / 纯 scheme / 不写 uris / ±utd —— 带 uri 的 want 一次都没命中。
+            //   列表里出现的文件预览/日历都是**系统 default-app 机制**进的（日历 skills 全空也能进），不是隐式匹配。
+            //   → 结论：这台**模拟器镜像**上「其他应用打开」不收录三方 debug 应用的隐式匹配（或 ERMS 过滤）；
+            //     **纯 type 场景（微信/QQ 分享文件）我们能进列表**，这条链路已验证可用。
+            //   → 最终采用**官方文档配方**（scheme:file + type），真机上微信读书等三方应用能出现在
+            //     文件管理器，说明真机行为不同；留待真机复核（device-test.md）。
+            //   - utd 不要写（写了 general.plain-text 同样不命中）
             "uris": [
               {
-                // 实测系统给 .mobi / .azw3 判定的 MIME 是 **text/plain**（不是 octet-stream），
-                // 而 BMS 是按 **UTD** 查询的（日志 GetBundleInfoByUtd）—— 所以 utd 必须填，
-                // 且 text/plain 对应 general.plain-text。两者都写才稳。
                 "scheme": "file",
-                "type": "text/plain",
-                "utd": "general.plain-text"
+                "type": "text/plain"
               },
               {
                 "scheme": "file",
