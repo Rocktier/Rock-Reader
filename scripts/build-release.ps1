@@ -11,17 +11,18 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)   # 工程根（RockReader）
 $keysDir = "f:\AI\HarmonyOS\keys"
 $profilePath = Join-Path $root "build-profile.json5"
+# v2 材料（2026-09-24 重做：第一套 cer 与 p12 不配套已作废删除）
+$alias = "rockreader-v2"
 
-# ---- 1. 解析密码文件（字段化清单：别名 / 密钥库口令 / 别名口令）----
+# ---- 1. 解析密码文件（字段化清单：密钥库口令 / 别名口令）----
 $map = @{}
-Get-Content (Join-Path $keysDir "rockreader-release-password.txt") -Encoding UTF8 | ForEach-Object {
-    if ($_ -match "^(.+?)[:：=](.*)$") { $map[$Matches[1].Trim()] = $Matches[2].Trim() }
+Get-Content (Join-Path $keysDir "rockreader-v2-password.txt") -Encoding UTF8 | ForEach-Object {
+    if ($_ -match "^(.+?)[:：](.*)$") { $map[$Matches[1].Trim()] = $Matches[2].Trim() }
 }
-$alias   = ($map.GetEnumerator() | Where-Object { $_.Key -match "alias|别名(?!口令)" } | Select-Object -First 1).Value
-$storePw = ($map.GetEnumerator() | Where-Object { $_.Key -match "密钥库口令" } | Select-Object -First 1).Value
-$keyPw   = ($map.GetEnumerator() | Where-Object { $_.Key -match "别名口令" } | Select-Object -First 1).Value
-if (-not $alias -or -not $storePw -or -not $keyPw) {
-    throw "密码文件缺少 别名/密钥库口令/别名口令 之一，无法构建"
+$storePw = $map["密钥库口令"]
+$keyPw   = $map["别名口令"]
+if (-not $storePw -or -not $keyPw) {
+    throw "密码文件缺少 密钥库口令/别名口令 之一，无法构建"
 }
 
 # ---- 2. 环境（DevEco 自带工具链，与日常调试同一套）----
@@ -33,9 +34,7 @@ $env:PATH = "$ide\tools\node;$ide\tools\ohpm\bin;$ide\jbr\bin;$env:PATH"
 # ---- 3. 注入真实密码（仅内存->临时写盘，构建后立即还原）----
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $orig = [IO.File]::ReadAllText($profilePath, [Text.Encoding]::UTF8)
-$injected = $orig.Replace("__RELEASE_ALIAS__", $alias) `
-                 .Replace("__RELEASE_STORE_PASSWORD__", $storePw) `
-                 .Replace("__RELEASE_KEY_PASSWORD__", $keyPw)
+$injected = $orig.Replace("__RELEASE_ALIAS__", $alias).Replace("__RELEASE_STORE_PASSWORD__", $storePw).Replace("__RELEASE_KEY_PASSWORD__", $keyPw)
 if ($injected -eq $orig) { throw "占位符未找到 —— build-profile.json5 里没有 __RELEASE_*__ 占位符" }
 [IO.File]::WriteAllText($profilePath, $injected, $utf8NoBom)
 "==> 已注入签名材料（口令不入库）"
@@ -48,7 +47,9 @@ try {
 }
 finally {
     Pop-Location
-    git -C $root checkout -- build-profile.json5
+    # 还原用**内存里的原文**写回（不依赖 git：build-profile 处于 skip-worktree 状态时
+    # git checkout 会拒绝覆盖；管道提前终止也会漏掉还原）
+    [IO.File]::WriteAllText($profilePath, $orig, $utf8NoBom)
     "==> build-profile.json5 已还原（占位符版）"
 }
 

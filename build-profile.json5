@@ -21,12 +21,12 @@
         "name": "release",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "f:/AI/HarmonyOS/keys/rockreader-release.cer",
+          "certpath": "f:/AI/HarmonyOS/keys/rockreader-v2.cer",
           "keyAlias": "__RELEASE_ALIAS__",
           "keyPassword": "__RELEASE_KEY_PASSWORD__",
-          "profile": "f:/AI/HarmonyOS/keys/rockreader-release.p7b",
+          "profile": "f:/AI/HarmonyOS/keys/rockreader-v2.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "f:/AI/HarmonyOS/keys/rockreader-release.p12",
+          "storeFile": "f:/AI/HarmonyOS/keys/rockreader-v2.p12",
           "storePassword": "__RELEASE_STORE_PASSWORD__"
         }
       }
