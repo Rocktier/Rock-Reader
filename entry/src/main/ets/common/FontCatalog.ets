@@ -30,6 +30,13 @@ export interface FontEntry {
   desc: string;
   /** 授权声明 */
   license: string;
+  /**
+   * 是否**内置在安装包里**（rawfile）：
+   * true  = 首次启动从包内复制到沙箱，**不联网**即可用（代价是 HAP 变大）；
+   * false = 按需下载（不占包体，但要联网一次）。
+   * 党哥 2026-09-25 定：楷体内置（换字体也不必联网 → 可彻底去掉 INTERNET 权限）。
+   */
+  builtin: boolean;
 }
 
 const JSDelivrBase: string = 'https://cdn.jsdelivr.net/gh/Rocktier/Rock-Reader@fonts-v1/fonts/';
@@ -46,7 +53,9 @@ export const FONT_CATALOG: FontEntry[] = [
     sizeBytes: 3427912,
     sha256: '701bc84dcf0df09c5716108edeac61c11109ddbad81769777d29de3735e5ecc7',
     desc: '基于霞鹜文楷 Lite 的 GB2312 子集 · 中文长文阅读口碑最好之一',
-    license: 'SIL OFL 1.1'
+    license: 'SIL OFL 1.1',
+    // 内置：换字体也不需要联网（HAP +2.02MB，实测 zip 后）
+    builtin: true
   },
   {
     id: 'rockreader-song',
@@ -56,7 +65,8 @@ export const FONT_CATALOG: FontEntry[] = [
     sizeBytes: 3051864,
     sha256: '03afa46899bbc3bff6329e5680b85acd0f270f02b75c31997c843f3702eceafb',
     desc: '基于 Noto Serif SC（思源宋体同源）的 GB2312 子集 · 最经典的中文正文字体',
-    license: 'SIL OFL 1.1'
+    license: 'SIL OFL 1.1',
+    builtin: false
   }
 ];
 
