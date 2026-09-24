@@ -5,29 +5,26 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.cer",
+          "certpath": "C:/Users/Dang/.ohos/config/default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001BC891A25385E999ED8B6D21A61479AE61028751261B4B74D04EDA3DA9EC000C258A2E1B1E9E2DF4",
-          "profile": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p7b",
+          "keyPassword": "0000001B9D414EE76AAF7AE4C4956C59C591D2138CE1D5BD6C62607F0272627E2CDBB0B58C3C06490F2A3F",
+          "profile": "C:/Users/Dang/.ohos/config/default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\Dang\\.ohos\\config\\default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p12",
-          "storePassword": "0000001B672341BD6F4F8FD056D3E8890C768599DECF65DA63D9184138132D93173C2FE6C9F8748AEF340C"
+          "storeFile": "C:/Users/Dang/.ohos/config/default_RockReader_4xofKsktE4yT_vcY8oK8U7YE8YOdc_dSMuWZWxC6MCk=.p12",
+          "storePassword": "0000001BB4CD48EBBDE2655F651FB1517D4B6E24810ABD3F8BCF8FE83476BFF27CA0D79618F62B19E83040"
         }
       },
       {
-        // 发布签名（上架 .app 包用）：材料在 f:\AI\HarmonyOS\keys\（**不进任何 git**）。
-        // ⚠️ 三个口令字段是**占位符**，真实值由 scripts/build-release.ps1 构建时从
-        //    keys/rockreader-release-password.txt 解析注入，构建完还原本文件 —— 密码永不入库。
         "name": "release",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "f:/AI/HarmonyOS/keys/rockreader-v2.cer",
-          "keyAlias": "__RELEASE_ALIAS__",
-          "keyPassword": "__RELEASE_KEY_PASSWORD__",
-          "profile": "f:/AI/HarmonyOS/keys/rockreader-v2.p7b",
+          "storeFile": "F:/AI/HarmonyOS/keys/rockreader-v2.p12",
+          "storePassword": "00000031255ED0D0D73CF05F75F767176D250A3FE6FB9DDA03C858110A9A78CFA27D2DF64B7204B29C9E19F1324540B3BF380FFADAC4EA01C0BE7D2BCFC9FA99AE",
+          "keyAlias": "rockreader-v2",
+          "keyPassword": "00000031EF025B173DDC7EDCBA7FCB8FC66A69456FD91CB9F650A8B1A27C60593CB50C42BBB5E9694140CCD8A8D4F2A9228EEE2884017955EB3A861FAFA750E1AB",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "f:/AI/HarmonyOS/keys/rockreader-v2.p12",
-          "storePassword": "__RELEASE_STORE_PASSWORD__"
+          "profile": "F:/AI/HarmonyOS/keys/rockreader-v2.p7b",
+          "certpath": "F:/AI/HarmonyOS/keys/rockreader-v2.cer"
         }
       }
     ],

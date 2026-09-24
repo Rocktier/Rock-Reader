@@ -1,62 +1,28 @@
-# 打上架用的 .app 包（AGC 提审格式）
+# 打上架用的 .app 包（AGC 提审格式，含发布签名）
 #
-# 原理：build-profile.json5 里 release signingConfig 的三个口令字段是**占位符**；
-# 本脚本从 keys/rockreader-release-password.txt 解析真实值**临时注入**，
-# 构建完成后用 git 还原 build-profile.json5 —— **密码永不落盘到任何被跟踪的文件**。
+# 签名配置：build-profile.json5 的 signingConfigs.release
+#   - 口令是 **DevEco 加密串**（由 DevEco「文件 > 项目结构 > 签名配置」写入/更新）
+#   - ⚠️ 2026-09-24 实证：hvigor 不接受明文口令（无论长度/奇偶，均报 00303116/00303117），
+#     明文注入路线已废弃 —— 改口令/换密钥库后必须在 DevEco GUI 里重新应用一次签名配置
+#   - 材料在 f:\AI\HarmonyOS\keys\（rockreader-v2.p12/.cer/.p7b，不进任何 git）
 #
 # 用法：pwsh scripts/build-release.ps1
-# 产物：build/outputs/release/*.app（成功时打印路径与 SHA256）
+# 产物：build/outputs/release/RockReader-release-signed.app
 
 $ErrorActionPreference = "Stop"
-$root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)   # 工程根（RockReader）
-$keysDir = "f:\AI\HarmonyOS\keys"
-$profilePath = Join-Path $root "build-profile.json5"
-# v2 材料（2026-09-24 重做：第一套 cer 与 p12 不配套已作废删除）
-$alias = "rockreader-v2"
-
-# ---- 1. 解析密码文件（字段化清单：密钥库口令 / 别名口令）----
-$map = @{}
-Get-Content (Join-Path $keysDir "rockreader-v2-password.txt") -Encoding UTF8 | ForEach-Object {
-    if ($_ -match "^(.+?)[:：](.*)$") { $map[$Matches[1].Trim()] = $Matches[2].Trim() }
-}
-$storePw = $map["密钥库口令"]
-$keyPw   = $map["别名口令"]
-if (-not $storePw -or -not $keyPw) {
-    throw "密码文件缺少 密钥库口令/别名口令 之一，无法构建"
-}
-
-# ---- 2. 环境（DevEco 自带工具链，与日常调试同一套）----
+$root = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $ide = "E:\Program Files\Huawei\DevEco Studio"
+
 $env:DEVECO_SDK_HOME = "$ide\sdk"
 $env:JAVA_HOME = "$ide\jbr"
 $env:PATH = "$ide\tools\node;$ide\tools\ohpm\bin;$ide\jbr\bin;$env:PATH"
 
-# ---- 3. 注入真实密码（仅内存->临时写盘，构建后立即还原）----
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$orig = [IO.File]::ReadAllText($profilePath, [Text.Encoding]::UTF8)
-$injected = $orig.Replace("__RELEASE_ALIAS__", $alias).Replace("__RELEASE_STORE_PASSWORD__", $storePw).Replace("__RELEASE_KEY_PASSWORD__", $keyPw)
-if ($injected -eq $orig) { throw "占位符未找到 —— build-profile.json5 里没有 __RELEASE_*__ 占位符" }
-[IO.File]::WriteAllText($profilePath, $injected, $utf8NoBom)
-"==> 已注入签名材料（口令不入库）"
+Push-Location $root
+node "$ide\tools\hvigor\bin\hvigorw.js" assembleApp --mode project -p product=release -p buildMode=release --no-daemon
+Pop-Location
 
-try {
-    Push-Location $root
-    # ---- 4. Build App（release 模式；APP = 多 HAP 聚合的上架格式）----
-    node "$ide\tools\hvigor\bin\hvigorw.js" assembleApp `
-        --mode project -p product=release -p buildMode=release --no-daemon
-}
-finally {
-    Pop-Location
-    # 还原用**内存里的原文**写回（不依赖 git：build-profile 处于 skip-worktree 状态时
-    # git checkout 会拒绝覆盖；管道提前终止也会漏掉还原）
-    [IO.File]::WriteAllText($profilePath, $orig, $utf8NoBom)
-    "==> build-profile.json5 已还原（占位符版）"
-}
-
-# ---- 5. 校验产物 ----
-$app = Get-ChildItem (Join-Path $root "build") -Recurse -Filter *.app -ErrorAction SilentlyContinue |
+$app = Get-ChildItem (Join-Path $root "build\outputs\release") -Filter *signed.app |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $app) { throw "构建命令结束但未找到 .app 产物 —— 视为失败" }
-$sha = (Get-FileHash $app.FullName -Algorithm SHA256).Hash
+if (-not $app) { throw "构建结束但未找到 signed .app 产物 —— 视为失败" }
 "==> 产物：$($app.FullName)（$([math]::Round($app.Length/1KB)) KB）"
-"==> SHA256：$sha"
+"==> SHA256：$((Get-FileHash $app.FullName -Algorithm SHA256).Hash)"
