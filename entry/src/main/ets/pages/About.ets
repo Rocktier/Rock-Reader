@@ -171,6 +171,11 @@ struct About {
           this.entryRow('隐私政策', '不收集个人信息 · 数据只在本地', () => {
             router.pushUrl({ url: 'pages/Privacy' });
           })
+          // 开源字体声明：OFL 不强制在 App 内展示，但华为审核若问"字体版权"，
+          // 有这个页面就是现成的答案；同时把"我们只用自己的授权字体"作为品牌的一部分讲出来
+          this.entryRow('开源字体', '思源宋体（Noto Serif SC）子集 · SIL OFL 1.1', () => {
+            router.pushUrl({ url: 'pages/Privacy' });
+          })
         }
         .width('100%')
         .padding({ left: 22, right: 22, top: 24, bottom: 24 })
