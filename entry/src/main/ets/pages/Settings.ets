@@ -100,6 +100,7 @@ struct Settings {
       return;
     }
     const store: FontStore = this.fontStore;
+    store.syncBuiltin();
     const list: FontEntry[] = store.downloaded();
     const ids: string[] = [];
     for (let i: number = 0; i < list.length; i++) {
@@ -113,6 +114,7 @@ struct Settings {
       return;
     }
     const store: FontStore = this.fontStore;
+    store.syncBuiltin();
     const list: FontEntry[] = store.downloaded();
     for (let i: number = 0; i < list.length; i++) {
       try {
@@ -261,7 +263,7 @@ struct Settings {
       .onClick(() => this.pickFont(family))
   }
 
-  /** 字体：横向芯片列表（系统已装字体，**不内置字体文件 → 体积 0**） */
+  /** 字体：横向芯片列表（系统已装字体 + 内置宋体；**首版零联网，无可下载款**） */
   @Builder
   fontSection() {
     Column() {
@@ -307,13 +309,17 @@ struct Settings {
 
       // ---- 更多字体（按需下载，不占安装包体积）----
       Column() {
-        Text('更多字体 · 下载后存本机')
-          .fontSize(10.5)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-          .margin({ top: 16, bottom: 4 })
+        if (this.hasDownloadable()) {
+          Text('更多字体 · 下载后存本机')
+            .fontSize(10.5)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .margin({ top: 16, bottom: 4 })
+        }
 
         ForEach(FONT_CATALOG, (entry: FontEntry) => {
+          // 内置款已在上方芯片区可选，不重复出现在"下载"区
+          if (!entry.builtin) {
           Row() {
             Column() {
               Text(entry.displayName)
@@ -340,6 +346,9 @@ struct Settings {
               .height(30)
               .border({ width: 1, color: this.palette.line })
               .onClick(() => {
+                if (entry.builtin) {
+                  return;
+                }
                 if (this.isDownloaded(entry.id)) {
                   this.removeFont(entry);
                 } else {
@@ -357,6 +366,7 @@ struct Settings {
               .fontColor(this.palette.text3)
               .margin({ bottom: 8 })
           }
+          }
         }, (entry: FontEntry) => 'dl' + entry.id)
 
         if (this.fontNote.length > 0 && this.busyFontId.length === 0) {
@@ -366,7 +376,8 @@ struct Settings {
             .margin({ top: 8 })
         }
 
-        Text('字体需联网下载一次；下载后存本机，不占安装包体积。断网时本节为空，不影响阅读。')
+        // 首版只内置宋体一款（小而美、零联网）；后续版本会继续增加字体 —— 这里给用户留个预期
+        Text('宋体已内置在应用里，无需下载、断网可用。后续版本会增加更多字体。')
           .fontSize(9)
           .fontColor(this.palette.text3)
           .margin({ top: 10 })
@@ -379,7 +390,21 @@ struct Settings {
     .padding({ top: 16, bottom: 16 })
   }
 
+  /** 有没有"需要下载"的字体（首版零联网 → 没有 → 下载区整段不显示） */
+  private hasDownloadable(): boolean {
+    for (let i: number = 0; i < FONT_CATALOG.length; i++) {
+      if (!FONT_CATALOG[i].builtin) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   private fontActionText(entry: FontEntry): string {
+    // 内置款：既不用下载，也不可移除（它是包的一部分）
+    if (entry.builtin) {
+      return '内置';
+    }
     if (this.busyFontId === entry.id) {
       return '下载中…';
     }

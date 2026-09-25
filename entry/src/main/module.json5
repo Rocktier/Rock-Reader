@@ -14,17 +14,20 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
-    // 铁律 3「核心数据不联网」：**本应用不上传任何数据**。
-    // 声明 INTERNET 只用于两件"用户可感知、且可自行拒绝"的事：
-    //   ① 字体包下载（用户点「下载」才发起，见 common/FontCatalog.ets）
-    //   ② 广告素材（M7，尚未接入）
-    // 用途已在家族 findings §8（网络权限申请记录）登记。
-    // 断网 / 用户在系统里掐掉联网权限 → 两者都静默缺席，阅读功能完全不受影响。
-    "requestPermissions": [
-      {
-        "name": "ohos.permission.INTERNET"
-      }
-    ],
+    // ⚠️ **本应用零联网：不申请任何权限**（2026-09-25 删掉最后一个 INTERNET）。
+    //
+    // 删得掉的原因：字体改为**内置**（宋体 2.91MB 进 rawfile，见 common/FontCatalog.ets），
+    // 换字体不再需要下载 —— 联网这件事从此没有任何用途。
+    //
+    // 连带好处（这是删它的真正动机）：
+    //   ① 隐私政策里"什么时候会联网"一节可以整体消失，政策变得极干净；
+    //   ② AGC 隐私标签「是否涉及个人信息收集」= 否，毫无争议；
+    //   ③ 工信部 APP 备案的前提是"从事互联网信息服务"—— 零联网下这个判定也不再有歧义；
+    //   ④ 审核时权限清单为空，是最容易被放过的形态。
+    //
+    // 将来若要重新联网（例如接入华为广告变现 —— 官方要求 INTERNET + APP_TRACKING_CONSENT），
+    // 在这里加回即可；注意那会让隐私标签从"不涉及"变成"涉及"（OAID），是一次大变更。
+    // 权限申请记录见家族 findings §8。
     "abilities": [
       {
         "name": "EntryAbility",

@@ -1,10 +1,14 @@
 /**
- * 可下载字体目录（**内置字体 = 0，全部按需下载**）
+ * 字体目录（**1 款内置 + 其余按需下载**）
+ *
+ * 2026-09-25 起：首版"小而美"只内置 **宋体** 一款（2.91MB，HAP 增到约 3.7MB），
+ * 换字体不必联网 → 可彻底去掉 INTERNET 权限。其余字体仍按需下载，
+ * **后续版本会继续增加字体**（楷体就是第一个候选）。
  *
  * 党哥 2026-09-18 定的三条：① 用开源字体 ② 国内下载要快 ③ 尽量官方源。
  * 由此定下的做法（改本文件时务必保住）：
  *
- *  1. **只列 SIL OFL 等开源授权的字体**；
+ *  1. **只列 SIL OFL 等开源授权的字体**（商业字库如方正/汉仪必须买授权，个人开发者别碰）；
  *  2. **做成 GB2312 子集（6763 字）**——原字体 13.3MB / 24MB 在国内网络下一次下载太慢，
  *     子集后 **楷 3.27MB / 宋 2.91MB**，日常书与绝大多数人名都够用，
  *     极罕见的字回退系统字体（只影响那一两个字的字型，不影响阅读）；
@@ -45,18 +49,22 @@ const RawBase: string = 'https://raw.githubusercontent.com/Rocktier/Rock-Reader/
 
 /** 下载源顺序：CDN（国内可达）→ Release 附件 → raw。加一款字体 = 加一条记录。 */
 export const FONT_CATALOG: FontEntry[] = [
-  {
-    id: 'rockreader-kai',
-    displayName: '楷体 RockReader Kai',
-    familyName: 'RockReader Kai',
-    fileName: 'RockReaderKai.ttf',
-    sizeBytes: 3427912,
-    sha256: '701bc84dcf0df09c5716108edeac61c11109ddbad81769777d29de3735e5ecc7',
-    desc: '基于霞鹜文楷 Lite 的 GB2312 子集 · 中文长文阅读口碑最好之一',
-    license: 'SIL OFL 1.1',
-    // 内置：换字体也不需要联网（HAP +2.02MB，实测 zip 后）
-    builtin: true
-  },
+  // 楷体（霞鹜文楷 Lite 子集）**首版不收录**：
+  // 首版走"零联网"（已删除 INTERNET 权限，见 module.json5），一旦收录就得留着下载入口，
+  // 而点了必然失败 —— 宁可不放。它是**后续版本增加字体时的第一个候选**，
+  // 届时两条路：① 直接内置（受 ≤5MB 铁律约束，可能要重切更小子集）② 加回 INTERNET 走下载。
+  // 下载管线（FontStore.download）已保留，加回权限即可用。
+  // {
+  //   id: 'rockreader-kai',
+  //   displayName: '楷体 RockReader Kai',
+  //   familyName: 'RockReader Kai',
+  //   fileName: 'RockReaderKai.ttf',
+  //   sizeBytes: 3427912,
+  //   sha256: '701bc84dcf0df09c5716108edeac61c11109ddbad81769777d29de3735e5ecc7',
+  //   desc: '基于霞鹜文楷 Lite 的 GB2312 子集 · 中文长文阅读口碑最好之一',
+  //   license: 'SIL OFL 1.1',
+  //   builtin: false
+  // },
   {
     id: 'rockreader-song',
     displayName: '宋体 RockReader Song',
@@ -66,7 +74,11 @@ export const FONT_CATALOG: FontEntry[] = [
     sha256: '03afa46899bbc3bff6329e5680b85acd0f270f02b75c31997c843f3702eceafb',
     desc: '基于 Noto Serif SC（思源宋体同源）的 GB2312 子集 · 最经典的中文正文字体',
     license: 'SIL OFL 1.1',
-    builtin: false
+    // 内置（党哥 2026-09-25 定）：
+    // ① 宋体是中文长文阅读最正统的选择，与微信读书等主流阅读 App 的默认观感一致；
+    // ② 与系统默认（黑体类）差异明显 —— 用户切过去一眼能看出区别，内置才有意义；
+    // ③ 比楷体小 0.36MB（2.91 vs 3.27），首版"小而美"优先
+    builtin: true
   }
 ];
 

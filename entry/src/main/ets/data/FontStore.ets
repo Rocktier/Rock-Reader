@@ -1,7 +1,8 @@
 /**
  * 字体下载与本地管理
  *
- * 设计前提（党哥 2026-09-18）：**字体不内置，按需下载** —— 不占 HAP 体积。
+ * 2026-09-25 起：**1 款内置（宋体）+ 其余按需下载**。
+ * 内置的那一款首次启动从包内（rawfile）复制到沙箱，之后与下载款走完全相同的路径。
  *
  * 三条硬规则（改这个文件时必须保住）：
  *  1. **先写 .part 再 rename** —— 任何中断都不会留下"看起来已下载"的半截文件；
@@ -55,6 +56,62 @@ export class FontStore {
   /** 是否已下载（只看本地文件，不联网） */
   isDownloaded(entry: FontEntry): boolean {
     return fs.accessSync(this.pathOf(entry));
+  }
+
+  /**
+   * **内置字体就位**：把包内（rawfile）的字体复制到沙箱。幂等，可放心反复调用。
+   *
+   * 为什么不直接拿 rawfile 路径去注册：
+   *  - `registerFont` / `loadFontSync` 要的是 **file:// + 沙箱绝对路径**（裸路径静默失败，见 uriOf），
+   *    rawfile 里没有能直接给它们用的路径；
+   *  - 复制到沙箱后，**注册端与测量端（TextPaginator.loadFontSync）沿用现有逻辑，一行都不用改** ——
+   *    内置款和下载款从此是同一条路，没有第二套代码。
+   *
+   * 不校验 SHA256：字体来自自己的 HAP（有签名保障），不是网络；校验反而拖慢启动。
+   * 仍然先写 `.part` 再 rename —— 复制到一半被打断也不会留下"看起来已就绪"的半截文件。
+   */
+  syncBuiltin(): void {
+    for (let i: number = 0; i < FONT_CATALOG.length; i++) {
+      const entry: FontEntry = FONT_CATALOG[i];
+      if (!entry.builtin) {
+        continue;
+      }
+      const finalPath: string = this.pathOf(entry);
+      if (fs.accessSync(finalPath)) {
+        continue;
+      }
+      const tmpPath: string = finalPath + '.part';
+      try {
+        if (!fs.accessSync(this.dir())) {
+          fs.mkdirSync(this.dir(), true);
+        }
+        if (fs.accessSync(tmpPath)) {
+          fs.unlinkSync(tmpPath);
+        }
+        const bytes: Uint8Array = this.ctx.resourceManager.getRawFileContentSync('fonts/' + entry.fileName);
+        const file: fs.File = fs.openSync(tmpPath, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+        try {
+          fs.writeSync(file.fd, bytes.buffer);
+        } finally {
+          fs.closeSync(file);
+        }
+        if (fs.accessSync(finalPath)) {
+          fs.unlinkSync(finalPath);
+        }
+        fs.renameSync(tmpPath, finalPath);
+        hilog.info(DOMAIN, TAG, 'builtin font ready: %{public}s', entry.fileName);
+      } catch (e) {
+        // 失败静默：内置字体拿不到 ≠ 应用不可用，最多是没有这一款可选
+        hilog.error(DOMAIN, TAG, 'syncBuiltin failed: %{public}s', JSON.stringify(e));
+        try {
+          if (fs.accessSync(tmpPath)) {
+            fs.unlinkSync(tmpPath);
+          }
+        } catch (inner) {
+          hilog.warn(DOMAIN, TAG, 'cleanup failed');
+        }
+      }
+    }
   }
 
   /** 已下载的字体清单 */

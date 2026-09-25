@@ -244,6 +244,8 @@ struct Reader {
 
   /** 把已下载字体注册进 ArkUI（渲染用）；测量端由 TextPaginator 用文件路径单独挂 */
   private registerLocalFonts(store: FontStore): void {
+    // 内置字体先就位（首次启动从包内复制到沙箱，之后幂等为空操作）
+    store.syncBuiltin();
     const list: FontEntry[] = store.downloaded();
     if (list.length === 0) {
       hilog.info(DOMAIN, TAG, 'registerFont: no downloaded fonts');
