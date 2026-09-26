@@ -781,11 +781,17 @@ struct Reader {
       percent: this.bookPercent,
       updatedAt: Date.now()
     };
-    this.db.saveProgress(p).catch((e: Error) => {
+    // 两个写库**都完成后**才发 AppStorage 信号 —— 书架（Index）靠 @Watch 收到后重拉进度。
+    // 2026-09-26 审核驳回第 3 条根因：以前是 fire-and-forget，返回书架时 Index 的
+    // onPageShow 立刻查库，查询跑在写入前面 → 书架拿到旧进度（显示 0%），要杀进程重进才好。
+    Promise.all([
+      this.db.saveProgress(p),
+      this.db.touchLastRead(this.book.id, p.updatedAt)
+    ]).then(() => {
+      hilog.info(DOMAIN, TAG, 'progress saved ok, sending signal');
+      AppStorage.setOrCreate('progressSavedAt', Date.now());
+    }).catch((e: Error) => {
       hilog.error(DOMAIN, TAG, 'save progress failed: %{public}s', e.message);
-    });
-    this.db.touchLastRead(this.book.id, p.updatedAt).catch((e: Error) => {
-      hilog.error(DOMAIN, TAG, 'touch lastRead failed: %{public}s', e.message);
     });
   }
 

@@ -28,6 +28,14 @@ const KEY_CONVERT: string = 'convert_mode';
 
 export const CONVERT_OFF: string = 'off';
 
+/**
+ * 用户已确认阅读的**隐私政策版本**（0 = 从未确认）。
+ * 2026-09-26 审核驳回第 1 条：首次启动必须提示用户阅读隐私政策。
+ * 存**版本号**而不是布尔值 —— 将来政策有实质变更时把 PRIVACY_VERSION 加一，
+ * 老用户会重新看到弹窗（布尔值做不到这点）。
+ */
+const KEY_PRIVACY_AGREED: string = 'privacy_agreed_version';
+
 export class ReaderPrefs {
   private store: preferences.Preferences | null = null;
   private levels: LayoutLevels = {
@@ -85,6 +93,15 @@ export class ReaderPrefs {
     return fallback;
   }
 
+  /** 通用整数读取（无 clamp —— 用于版本号这类不需要夹取的值） */
+  private readInt(store: preferences.Preferences, key: string, fallback: number): number {
+    const raw: preferences.ValueType = store.getSync(key, fallback);
+    if (typeof raw === 'number') {
+      return raw;
+    }
+    return fallback;
+  }
+
   private readLevel(store: preferences.Preferences, key: string): number {
     const raw: preferences.ValueType = store.getSync(key, DEFAULT_LEVELS.fontSizeLevel);
     if (typeof raw === 'number') {
@@ -124,6 +141,25 @@ export class ReaderPrefs {
 
   getTheme(): ThemeName {
     return this.theme;
+  }
+
+  /** 已确认阅读的隐私政策版本（0 = 从未确认 → 首次启动要弹提示） */
+  getPrivacyAgreedVersion(): number {
+    if (this.store === null) {
+      return 0;
+    }
+    return this.readInt(this.store, KEY_PRIVACY_AGREED, 0);
+  }
+
+  /** 记录"已阅读第 v 版隐私政策" */
+  setPrivacyAgreedVersion(v: number): void {
+    this.put(KEY_PRIVACY_AGREED, v);
+    this.flush();
+    // 临时诊断：写后立即回读，确认内存缓存里确实写进去了
+    const readback: number = this.getPrivacyAgreedVersion();
+    hilog.info(DOMAIN, TAG,
+      'privacy set: v=%{public}d readback=%{public}d storeNull=%{public}s',
+      v, readback, String(this.store === null));
   }
 
   /** '' = 系统默认字体 */

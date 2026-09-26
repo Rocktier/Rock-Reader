@@ -4,11 +4,15 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
-    // 设备类型命名差异坑：OpenHarmony SDK 里手机侧是 "default"（不是 "phone"）。
-    // 用 "phone" 会报 00303060「多设备 syscap 交集为空」——因为找不到 phone 的 syscap 集合。
-    // MVP 手机优先；将来正式出 HarmonyOS 包时如需 2in1/phone 命名再按产品调整。
+    // ⚠️ 2026-09-26 审核驳回第 2 条：**"default" 不在华为允许的设备类型范围内**。
+    //   华为要求必须在 [tablet, tv, wearable, 2in1, phone, car] 六种之内明确声明，
+    //   写 "default"（= 所有设备）会被判"超出范围"而拒审。
+    //   旧注释说"用 phone 会报 00303060 多设备 syscap 交集为空" —— 那是 **OpenHarmony SDK**
+    //   （CI 的 ci/compat15 product）的行为：它没有 phone 这个设备类型的 syscap 集合。
+    //   **HarmonyOS SDK（正式包 default/release product）用 phone 是正常的**。
+    //   → 正式包必须写 phone；CI 侧若因 OpenHarmony SDK 报错，见 .github/workflows 里的处理。
     "deviceTypes": [
-      "default",
+      "phone",
       "tablet"
     ],
     "deliveryWithInstall": true,

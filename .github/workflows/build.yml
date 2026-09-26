@@ -91,6 +91,15 @@ jobs:
             "@ohos/hvigor@${HVIGOR_VER}" "@ohos/hvigor-ohos-plugin@${HVIGOR_VER}" \
             --registry=https://registry.npmmirror.com
 
+      # 2026-09-26 加：审核驳回第 2 条要求 deviceTypes 必须明确写 phone/tablet 等
+      # （"default" 超出华为允许范围）。但 **OpenHarmony SDK 没有 phone 这个设备类型的
+      #  syscap 集合** → 用它编译会报 00303060「多设备 syscap 交集为空」。
+      # CI 走 OpenHarmony SDK，所以这里临时换回 default；只影响 CI 工作区，不改仓库文件。
+      - name: CI 专用：deviceTypes 临时换回 default
+        run: |
+          sed -i 's/"phone"/"default"/' entry/src/main/module.json5
+          grep -A3 'deviceTypes' entry/src/main/module.json5
+
       - name: 用 API 15 编译（product=compat15）
         run: |
           export http_proxy=http://127.0.0.1:9
@@ -152,6 +161,12 @@ jobs:
           echo "DEVECO_SDK_HOME=${DEVECO_SDK_HOME}"
           ls -d "${DEVECO_SDK_HOME}"/* 2>/dev/null | head
           node node_modules/@ohos/hvigor/bin/hvigor.js version
+
+      # 同 compat-15：OpenHarmony SDK 无 phone 的 syscap 集合，CI 里临时换回 default
+      - name: CI 专用：deviceTypes 临时换回 default
+        run: |
+          sed -i 's/"phone"/"default"/' entry/src/main/module.json5
+          grep -A3 'deviceTypes' entry/src/main/module.json5
 
       - name: 构建 HAP（product=ci）
         run: |

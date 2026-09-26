@@ -32,6 +32,13 @@ import { applyThemeToSystem } from '../common/SystemBar';
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
+/**
+ * 当前隐私政策版本 —— **政策有实质变更时必须 +1**。
+ * 用户已确认的版本存在 ReaderPrefs 里，小于这个值就会重新弹提示。
+ * 改了 Privacy.ets 的正文就要动这里，别偷懒。
+ */
+const PRIVACY_VERSION: number = 1;
+
 /** 编辑器/菜单的显示模式 */
 const MODE_NONE: string = 'none';
 const MODE_MENU: string = 'menu';
@@ -61,11 +68,21 @@ struct Index {
   // 「用其他应用打开」带进来的待导入 uri —— EntryAbility 收到后写进 AppStorage，这里接住。
   // 键名两边都写死（ArkUI 装饰器只接受字面量，抽不成常量），改要一起改。
   @StorageLink('pendingImportUri') @Watch('onIncomingFile') incomingUri: string = '';
+  // 阅读页**写完进度库之后**发的信号（Reader.persistProgress 的 Promise.all 完成时 set）。
+  // 没有它的话：返回书架时 onPageShow 的 load 会和写库竞态，进度条显示旧值（审核驳回第 3 条）。
+  // 键名两边都写死（同上：装饰器只接受字面量），改要一起改。
+  @StorageLink('progressSavedAt') @Watch('onProgressSaved') progressSavedAt: number = 0;
 
   /** 长按后弹出的菜单/输入框 */
   @State editorMode: string = MODE_NONE;
   @State editorBookId: string = '';
   @State editorText: string = '';
+
+  /**
+   * 首次启动的隐私政策提示（2026-09-26 审核驳回第 1 条）。
+   * 政策有**实质变更**时把 PRIVACY_VERSION 加一 → 老用户会再次看到。
+   */
+  @State showPrivacyNotice: boolean = false;
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
@@ -78,6 +95,16 @@ struct Index {
     // "上次退出时是浅色"的情况下状态栏文字块也是黑的（EntryAbility 设了 colorMode，这里兜一道底）
     applyThemeToSystem(this.getUIContext().getHostContext() as Context, this.theme);
     this.load();
+    // 首次启动（或隐私政策升版后）提示阅读隐私政策 —— 合规硬性要求，见审核驳回第 1 条
+    const agreed: number = this.prefs.getPrivacyAgreedVersion();
+    hilog.info(DOMAIN, TAG, 'privacy agreed=%{public}d current=%{public}d show=%{public}s',
+      agreed, PRIVACY_VERSION, String(agreed < PRIVACY_VERSION));
+    this.showPrivacyNotice = agreed < PRIVACY_VERSION;
+  }
+
+  /** 阅读页进度写库完成 → 重拉书架数据（修"返回书架进度不刷新"，审核驳回第 3 条） */
+  onProgressSaved(): void {
+    this.load();
   }
 
   onPageShow(): void {
@@ -85,6 +112,10 @@ struct Index {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
     this.applyTheme();
+    // **必须重新拉一次书籍与进度**（2026-09-26 审核驳回第 3 条修的就是这里）：
+    // 以前只在 aboutToAppear 里 load 过一次，从阅读页返回书架时进度条不刷新，
+    // 要杀掉应用重进才更新 —— 审核员实测到了。本地数据库查一次很快，直接重查最稳。
+    this.load();
   }
 
   private applyTheme(): void {
@@ -729,6 +760,98 @@ struct Index {
       if (this.editorMode !== MODE_NONE) {
         this.editorPanel()
       }
+
+      // 首次启动的隐私政策提示（合规硬性要求：必须显著提示用户阅读隐私政策）
+      if (this.showPrivacyNotice) {
+        this.privacyNotice()
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  /**
+   * 隐私政策提示弹窗（首次启动 / 政策升版后出现）
+   *
+   * 三个设计取舍：
+   *  ① **不提供"不同意"**：本应用不收集任何个人信息，无需取得同意，只需"提示阅读"；
+   *     给拒绝按钮反而让"零数据收集"这件事显得可疑。
+   *  ② **不放外链**：应用零联网，打不开浏览器。完整版走应用内 Privacy 页（断网也能看）。
+   *  ③ **记版本号而非布尔**：政策实质变更时 PRIVACY_VERSION +1，老用户会再看到。
+   */
+  @Builder
+  privacyNotice() {
+    // ⚠️ 必须是 Stack 不是 Column：遮罩要占满 100% 高度，
+    // 用 Column 的话卡片会排在遮罩**下面**（跑到屏幕外），实测只露出第一行字。
+    Stack() {
+      // 遮罩：吃掉点击，避免误触后面的书架
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#000000')
+        .opacity(0.6)
+
+      Column() {
+        Text('PRIVACY')
+          .fontSize(10)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+          .margin({ bottom: 10 })
+
+        Text('关于你的隐私')
+          .fontSize(17)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.palette.text)
+          .margin({ bottom: 14 })
+
+        Column() {
+          Text('· 不收集任何个人信息，没有账号、没有登录')
+          Text('· 书籍与进度只存在你的设备里，不上传')
+          Text('· 不申请任何权限，不具备联网能力')
+          Text('· 卸载应用即删除全部数据')
+        }
+        .alignItems(HorizontalAlign.Start)
+        .width('100%')
+        .margin({ bottom: 16 })
+
+        Text('完整版见应用内「设置 → 关于 → 隐私政策」')
+          .fontSize(11)
+          .fontColor(this.palette.text3)
+          .width('100%')
+          .margin({ bottom: 18 })
+
+        Row({ space: 10 }) {
+          Text('查看完整版')
+            .fontSize(13)
+            .fontColor(this.palette.text2)
+            .border({ width: 1, color: this.palette.line })
+            .borderRadius(6)
+            .height(40)
+            .padding({ left: 16, right: 16 })
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              router.pushUrl({ url: 'pages/Privacy' });
+            })
+          Text('我知道了')
+            .fontSize(13)
+            .fontColor(this.palette.bg)
+            .backgroundColor(this.palette.text)
+            .borderRadius(6)
+            .height(40)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.prefs.setPrivacyAgreedVersion(PRIVACY_VERSION);
+              this.showPrivacyNotice = false;
+            })
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding({ left: 22, right: 22, top: 24, bottom: 22 })
+      .backgroundColor(this.palette.card)
+      .borderRadius(14)
+      .border({ width: 1, color: this.palette.line })
     }
     .width('100%')
     .height('100%')
