@@ -256,7 +256,10 @@ export function parseNcx(xml: string, baseDir: string): TitleMap {
             }
           }
         }
-      } else {
+      } else if (!token.selfClosing) {
+        // 审查报告 B17：自闭合 <navPoint/> 不入栈 —— 旧版一律 push，
+        // 遇到自闭合条目栈里多出一个永远等不到 </navPoint> 的空壳，
+        // 把它后面真正的父级配对顶掉 → 父级标题成片丢失
         stack.push({ label: '', src: '' });
       }
       continue;

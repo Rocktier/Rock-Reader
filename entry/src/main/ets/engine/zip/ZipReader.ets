@@ -33,8 +33,14 @@ function u32(data: Uint8Array, at: number): number {
   return (data[at] | (data[at + 1] << 8) | (data[at + 2] << 16) | (data[at + 3] << 24)) >>> 0;
 }
 
-/** zip 条目名是 ASCII/UTF-8 字节；EPUB 里实际只会出现 ASCII 与少量拉丁字符 */
-function decodeName(data: Uint8Array, at: number, len: number): string {
+/** zip 条目名解码（审查报告 B10）：
+ *  GP flag bit11 = 1 → 名字是 UTF-8；否则按 cp437/latin-1 逐字节。
+ *  旧版无视 flag 一律 latin-1 → 中文名 EPUB 的条目名变 mojibake，OPF 里的 UTF-8 href
+ *  在 map 里查不到 → 整章静默消失。utf8 分支用本文件已 import 的 decodeUtf8。 */
+function decodeName(data: Uint8Array, at: number, len: number, utf8Flag: boolean): string {
+  if (utf8Flag) {
+    return decodeUtf8(data.subarray(at, at + len));
+  }
   let out: string = '';
   for (let i: number = 0; i < len; i++) {
     out += String.fromCharCode(data[at + i]);
@@ -88,11 +94,13 @@ export class ZipArchive {
       const extraLen: number = u16(bytes, at + 30);
       const commentLen: number = u16(bytes, at + 32);
       const localOffset: number = u32(bytes, at + 42);
+      const gpFlags: number = u16(bytes, at + 8);
+      const nameIsUtf8: boolean = (gpFlags & 0x800) !== 0;
       if (compressedSize === 0xFFFFFFFF || uncompressedSize === 0xFFFFFFFF || localOffset === 0xFFFFFFFF) {
         throw new Error('ZIP64_UNSUPPORTED');
       }
       const entry: ZipEntry = {
-        name: decodeName(bytes, at + 46, nameLen),
+        name: decodeName(bytes, at + 46, nameLen, nameIsUtf8),
         method: method,
         compressedSize: compressedSize,
         uncompressedSize: uncompressedSize,

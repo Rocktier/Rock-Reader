@@ -274,6 +274,11 @@ struct Reader {
     // 从独立设置页返回：主题/档位/字体可能变了
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
+    // 回前台要**重开计时会话**（审查报告 B8）：onPageHide 已把 sessionStartAt 清 0，
+    // 章内翻页不经过 openChapter —— 不重开的话，锁屏/接电话回来后的阅读时长全部丢失
+    if (this.sessionStartAt === 0 && this.sessionChapter >= 0) {
+      this.sessionStartAt = Date.now();
+    }
     // **字体可能刚下载完** —— registerFont 只在进程内/本 UIContext 存活，
     // aboutToAppear 那次注册时字体还不存在；而设置页自己的注册不影响阅读页
     // （实测：下载后回来选楷体，正文毫无变化 —— 就是漏了这次补注册）。幂等，重复调用无害。
@@ -282,6 +287,10 @@ struct Reader {
     }
     this.registerLocalFonts(this.fontStore);
     this.applyPrefsToLayout();
+    // 从独立设置页返回：浮层全部复位（审查报告 B23 —— 菜单卡在开启态）
+    this.showMenu = false;
+    this.showToc = false;
+    this.showSettings = false;
   }
 
   /**
@@ -650,7 +659,10 @@ struct Reader {
 
   private jumpToChapter(index: number): void {
     this.showToc = false;
-    if (index === this.chapterIndex) {
+    // 越界守卫必须在这里做：openChapter 对越界 index 直接 return，
+    // 下面的 showPage(0) 若无条件执行会把用户瞬移回本章第 1 页并落库覆盖真实进度
+    //（审查报告 B6 —— 首/末章点上一章/下一章触发）
+    if (index < 0 || index >= this.chapters.length || index === this.chapterIndex) {
       return;
     }
     this.openChapter(index, 0);
@@ -663,7 +675,9 @@ struct Reader {
 
   /** 打开目录：清掉上次的搜索词，列表复位为全量（打开瞬间由 List.onAppear 定位到当前章） */
   private openToc(): void {
-    this.showSettings = false; // 与设置抽屉互斥
+    // 三个覆盖层互斥（审查报告 B23）：目录开着时菜单/设置不能同时画着
+    this.showSettings = false;
+    this.showMenu = false;
     this.tocQuery = '';
     this.tocFiltered = this.chapters;
     this.tocSource.update(this.tocFiltered);
@@ -692,7 +706,10 @@ struct Reader {
   // ------------------------------------------------------------------
 
   private openSettings(): void {
-    this.showToc = false; // 与目录抽屉互斥
+    // 三个覆盖层互斥（审查报告 B23）：目录/设置/中央菜单同时只开一个，
+    // 否则抽屉叠抽屉、透明区吃点击 —— 返回键都点不动
+    this.showToc = false;
+    this.showMenu = false;
     this.levels = this.prefs.getLevels();
     this.showSettings = true;
   }
@@ -1151,6 +1168,10 @@ struct Reader {
       this.settingsRow('页边距', LEVEL_MAX, 'margin')
       this.settingsRow('字重', WEIGHT_MAX, 'weight')
 
+      // 审查报告 B24：抽屉内容整体可滚 + 限高 —— 矮视口/横屏时"更多设置"不再被推出屏幕
+      Scroll() {
+        Column() {
+
       Row({ space: 8 }) {
         Text('主题')
           .fontSize(13.5)
@@ -1215,6 +1236,12 @@ struct Reader {
           this.showSettings = false;
           this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
         })
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: 420 })
+      .scrollBar(BarState.Off)
     }
     .width('100%')
     .backgroundColor(this.palette.overlay)
@@ -1235,6 +1262,25 @@ struct Reader {
             .fontSize(13)
             .fontColor(this.palette.text2)
             .margin({ top: 60 })
+          // 审查报告 B7：明确告诉用户有重试出路（点击画面任意处 = 重试本章）
+          Text('轻点屏幕重试，或用上方返回键回书架')
+            .fontSize(11)
+            .fontColor(this.palette.text3)
+            .margin({ top: 10 })
+        } else if (this.loading) {
+          // 审查报告 B22：loading 之前是从不被读的死状态 —— 大书首屏一片空白像"点开打不开"
+          Column() {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(this.palette.text2)
+            Text('正在打开…')
+              .fontSize(12)
+              .fontColor(this.palette.text3)
+              .margin({ top: 10 })
+          }
+          .width('100%')
+          .margin({ top: 80 })
         } else {
           Text(this.pageText)
             .fontSize(this.fontSizeFp)
@@ -1303,6 +1349,11 @@ struct Reader {
           return;
         }
         if (this.hint.length > 0) {
+          // 错误态出路（审查报告 B7）：点击 = 重试本章。不给出路的话，
+          // "这一章读取失败" = 菜单/目录/返回全部开不出来，整本书读不了。
+          if (this.chapterCount > 0 && this.book !== null) {
+            this.openChapter(this.chapterIndex, 0);
+          }
           return;
         }
         if (event.x < third) {

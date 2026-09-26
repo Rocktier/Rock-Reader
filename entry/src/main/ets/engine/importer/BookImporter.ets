@@ -107,6 +107,16 @@ export function removeBookFiles(book: BookRecord): void {
   }
   try {
     if (fs.accessSync(dir)) {
+      // 目录里可能还有封面等文件（审查报告 B15：只删了 chDir 与书文件，
+      // cover.jpg 留在目录里 → rmdir ENOTEMPTY 被吞 → 每本带封面的书泄漏一个目录）
+      const leftovers: string[] = fs.listFileSync(dir);
+      for (let i: number = 0; i < leftovers.length; i++) {
+        try {
+          fs.unlinkSync(`${dir}/${leftovers[i]}`);
+        } catch (inner) {
+          hilog.warn(DOMAIN, TAG, 'remove leftover failed: %{public}s', JSON.stringify(inner));
+        }
+      }
       fs.rmdirSync(dir);
     }
   } catch (e) {
@@ -326,6 +336,8 @@ export class BookImporter {
       fs.closeSync(src);
     }
     if (!copied) {
+      // 审查报告 B14：失败必须清残留 —— 否则每次失败最多留 100MB 无人认领文件，重试线性堆积
+      this.cleanupFailedCopy(dir, dstPath);
       return { ok: false, reason: 'COPY_FAILED', book: null };
     }
 
@@ -335,9 +347,11 @@ export class BookImporter {
       const dstStat = fs.statSync(dstPath);
       if (dstStat.size !== srcSize) {
         hilog.error(DOMAIN, TAG, 'copy size mismatch: %{public}d vs %{public}d', dstStat.size, srcSize);
+        this.cleanupFailedCopy(dir, dstPath);
         return { ok: false, reason: 'COPY_FAILED', book: null };
       }
     } catch (e) {
+      this.cleanupFailedCopy(dir, dstPath);
       return { ok: false, reason: 'COPY_FAILED', book: null };
     }
 
@@ -438,6 +452,24 @@ export class BookImporter {
     }
     await this.db.addBook(book);
     return { ok: true, reason: '', book: book };
+  }
+
+  /** 审查报告 B14：拷贝失败后清掉沙箱里的半成品（文件 + 刚建的空目录） */
+  private cleanupFailedCopy(dir: string, dstPath: string): void {
+    try {
+      if (fs.accessSync(dstPath)) {
+        fs.unlinkSync(dstPath);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'cleanup failed file: %{public}s', JSON.stringify(e));
+    }
+    try {
+      if (fs.accessSync(dir)) {
+        fs.rmdirSync(dir);
+      }
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'cleanup failed dir: %{public}s', JSON.stringify(e));
+    }
   }
 
   /** 空/过大/格式不支持都在这里判掉；返回 '' 表示通过 */

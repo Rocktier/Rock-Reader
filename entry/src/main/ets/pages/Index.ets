@@ -100,6 +100,9 @@ struct Index {
     hilog.info(DOMAIN, TAG, 'privacy agreed=%{public}d current=%{public}d show=%{public}s',
       agreed, PRIVACY_VERSION, String(agreed < PRIVACY_VERSION));
     this.showPrivacyNotice = agreed < PRIVACY_VERSION;
+    // 冷启动兜底（审查报告 B19）：EntryAbility.onCreate 在 loadContent **之前**写 pendingImportUri，
+    // 此时 @Watch 尚未挂上不会触发 —— aboutToAppear 主动消费一次（内部对空 uri 幂等）。
+    this.onIncomingFile();
   }
 
   /** 阅读页进度写库完成 → 重拉书架数据（修"返回书架进度不刷新"，审核驳回第 3 条） */
@@ -729,11 +732,14 @@ struct Index {
                   }
                   .width('100%')
                   // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
-                  .accessibilityText(item.book.title)
+                  // 审查报告 B28：管理操作只有长按手势，读屏用户不可达 —— 文案里明确告知
+                  .accessibilityText(item.book.title + '，长按可重命名、分组或移除')
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
                 }
-              }, (item: ShelfItem) => item.book.id)
+              // 键必须含 percent：返回书架 load() 后进度变了但键没变 → 节点复用，
+              // 格子进度条与百分比停在旧值（审查报告 B26，与审核驳回第 3 条同病灶）
+              }, (item: ShelfItem) => item.book.id + '|' + item.percent)
             }
             .columnsTemplate('1fr 1fr 1fr')
             .columnsGap(14)
@@ -805,11 +811,23 @@ struct Index {
           .fontColor(this.palette.text)
           .margin({ bottom: 14 })
 
+        // 审查报告 B25：四条要点必须显式设色 —— 系统默认色在深色遮罩上是黑字对黑底
         Column() {
           Text('· 不收集任何个人信息，没有账号、没有登录')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
+            .margin({ bottom: 6 })
           Text('· 书籍与进度只存在你的设备里，不上传')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
+            .margin({ bottom: 6 })
           Text('· 不申请任何权限，不具备联网能力')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
+            .margin({ bottom: 6 })
           Text('· 卸载应用即删除全部数据')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
         }
         .alignItems(HorizontalAlign.Start)
         .width('100%')
@@ -850,7 +868,8 @@ struct Index {
       }
       .width('86%')
       .padding({ left: 22, right: 22, top: 24, bottom: 22 })
-      .backgroundColor(this.palette.card)
+      // 审查报告 B25：card 色 alpha≈3%，压在黑遮罩上等于没有底色 —— 用不透明的 bg 色
+      .backgroundColor(this.palette.bg)
       .borderRadius(14)
       .border({ width: 1, color: this.palette.line })
     }

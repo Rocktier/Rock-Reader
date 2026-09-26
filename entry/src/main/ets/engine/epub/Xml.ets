@@ -219,7 +219,11 @@ export function stripTags(input: string): string {
     if (ch === '<') {
       const end: number = input.indexOf('>', i);
       if (end < 0) {
-        break;
+        // 未闭合的 '<'（审查报告 B13）：旧版直接 break，"价格 <100 元" 之后的
+        // 整段正文全被吞。把 '<' 当普通文字输出，继续处理后面的内容。
+        out += ch;
+        i += 1;
+        continue;
       }
       i = end + 1;
       continue;
