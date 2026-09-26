@@ -104,6 +104,7 @@ struct Index {
 
   /** 阅读页进度写库完成 → 重拉书架数据（修"返回书架进度不刷新"，审核驳回第 3 条） */
   onProgressSaved(): void {
+    hilog.info(DOMAIN, TAG, 'onProgressSaved fired, reloading shelf');
     this.load();
   }
 
