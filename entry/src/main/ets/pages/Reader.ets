@@ -233,6 +233,8 @@ struct Reader {
   private pendingChapter: number = 0;
   private pendingOffset: number = 0;
   private pagesSincePersist: number = 0;
+  /** 章加载失败态：true 时 persistProgress 禁止落库（防进度被清成 0，审查报告 B2） */
+  private failed: boolean = false;
 
   aboutToAppear(): void {
     // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
@@ -407,6 +409,9 @@ struct Reader {
    * 而且还能继续翻页（页表是旧的）。
    */
   private failChapter(message: string): void {
+    // 失败态标记：persistProgress 看到它就**禁止落库** ——
+    // 否则 pages=[] 会让 offset 落成 0，把用户真实进度覆盖成"章首"（审查报告 B2）
+    this.failed = true;
     this.hint = message;
     this.pages = [];
     this.pageCount = 0;
@@ -463,6 +468,8 @@ struct Reader {
       return;
     }
 
+    // 走到这里 = 本章读取成功，解除失败态（persistProgress 恢复正常落库）
+    this.failed = false;
     this.chapterIndex = index;
     this.chapterTitle = chapter.title;
     this.chapterText = text;
@@ -472,7 +479,11 @@ struct Reader {
     this.lineHeightVp = this.getUIContext().px2vp(box.lineHeightPx);
     this.marginVp = marginVpOf(levels.marginLevel);
 
-    const cacheKey: string = index + '|' + box.signature;
+    // 净化/简繁开关会改变 text 内容（BookSource.chapterText 按开关重算），**必须进缓存键** ——
+    // 否则切开关后命中旧键：页表是"净化后短文本"算的、正文已是"未净化长文本"，
+    // 本章尾部若干页永远出不来（审查报告 B1）。这两个字段是 private 但同类内可见，直接读。
+    const cacheKey: string = index + '|' + box.signature +
+      '|p' + (this.purifyOn ? 1 : 0) + 'c' + this.convertMode;
     this.currentKey = box.signature;
     let table: PageTable | null = this.cache.get(cacheKey);
     if (table === null) {
@@ -762,6 +773,11 @@ struct Reader {
 
   private persistProgress(force: boolean): void {
     if (this.book === null || this.chapterCount === 0) {
+      return;
+    }
+    // **失败态禁止落库**（审查报告 B2）：failChapter 清空了 pages，
+    // 这时落库会把 offset 写成 0，用户的真实阅读进度被覆盖成"章首"且无法找回
+    if (this.failed) {
       return;
     }
     if (!force) {

@@ -195,10 +195,26 @@ export function stripTrailing(rec: Uint8Array, flags: number): Uint8Array {
  *   0xC0-0xFF   → 输出一个空格 + (c & 0x7F)
  */
 export function decompressPalmDoc(src: Uint8Array): Uint8Array {
-  const out: Uint8Array = new Uint8Array(src.length * 2 + 16);
+  let out: Uint8Array = new Uint8Array(src.length * 2 + 16);
   let wp: number = 0;
   let i: number = 0;
+  // 写前扩容（审查报告 B5）：PalmDOC 对重复 HTML 标签的扩展比可超 2×，
+  // 固定缓冲写满就静默截断 —— 用户读到一半正文断掉，无任何提示。改为不够就翻倍。
+  const ensureCapacity = (need: number): void => {
+    if (wp + need <= out.length) {
+      return;
+    }
+    let cap: number = out.length * 2;
+    while (cap < wp + need) {
+      cap = cap * 2;
+    }
+    const grown: Uint8Array = new Uint8Array(cap);
+    grown.set(out.subarray(0, wp));
+    out = grown;
+  };
   while (i < src.length) {
+    // 单次迭代最多写约 12 字节（字面量 ≤8 或 copy ≤10 + 空格），循环头统一保证余量
+    ensureCapacity(16);
     const c: number = src[i];
     i += 1;
     if (c === 0) {
@@ -237,10 +253,7 @@ export function decompressPalmDoc(src: Uint8Array): Uint8Array {
       out[wp] = c & 0x7F;
       wp += 1;
     }
-    // 解压后一定比源长，但留个余量判断防止越界
-    if (wp + 8 > out.length) {
-      break;
-    }
+    // 旧版这里 wp+8 > out.length 直接 break —— 就是 B5 静默截断的源头，已改循环头扩容
   }
   return out.subarray(0, wp);
 }

@@ -24,7 +24,12 @@ class BitReader {
   /** 读 n 位（n ≤ 16） */
   bits(n: number): number {
     while (this.cnt < n) {
-      const byte: number = this.pos < this.data.length ? this.data[this.pos] : 0;
+      // 数据耗尽还想要位 = 输入已损坏。**绝不能补 0**：
+      // 补出的 0 位会被解析成"非最终块 + LEN=0"，外层 while(final===0) 死循环（审查报告 B3）
+      if (this.pos >= this.data.length) {
+        throw new Error('inflate: unexpected end of data');
+      }
+      const byte: number = this.data[this.pos];
       this.pos += 1;
       this.buf |= byte << this.cnt;
       this.cnt += 8;
@@ -50,7 +55,11 @@ class BitReader {
       this.cnt -= 8;
       return value;
     }
-    const value: number = this.pos < this.data.length ? this.data[this.pos] : 0;
+    if (this.pos >= this.data.length) {
+      // 同 bits()：截断的 stored 块宁可报错，也不能补 0 掩盖（会连锁触发死循环）
+      throw new Error('inflate: unexpected end of data (stored)');
+    }
+    const value: number = this.data[this.pos];
     this.pos += 1;
     return value;
   }
