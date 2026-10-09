@@ -6,6 +6,7 @@
  * 书架的分组/进度规则全部在 engine/shelf/ShelfRules.ets（纯逻辑、可单测），本页只做渲染与交互。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common } from '@kit.AbilityKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs } from '../data/ReaderPrefs';
@@ -83,6 +84,15 @@ struct Index {
    * 政策有**实质变更**时把 PRIVACY_VERSION 加一 → 老用户会再次看到。
    */
   @State showPrivacyNotice: boolean = false;
+  /**
+   * 隐私政策的**空白复选框**（默认不勾）。
+   *
+   * 2026-10-09 审核**再次**驳回：只有「我知道了」不构成"明示同意"。审核要求：
+   *   ① 提供**空白复选框**，由用户自愿、明确勾选
+   *   ② 弹窗有**「拒绝」**选项，且同意按钮表述为「同意」/「拒绝」
+   * ⇒ 两条都做：不勾选时「同意」置灰不可点。
+   */
+  @State privacyChecked: boolean = false;
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
@@ -100,6 +110,8 @@ struct Index {
     hilog.info(DOMAIN, TAG, 'privacy agreed=%{public}d current=%{public}d show=%{public}s',
       agreed, PRIVACY_VERSION, String(agreed < PRIVACY_VERSION));
     this.showPrivacyNotice = agreed < PRIVACY_VERSION;
+    // 复选框每次弹窗都回到未勾选 —— 上一次的同意不能顺延，审核要的是"本次明确勾选"
+    this.privacyChecked = false;
     // 冷启动兜底（审查报告 B19）：EntryAbility.onCreate 在 loadContent **之前**写 pendingImportUri，
     // 此时 @Watch 尚未挂上不会触发 —— aboutToAppear 主动消费一次（内部对空 uri 幂等）。
     this.onIncomingFile();
@@ -778,13 +790,60 @@ struct Index {
   }
 
   /**
+   * 用户勾选并点「同意」→ 记版本号，关闭弹窗。
+   * 没勾选就点不动（按钮 `.enabled(false)`），这里再挡一道，纯防御。
+   */
+  private agreePrivacy(): void {
+    if (!this.privacyChecked) {
+      hilog.warn(DOMAIN, TAG, 'agreePrivacy called but checkbox NOT checked, ignored');
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'privacy agreed v=%{public}d', PRIVACY_VERSION);
+    this.prefs.setPrivacyAgreedVersion(PRIVACY_VERSION);
+    this.showPrivacyNotice = false;
+  }
+
+  /**
+   * 用户点「拒绝」→ **退出应用**。
+   *
+   * 为什么不给一个"什么都不做"的拒绝按钮：审核要的是**真实后果**，
+   * 点了拒绝还能继续用，等于没有拒绝选项，会被再次驳回。
+   *
+   * ⚠️ 退出前必须先给 Toast —— 直接 terminateSelf 会被当成"应用闪退"，
+   *    那是另一条驳回（比合规问题更难解释）。
+   */
+  private rejectPrivacy(): void {
+    hilog.info(DOMAIN, TAG, 'privacy rejected by user, will exit');
+    this.showPrivacyNotice = false;
+    promptAction.showToast({ message: '未同意隐私政策，无法使用本应用' });
+    setTimeout(() => {
+      const ctx = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      ctx.terminateSelf().catch(() => {
+        hilog.error(DOMAIN, TAG, 'terminateSelf failed');
+      });
+    }, 1800);
+  }
+
+  /**
    * 隐私政策提示弹窗（首次启动 / 政策升版后出现）
    *
-   * 三个设计取舍：
-   *  ① **不提供"不同意"**：本应用不收集任何个人信息，无需取得同意，只需"提示阅读"；
-   *     给拒绝按钮反而让"零数据收集"这件事显得可疑。
-   *  ② **不放外链**：应用零联网，打不开浏览器。完整版走应用内 Privacy 页（断网也能看）。
-   *  ③ **记版本号而非布尔**：政策实质变更时 PRIVACY_VERSION +1，老用户会再看到。
+   * ⚠️⚠️ 设计取舍已被审核**两次**推翻，这是第二版（2026-10-09）：
+   *
+   *   第一版（`936eadf`）的取舍是「**不提供不同意**」，理由是"本应用零收集，
+   *   法律上无需取得同意，只需提示阅读；给拒绝按钮反而让零数据收集显得可疑"。
+   *
+   *   审核驳回：**只有「我知道了」不构成明示同意**，要求二选一或全都要——
+   *     ① 提供**空白复选框**，由用户自愿、明确勾选
+   *     ② 弹窗有**「拒绝」**选项，且同意按钮表述为「同意」/「拒绝」
+   *
+   *   ⇒ 第二版两条都做：复选框默认不勾，「同意」在勾选前置灰；「拒绝」退出应用。
+   *
+   *   **教训**：零收集确实免了告知同意的法定义务，但**平台审核关是另一道闸**，
+   *   过不了闸就等于产品上不了架 —— 在上架这件事上，平台合规优先于法律最优解。
+   *
+   * 保留的两条取舍：
+   *  - **不放外链**：应用零联网，打不开浏览器。完整版走应用内 Privacy 页（断网也能看）。
+   *  - **记版本号而非布尔**：政策实质变更时 PRIVACY_VERSION +1，老用户会再看到。
    */
   @Builder
   privacyNotice() {
@@ -833,38 +892,79 @@ struct Index {
         .width('100%')
         .margin({ bottom: 16 })
 
-        Text('完整版见应用内「设置 → 关于 → 隐私政策」')
-          .fontSize(11)
+        /**
+         * ⚠️ 审核点名的**空白复选框**（默认不勾）。
+         * 用系统 `Checkbox` 而非自绘方块：读屏会报"复选框/已勾选/已停用"，无障碍更干净。
+         * 文字也可点 —— 手指目标更大，且读屏把整行当一个可点区域。
+         */
+        Row() {
+          Checkbox({ name: 'privacy_agree', group: 'privacy_notice' })
+            .width(20)
+            .height(20)
+            .select(this.privacyChecked)
+            .selectedColor(this.palette.text)
+            .onChange((checked: boolean) => {
+              this.privacyChecked = checked;
+              hilog.info(DOMAIN, TAG, 'privacy checkbox => %{public}s', String(checked));
+            })
+          Text('我已阅读并同意上述隐私政策')
+            .fontSize(12)
+            .fontColor(this.palette.text2)
+            .margin({ left: 10 })
+            .layoutWeight(1)
+            .onClick(() => {
+              this.privacyChecked = !this.privacyChecked;
+            })
+        }
+        .width('100%')
+        .margin({ bottom: 12 })
+
+        // 「查看完整版」独占一行、文字态：让人先把条款读完再决定，但不抢「同意」的权重
+        Button('查看完整版', { type: ButtonType.Normal, stateEffect: true })
+          .fontSize(12)
           .fontColor(this.palette.text3)
+          .backgroundColor(Color.Transparent)
           .width('100%')
-          .margin({ bottom: 18 })
+          .height(30)
+          .onClick(() => {
+            router.pushUrl({ url: 'pages/Privacy' });
+          })
 
         Row({ space: 10 }) {
-          Text('查看完整版')
+          /**
+           * 「拒绝」：审核要求有拒绝选项（这是本次驳回的主因之一）。
+           * 描边态而非实心红 —— 用户不该被吓到，只是需要一条真实存在的拒绝路径。
+           */
+          Button('拒绝', { type: ButtonType.Normal, stateEffect: true })
             .fontSize(13)
             .fontColor(this.palette.text2)
+            .backgroundColor(Color.Transparent)
             .border({ width: 1, color: this.palette.line })
             .borderRadius(6)
             .height(40)
-            .padding({ left: 16, right: 16 })
-            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
             .onClick(() => {
-              router.pushUrl({ url: 'pages/Privacy' });
+              this.rejectPrivacy();
             })
-          Text('我知道了')
+          /**
+           * 「同意」：**勾选前置灰**（`.enabled`）—— 强制"自愿、明确勾选"这条被点名的要求。
+           * 置灰的对比度与读屏"已停用"由系统给，比手动改透明度更合规。
+           */
+          Button('同意', { type: ButtonType.Normal, stateEffect: true })
             .fontSize(13)
+            .fontWeight(FontWeight.Medium)
             .fontColor(this.palette.bg)
             .backgroundColor(this.palette.text)
             .borderRadius(6)
             .height(40)
             .layoutWeight(1)
-            .textAlign(TextAlign.Center)
+            .enabled(this.privacyChecked)
             .onClick(() => {
-              this.prefs.setPrivacyAgreedVersion(PRIVACY_VERSION);
-              this.showPrivacyNotice = false;
+              this.agreePrivacy();
             })
         }
         .width('100%')
+        .margin({ top: 8 })
       }
       .width('86%')
       .padding({ left: 22, right: 22, top: 24, bottom: 22 })
