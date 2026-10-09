@@ -1,4 +1,4 @@
-# 打上架用的 .app 包（AGC 提审格式，含发布签名）
+﻿# 打上架用的 .app 包（AGC 提审格式，含发布签名）
 #
 # 签名配置：build-profile.json5 的 signingConfigs.release
 #   - 口令是 **DevEco 加密串**（由 DevEco「文件 > 项目结构 > 签名配置」写入/更新）

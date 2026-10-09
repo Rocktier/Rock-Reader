@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.rocktier.rockreader",
     "vendor": "Rocktier",
-    "versionCode": 1000000,
+    "versionCode": 1000001,
     "versionName": "1.0.0",
     // 分层图标（foreground / background + layered_image.json）：
     // 系统据此做遮罩、视差与深浅色适配。之前是**单张纯色占位块**（0.5KB、无图形），
