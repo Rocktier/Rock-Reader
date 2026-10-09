@@ -1045,6 +1045,7 @@ struct Reader {
             }
           }, (item: ChapterRow) => 'ch' + item.index)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Off)
@@ -1194,6 +1195,7 @@ struct Reader {
             this.themeChip(THEME_GREEN)
           }
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Off)
         .layoutWeight(1)
@@ -1226,6 +1228,7 @@ struct Reader {
             }, (f: FontEntry) => 'fc-' + f.id)
           }
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Off)
         .width('100%')
@@ -1249,6 +1252,7 @@ struct Reader {
         }
         .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .constraintSize({ maxHeight: 420 })
       .scrollBar(BarState.Off)

@@ -280,6 +280,7 @@ struct Stats {
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .scrollBar(BarState.Off)
       }

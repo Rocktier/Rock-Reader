@@ -306,6 +306,7 @@ struct Settings {
           }, (entry: FontEntry) => 'own' + entry.id)
         }
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .width('100%')
@@ -476,6 +477,7 @@ struct Settings {
         .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_LG })
         .alignItems(HorizontalAlign.Start)
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
       .scrollBar(BarState.Off)
       .align(Alignment.TopStart)

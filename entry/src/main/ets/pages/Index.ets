@@ -699,6 +699,7 @@ struct Index {
               }, (g: string) => 'chip' + g + (g === this.activeGroup ? '-on' : '-off'))
             }
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
           .width('100%')
@@ -785,6 +786,7 @@ struct Index {
             .rowsGap(16)
             .width('100%')
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
           .scrollBar(BarState.Off)           // 不出现滚动条（家族规则）
         }
