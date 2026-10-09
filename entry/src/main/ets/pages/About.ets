@@ -17,6 +17,7 @@ import { router } from '@kit.ArkUI';
 import { bundleManager } from '@kit.AbilityKit';
 import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
 import { ReaderPrefs } from '../data/ReaderPrefs';
+import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL } from '../theme/RrTokens';
 
 /** slogan 主句：品牌承诺的第一句，改这里等于改全部三处（书架空态 / 设置页底 / 本页） */
 const SLOGAN_MAIN: string = '书在你手上，哪儿也不去';
@@ -73,22 +74,22 @@ struct About {
     Row() {
       Column({ space: 4 }) {
         Text(label)
-          .fontSize(13)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.palette.text)
         if (note.length > 0) {
           Text(note)
-            .fontSize(10)
+            .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
         }
       }
       .alignItems(HorizontalAlign.Start)
       Blank()
       Text('›')
-        .fontSize(16)
+        .fontSize(RR_FS_HEADING)
         .fontColor(this.palette.text3)
     }
     .width('100%')
-    .padding({ top: 14, bottom: 14 })
+    .padding({ top: RR_SP_2XL, bottom: RR_SP_2XL })
     // 分隔线只画在上方（条目上方那条 hairline 已负责分组）；
     // 全页只有一个条目时再画下边框，看起来像被截断的列表。
     .onClick(() => onClick())
@@ -101,7 +102,7 @@ struct About {
       // 顶栏：与设置页同规格（返回键热区 44，标题等宽）
       Row() {
         Text('‹')
-          .fontSize(20)
+          .fontSize(RR_FS_TITLE)
           .fontColor(this.palette.text)
           .width(34)
           .height(34)
@@ -109,16 +110,16 @@ struct About {
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
           .onClick(() => this.getUIContext().getRouter().back())
         Text('ABOUT')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-          .margin({ left: 6 })
+          .margin({ left: RR_SP_MD })
         Blank()
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: 12, right: 18, top: 10, bottom: 12 })
+      .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Scroll() {
@@ -126,26 +127,26 @@ struct About {
           // ① 品牌条：**降级**。这一页的主角是 slogan，不是应用名 ——
           //    上一版把应用名做成 18px（比 slogan 还大），层级是反的。
           Text('Rock阅读')
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text2)
           Text('RockReader')
-            .fontSize(10)
+            .fontSize(RR_FS_DIGIT)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
-            .margin({ top: 4 })
+            .margin({ top: RR_SP_SM })
 
           // ② slogan：全页唯一的大字。主句讲"本地、不上传"，副句讲"断网完整"
           Column({ space: 10 }) {
             Text(SLOGAN_MAIN)
-              .fontSize(22)
+              .fontSize(RR_FS_DISPLAY)
               .fontColor(this.palette.text)
             Text(SLOGAN_SUB)
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.text2)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
-          .margin({ top: 22 })
+          .margin({ top: RR_SP_4XL })
 
           // ③ hairline：不是装饰，是真实分组（"我们是谁" vs "我们怎么做"）
           this.hairline(28)
@@ -153,18 +154,18 @@ struct About {
           // ④ 承诺：比 slogan 小一档，且不再与 slogan 同构（去掉"主行+副行"的撞车）
           Column({ space: 6 }) {
             Text('核心数据不联网')
-              .fontSize(12)
+              .fontSize(RR_FS_META)
               .fontColor(this.palette.text2)
             Text('书籍与进度全部在本机处理')
-              .fontSize(11)
+              .fontSize(RR_FS_META)
               .fontColor(this.palette.text3)
             Text('卸载即删除')
-              .fontSize(11)
+              .fontSize(RR_FS_META)
               .fontColor(this.palette.text3)
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
-          .margin({ top: 20 })
+          .margin({ top: RR_SP_4XL })
 
           // ⑤ 条目：分隔线只在上方（一条下边框挂在唯一条目下面，像被截断的列表）
           this.hairline(24)
@@ -178,7 +179,7 @@ struct About {
           })
         }
         .width('100%')
-        .padding({ left: 22, right: 22, top: 24, bottom: 24 })
+        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_5XL, bottom: RR_SP_5XL })
         .alignItems(HorizontalAlign.Start)
       }
       .layoutWeight(1)
@@ -188,12 +189,12 @@ struct About {
       // ⑥ 版本号是**页脚信息**，不是品牌信息 —— 固定在页面底部，不与品牌区挤在一起
       if (this.versionText.length > 0) {
         Text(this.versionText)
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
           .width('100%')
           .textAlign(TextAlign.Start)
-          .padding({ left: 22, right: 22, bottom: 26 })
+          .padding({ left: RR_SP_4XL, right: RR_SP_4XL, bottom: RR_SP_5XL })
       }
     }
     .width('100%')

@@ -14,6 +14,7 @@
  */
 import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
 import { ReaderPrefs } from '../data/ReaderPrefs';
+import { RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_6XL } from '../theme/RrTokens';
 
 /** 段落：一段一元素，标题行以 '#' 开头（渲染时加粗并留上间距） */
 const PRIVACY_LINES: Array<string> = [
@@ -76,17 +77,17 @@ struct Privacy {
   lineView(text: string) {
     if (text.indexOf('#') === 0) {
       Text(text.substring(1))
-        .fontSize(13)
+        .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text)
         .fontWeight(FontWeight.Medium)
         .width('100%')
-        .margin({ top: 18, bottom: 6 })
+        .margin({ top: RR_SP_3XL, bottom: RR_SP_MD })
     } else {
       Text(text)
-        .fontSize(11.5)
+        .fontSize(RR_FS_META)
         .fontColor(this.palette.text2)
         .width('100%')
-        .margin({ bottom: 8 })
+        .margin({ bottom: RR_SP_LG })
     }
   }
 
@@ -94,7 +95,7 @@ struct Privacy {
     Column() {
       Row() {
         Text('‹')
-          .fontSize(20)
+          .fontSize(RR_FS_TITLE)
           .fontColor(this.palette.text)
           .width(34)
           .height(34)
@@ -102,16 +103,16 @@ struct Privacy {
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
           .onClick(() => this.getUIContext().getRouter().back())
         Text('PRIVACY')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-          .margin({ left: 6 })
+          .margin({ left: RR_SP_MD })
         Blank()
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: 12, right: 18, top: 10, bottom: 12 })
+      .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Scroll() {
@@ -122,7 +123,7 @@ struct Privacy {
           }, (line: string, idx: number) => 'p' + idx)
         }
         .width('100%')
-        .padding({ left: 22, right: 22, top: 14, bottom: 34 })
+        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_2XL, bottom: RR_SP_6XL })
         .alignItems(HorizontalAlign.Start)
       }
       .layoutWeight(1)

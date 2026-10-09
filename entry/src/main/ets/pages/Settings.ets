@@ -14,6 +14,7 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { FontStore } from '../data/FontStore';
 import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
+import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_XS, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -192,45 +193,45 @@ struct Settings {
       Row() {
         Column() {
           Text('正文去广告')
-            .fontSize(13.5)
+            .fontSize(RR_FS_BODY)
             .fontColor(this.palette.text)
           Text('自动删除 TXT 里的站点水印、公众号推广与网址')
-            .fontSize(10)
+            .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
-            .margin({ top: 3 })
+            .margin({ top: RR_SP_XS })
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         Text(this.purifyOn ? '开' : '关')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontColor(this.purifyOn ? this.palette.bg : this.palette.text2)
           .backgroundColor(this.purifyOn ? this.palette.text : this.palette.card)
           .border({ width: 1, color: this.purifyOn ? this.palette.text : this.palette.line })
-          .borderRadius(0)
+          .borderRadius(RR_RADIUS_COVER)
           .height(CHIP_HEIGHT)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
           .onClick(() => this.pickPurify(!this.purifyOn))
       }
       .width('100%')
-      .padding({ top: 14, bottom: 14 })
+      .padding({ top: RR_SP_2XL, bottom: RR_SP_2XL })
 
       // 简繁
       Column() {
         Text('简繁')
-          .fontSize(13.5)
+          .fontSize(RR_FS_BODY)
           .fontColor(this.palette.text)
         Row({ space: 8 }) {
           ForEach([['off', '不转换'], ['s2t', '简→繁'], ['t2s', '繁→简']], (it: string[]) => {
             Text(it[1])
-              .fontSize(12)
+              .fontSize(RR_FS_META)
               .fontFamily('monospace')
               .fontColor(this.convertMode === it[0] ? this.palette.bg : this.palette.text2)
               .backgroundColor(this.convertMode === it[0] ? this.palette.text : this.palette.card)
               .border({ width: 1, color: this.convertMode === it[0] ? this.palette.text : this.palette.line })
-              .borderRadius(0)
+              .borderRadius(RR_RADIUS_COVER)
               .height(CHIP_HEIGHT)
-              .padding({ left: 14, right: 14 })
+              .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
               // 视觉 CHIP_HEIGHT(34) < 触摸标准 44 → 热区上下各撑 5；朗读要说出"简繁 不转换"
               .accessibilityText(`简繁 ${it[1]}`)
               .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
@@ -238,11 +239,11 @@ struct Settings {
           }, (it: string[]) => 'c' + it[0])
         }
         .width('100%')
-        .margin({ top: 10 })
+        .margin({ top: RR_SP_XL })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding({ bottom: 14 })
+      .padding({ bottom: RR_SP_2XL })
     }
     .width('100%')
   }
@@ -251,13 +252,13 @@ struct Settings {
   fontChip(label: string, family: string) {
     Text(label)
       .fontFamily(family)                  // 用该字体本身渲染，直接看效果
-      .fontSize(13)
+      .fontSize(RR_FS_LABEL)
       .fontColor(this.fontFamily === family ? this.palette.bg : this.palette.text2)
       .backgroundColor(this.fontFamily === family ? this.palette.text : this.palette.card)
       .border({ width: 1, color: this.fontFamily === family ? this.palette.text : this.palette.line })
-      .borderRadius(0)
+      .borderRadius(RR_RADIUS_COVER)
       .height(CHIP_HEIGHT)
-      .padding({ left: 14, right: 14 })
+      .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
       .accessibilityText(`字体 ${label}`)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickFont(family))
@@ -269,26 +270,26 @@ struct Settings {
     Column() {
       Row() {
         Text('字体')
-          .fontSize(13.5)
+          .fontSize(RR_FS_BODY)
           .fontColor(this.palette.text)
         Blank()
         Text(this.fontFamily.length > 0 ? `${this.fontFamilies.length} 款可选` : '系统默认')
-          .fontSize(9.5)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .margin({ bottom: 9 })
+      .margin({ bottom: RR_SP_LG })
 
       // 预览：直接看这套字体在正文里的样子
       Text('思维力是孩子学习力的基础 ABC 123')
         .fontFamily(this.fontFamily)
-        .fontSize(15)
+        .fontSize(RR_FS_HEADING)
         .fontColor(this.palette.text2)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
-        .padding({ bottom: 12 })
+        .padding({ bottom: RR_SP_2XL })
 
       Scroll() {
         Row({ space: 8 }) {
@@ -311,10 +312,10 @@ struct Settings {
       Column() {
         if (this.hasDownloadable()) {
           Text('更多字体 · 下载后存本机')
-            .fontSize(10.5)
+            .fontSize(RR_FS_DIGIT)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
-            .margin({ top: 16, bottom: 4 })
+            .margin({ top: RR_SP_3XL, bottom: RR_SP_SM })
         }
 
         ForEach(FONT_CATALOG, (entry: FontEntry) => {
@@ -323,26 +324,26 @@ struct Settings {
           Row() {
             Column() {
               Text(entry.displayName)
-                .fontSize(13)
+                .fontSize(RR_FS_LABEL)
                 .fontColor(this.palette.text)
               Text(entry.desc)
-                .fontSize(10)
+                .fontSize(RR_FS_DIGIT)
                 .fontColor(this.palette.text3)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text(`${sizeTextOf(entry.sizeBytes)} · ${entry.license}`)
-                .fontSize(9)
+                .fontSize(RR_FS_MICRO)
                 .fontFamily('monospace')
                 .fontColor(this.palette.text3)
-                .margin({ top: 4 })
+                .margin({ top: RR_SP_SM })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
             Text(this.fontActionText(entry))
-              .fontSize(12)
+              .fontSize(RR_FS_META)
               .fontColor(this.isDownloaded(entry.id) ? this.palette.text3 : this.palette.text)
-              .padding({ left: 12, right: 12 })
+              .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
               .height(30)
               .border({ width: 1, color: this.palette.line })
               .onClick(() => {
@@ -357,37 +358,37 @@ struct Settings {
               })
           }
           .width('100%')
-          .padding({ top: 12, bottom: 12 })
+          .padding({ top: RR_SP_2XL, bottom: RR_SP_2XL })
           .border({ width: { top: 1 }, color: this.palette.lineSoft })
 
           if (this.fontNote.length > 0 && this.busyFontId === entry.id) {
             Text(this.fontNote)
-              .fontSize(10)
+              .fontSize(RR_FS_DIGIT)
               .fontColor(this.palette.text3)
-              .margin({ bottom: 8 })
+              .margin({ bottom: RR_SP_LG })
           }
           }
         }, (entry: FontEntry) => 'dl' + entry.id)
 
         if (this.fontNote.length > 0 && this.busyFontId.length === 0) {
           Text(this.fontNote)
-            .fontSize(10)
+            .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
-            .margin({ top: 8 })
+            .margin({ top: RR_SP_LG })
         }
 
         // 首版只内置宋体一款（小而美、零联网）；后续版本会继续增加字体 —— 这里给用户留个预期
         Text('宋体已内置在应用里，无需下载、断网可用。后续版本会增加更多字体。')
-          .fontSize(9)
+          .fontSize(RR_FS_MICRO)
           .fontColor(this.palette.text3)
-          .margin({ top: 10 })
+          .margin({ top: RR_SP_XL })
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding({ top: 16, bottom: 16 })
+    .padding({ top: RR_SP_3XL, bottom: RR_SP_3XL })
   }
 
   /** 有没有"需要下载"的字体（首版零联网 → 没有 → 下载区整段不显示） */
@@ -415,7 +416,7 @@ struct Settings {
     Column() {
       Row() {
         Text('‹')
-          .fontSize(20)
+          .fontSize(RR_FS_TITLE)
           .fontColor(this.palette.text)
           .width(34)
           .height(34)
@@ -423,16 +424,16 @@ struct Settings {
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
           .onClick(() => this.getUIContext().getRouter().back())
         Text('SETTINGS')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-          .margin({ left: 6 })
+          .margin({ left: RR_SP_MD })
         Blank()
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: 12, right: 18, top: 10, bottom: 12 })
+      .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       // 内容可能超过一屏（尤其加了字体下载区之后）→ 整段可滚动
@@ -441,10 +442,10 @@ struct Settings {
           // 排版档位已移到**阅读页的抽屉**：那里改一下正文立刻跟着变（能边看边调），
           // 本页只留"与正文内容/资源相关"的设置，避免同一项两处维护。
           Text('字号 / 行距 / 边距 / 字重 / 主题 ⭢ 在阅读页里调（点屏幕中间 → A a）')
-            .fontSize(10)
+            .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
             .width('100%')
-            .margin({ bottom: 12 })
+            .margin({ bottom: RR_SP_2XL })
 
           this.textSection()
 
@@ -454,15 +455,15 @@ struct Settings {
           // 入口名写"关于"而不是"隐私政策" —— 用户找的是"这是什么应用"，顺路才看政策。
           Row() {
             Text('关于')
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.text)
             Blank()
             Text('›')
-              .fontSize(16)
+              .fontSize(RR_FS_HEADING)
               .fontColor(this.palette.text3)
           }
           .width('100%')
-          .padding({ top: 18, bottom: 14 })
+          .padding({ top: RR_SP_3XL, bottom: RR_SP_2XL })
           .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
           .onClick(() => {
             router.pushUrl({ url: 'pages/About' });
@@ -470,7 +471,7 @@ struct Settings {
           .responseRegion({ x: 0, y: -4, width: '100%', height: 52 })
         }
         .width('100%')
-        .padding({ left: 22, right: 22, top: 18, bottom: 8 })
+        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_LG })
         .alignItems(HorizontalAlign.Start)
       }
       .layoutWeight(1)
@@ -481,15 +482,15 @@ struct Settings {
         // 底部这块是"用户一定会扫到的位置" → 放 slogan（党哥 2026-09-23 定）。
         // 承诺细节（核心数据不联网 / 书籍与进度在本机）已迁到「关于」页，本页不重复。
         Text('书在你手上，哪儿也不去')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontColor(this.palette.text2)
         Text('断网也能读完整本书')
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontColor(this.palette.text3)
-          .margin({ top: 6 })
+          .margin({ top: RR_SP_MD })
       }
       .width('100%')
-      .padding({ left: 22, right: 22, bottom: 26 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, bottom: RR_SP_5XL })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')

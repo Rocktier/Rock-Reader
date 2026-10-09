@@ -37,6 +37,7 @@ import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { Palette, paletteOf, themeLabel, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
+import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
 
 interface ReaderParams {
   bookId: string;
@@ -103,7 +104,7 @@ struct ChapterItem {
   build() {
     Row() {
       Text(this.title)
-        .fontSize(13.5)
+        .fontSize(RR_FS_BODY)
         .fontColor(this.current ? this.textColor : this.text2Color)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -112,7 +113,7 @@ struct ChapterItem {
         .layoutWeight(1)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 13, bottom: 13 })
+    .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_2XL, bottom: RR_SP_2XL })
     // 当前章 = 左侧红竖条。原来的序号列去掉了：它是"第几个条目"，与章名里作者写的
     // 「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
     // 真实的位置指示由页脚 16/182 承担。
@@ -836,7 +837,7 @@ struct Reader {
   topBar() {
     Row() {
       Text('‹')
-        .fontSize(20)
+        .fontSize(RR_FS_TITLE)
         .fontColor(this.palette.text)
         .width(34)
         .height(34)
@@ -844,21 +845,21 @@ struct Reader {
         .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
         .onClick(() => this.getUIContext().getRouter().back())
       Text(this.title)
-        .fontSize(13)
+        .fontSize(RR_FS_LABEL)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.palette.text)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: 6 })
+        .margin({ left: RR_SP_MD })
         .layoutWeight(1)
       Text(this.chapterCount > 0 ? `${this.chapterIndex + 1}/${this.chapterCount}` : '')
-        .fontSize(9.5)
+        .fontSize(RR_FS_MICRO)
         .fontFamily('monospace')
         .fontColor(this.palette.text3)
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
-    .padding({ left: 12, right: 18, top: 10, bottom: 12 })
+    .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
     .backgroundColor(this.palette.overlay)
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
   }
@@ -881,25 +882,25 @@ struct Reader {
     Column() {
       Row() {
         Text(this.chapterTitle)
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .margin({ bottom: 10 })
+      .margin({ bottom: RR_SP_XL })
 
       Row() {
         // 视觉 34vp，热区 44vp：触摸标准 ≥44，用 responseRegion 上下各撑 5
         // （.+ accessibilityText：屏幕朗读要能说出按钮名字，AGC 审核会查）
         Text('上一章')
-          .fontSize(12.5)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.chapterIndex <= 0 ? this.palette.text3 : this.palette.text)
           .height(34)
           .layoutWeight(1)
@@ -908,7 +909,7 @@ struct Reader {
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex - 1))
         Text('目录')
-          .fontSize(12.5)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.palette.text)
           .height(34)
           .layoutWeight(1)
@@ -919,7 +920,7 @@ struct Reader {
             this.openToc();
           })
         Text('A a')
-          .fontSize(12.5)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.palette.text)
           .height(34)
           .layoutWeight(1)
@@ -930,7 +931,7 @@ struct Reader {
             this.openSettings();
           })
         Text('下一章')
-          .fontSize(12.5)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.chapterIndex >= this.chapterCount - 1 ? this.palette.text3 : this.palette.text)
           .height(34)
           .layoutWeight(1)
@@ -940,21 +941,21 @@ struct Reader {
           .onClick(() => this.jumpToChapter(this.chapterIndex + 1))
       }
       .width('100%')
-      .margin({ bottom: 14 })
+      .margin({ bottom: RR_SP_2XL })
 
       this.segBar(this.bookPercent)
 
       Row() {
         Text(`${Math.round(this.bookPercent * 100)}%`)
-          .fontSize(9)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .margin({ top: 8 })
+      .margin({ top: RR_SP_LG })
     }
     .width('100%')
-    .padding({ left: 18, right: 18, top: 16, bottom: 26 })
+    .padding({ left: RR_SP_3XL, right: RR_SP_3XL, top: RR_SP_3XL, bottom: RR_SP_5XL })
     .backgroundColor(this.palette.overlay)
     .border({ width: { top: 1 }, color: this.palette.lineSoft })
     .onClick(() => {
@@ -966,35 +967,35 @@ struct Reader {
     Column() {
       Row() {
         Text('CONTENTS')
-          .fontSize(11)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontColor(this.palette.text2)
         Blank()
         Text(this.tocQuery.length > 0
           ? `${this.tocFiltered.length}/${this.chapterCount}`
           : `${this.chapterCount}`)
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 16, bottom: 10 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_XL })
 
       // 章节搜索：三千章的书不必手滚着找
       Row() {
         Text('/')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
           .width(18)
         TextInput({ text: this.tocQuery, placeholder: '查找章节' })
-          .fontSize(12.5)
+          .fontSize(RR_FS_LABEL)
           .fontColor(this.palette.text)
           .placeholderColor(this.palette.text3)
           .placeholderFont({ size: 12.5 })
           .caretColor(this.palette.red)
           .backgroundColor(Color.Transparent)
-          .borderRadius(0)
+          .borderRadius(RR_RADIUS_COVER)
           .padding(0)
           .height(36)
           .layoutWeight(1)
@@ -1004,7 +1005,7 @@ struct Reader {
           })
         if (this.tocQuery.length > 0) {
           Text('×')
-            .fontSize(16)
+            .fontSize(RR_FS_HEADING)
             .fontColor(this.palette.text3)
             .width(26)
             .textAlign(TextAlign.Center)
@@ -1015,14 +1016,14 @@ struct Reader {
         }
       }
       .width('100%')
-      .padding({ left: 20, right: 20 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       if (this.tocFiltered.length === 0) {
         Text(this.tocQuery.length > 0 ? '没有匹配的章节' : '这本书没有解析出章节')
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontColor(this.palette.text3)
-          .margin({ top: 30 })
+          .margin({ top: RR_SP_6XL })
       } else {
         List({ scroller: this.tocScroller }) {
           LazyForEach(this.tocSource, (item: ChapterRow) => {
@@ -1071,7 +1072,7 @@ struct Reader {
     Row({ space: 8 }) {
       ForEach(this.rangeOf(max), (n: number) => {
         Text(`${n}`)
-          .fontSize(13)
+          .fontSize(RR_FS_LABEL)
           .fontFamily('monospace')
           // 选中判断必须读 this（@Builder 值传参不追踪，见 levelOf 的注释）
           .fontColor(n === this.levelOf(kind) ? this.palette.bg : this.palette.text2)
@@ -1095,33 +1096,33 @@ struct Reader {
     Column() {
       Row() {
         Text(label)
-          .fontSize(13.5)
+          .fontSize(RR_FS_BODY)
           .fontColor(this.palette.text)
         Blank()
         Text(`${this.levelOf(kind)}/${max}`)
-          .fontSize(9.5)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .margin({ bottom: 10 })
+      .margin({ bottom: RR_SP_XL })
       this.chipRow(kind, max)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+    .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
   }
 
   @Builder
   themeChip(theme: ThemeName) {
     Text(themeLabel(theme))
-      .fontSize(12.5)
+      .fontSize(RR_FS_LABEL)
       .fontColor(this.theme === theme ? this.palette.bg : this.palette.text2)
       .backgroundColor(this.theme === theme ? this.palette.text : this.palette.card)
       .borderWidth(1)
       .borderColor(this.theme === theme ? this.palette.text : this.palette.line)
       .height(34)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
       .textAlign(TextAlign.Center)
       .accessibilityText(`主题 ${themeLabel(theme)}`)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
@@ -1131,13 +1132,13 @@ struct Reader {
   @Builder
   fontChip(label: string, family: string) {
     Text(label)
-      .fontSize(12.5)
+      .fontSize(RR_FS_LABEL)
       .fontColor(this.fontFamily === family ? this.palette.bg : this.palette.text2)
       .backgroundColor(this.fontFamily === family ? this.palette.text : this.palette.card)
       .borderWidth(1)
       .borderColor(this.fontFamily === family ? this.palette.text : this.palette.line)
       .height(34)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .accessibilityText(`字体 ${label}`)
@@ -1151,17 +1152,17 @@ struct Reader {
     Column() {
       Row() {
         Text('排版')
-          .fontSize(11)
+          .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontColor(this.palette.text2)
         Blank()
         Text('边改边看')
-          .fontSize(9.5)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 16, bottom: 4 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_SM })
 
       this.settingsRow('字号', LEVEL_MAX, 'font')
       this.settingsRow('行距', LEVEL_MAX, 'line')
@@ -1174,7 +1175,7 @@ struct Reader {
 
       Row({ space: 8 }) {
         Text('主题')
-          .fontSize(13.5)
+          .fontSize(RR_FS_BODY)
           .fontColor(this.palette.text)
         // 四个主题横滚（与下面的字体行一致）：放不下的情况不会挤成一团
         Scroll() {
@@ -1190,24 +1191,24 @@ struct Reader {
         .layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Column() {
         Row() {
           Text('字体')
-            .fontSize(13.5)
+            .fontSize(RR_FS_BODY)
             .fontColor(this.palette.text)
           Blank()
           Text(this.fontFamily.length === 0 ? '系统默认' : this.fontFamily)
-            .fontSize(9.5)
+            .fontSize(RR_FS_MICRO)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
         .width('100%')
-        .margin({ bottom: 10 })
+        .margin({ bottom: RR_SP_XL })
 
         Scroll() {
           Row({ space: 8 }) {
@@ -1222,11 +1223,11 @@ struct Reader {
         .width('100%')
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 16, bottom: 16 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Text('更多设置（字体下载 / 隐私）›')
-        .fontSize(12.5)
+        .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text2)
         .width('100%')
         .height(48)
@@ -1259,14 +1260,14 @@ struct Reader {
       Column() {
         if (this.hint.length > 0) {
           Text(this.hint)
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text2)
-            .margin({ top: 60 })
+            .margin({ top: RR_SP_VOID })
           // 审查报告 B7：明确告诉用户有重试出路（点击画面任意处 = 重试本章）
           Text('轻点屏幕重试，或用上方返回键回书架')
-            .fontSize(11)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text3)
-            .margin({ top: 10 })
+            .margin({ top: RR_SP_XL })
         } else if (this.loading) {
           // 审查报告 B22：loading 之前是从不被读的死状态 —— 大书首屏一片空白像"点开打不开"
           Column() {
@@ -1275,12 +1276,12 @@ struct Reader {
               .height(36)
               .color(this.palette.text2)
             Text('正在打开…')
-              .fontSize(12)
+              .fontSize(RR_FS_META)
               .fontColor(this.palette.text3)
-              .margin({ top: 10 })
+              .margin({ top: RR_SP_XL })
           }
           .width('100%')
-          .margin({ top: 80 })
+          .margin({ top: RR_SP_TOP })
         } else {
           Text(this.pageText)
             .fontSize(this.fontSizeFp)
@@ -1399,19 +1400,19 @@ struct Reader {
       Column() {
         Row() {
           Text(this.chapterTitle)
-            .fontSize(9.5)
+            .fontSize(RR_FS_MICRO)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
           Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
-            .fontSize(9.5)
+            .fontSize(RR_FS_MICRO)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
         }
         .width('100%')
-        .padding({ left: this.marginVp, right: this.marginVp, bottom: 12 })
+        .padding({ left: this.marginVp, right: this.marginVp, bottom: RR_SP_2XL })
       }
       .width('100%')
       .height(FOOTER_VP)

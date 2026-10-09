@@ -29,6 +29,7 @@ import {
 import { BookRecord, ShelfItem } from '../common/Types';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
+import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER, RR_RADIUS_SM, RR_RADIUS_MD, RR_RADIUS_CARD } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -325,7 +326,7 @@ struct Index {
         // Contain：各书封面比例不一，绝不裁切（把书名裁掉是最难看的失败）
         .objectFit(ImageFit.Contain)
         .backgroundColor(this.palette.cover)
-        .borderRadius(0)
+        .borderRadius(RR_RADIUS_COVER)
         // ⚠️ **必须关掉 Image 自带的拖拽（默认 true）**：长按时它会先被识别成"准备拖拽"，
         // 把父级 Column 的 LongPressGesture 抢走 —— 症状是**有封面的书长按弹不出菜单**，
         // 而没有封面（首字占位走 Column 分支）的书一切正常。
@@ -343,7 +344,7 @@ struct Index {
       .width(size)
       .height(size * 1.4)
       .backgroundColor(this.palette.cover)
-      .borderRadius(0)                       // 书封 0 圆角（已确认）
+      .borderRadius(RR_RADIUS_COVER)                       // 书封 0 圆角（已确认）
       .justifyContent(FlexAlign.Center)
     }
   }
@@ -355,23 +356,23 @@ struct Index {
       Column({ space: 6 }) {
         // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
         Text('继续阅读')
-          .fontSize(9)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
           .letterSpacing(1)
         Text(item.book.title)
-          .fontSize(15)
+          .fontSize(RR_FS_HEADING)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(item.book.format.toUpperCase())
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
         this.cellBar(item.percent, 2)
         Text(percentText(item.percent))
-          .fontSize(9)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
@@ -380,7 +381,7 @@ struct Index {
     }
     .width('100%')
     .padding(14)
-    .borderRadius(12)                      // 卡片 12 圆角
+    .borderRadius(RR_RADIUS_CARD)                      // 卡片 12 圆角
     .backgroundColor(this.palette.card)
     .borderWidth(1)
     .borderColor(this.palette.line)
@@ -395,11 +396,11 @@ struct Index {
    */
   groupChip(name: string) {
     Text(name)
-      .fontSize(11)
+      .fontSize(RR_FS_META)
       .fontFamily('monospace')
       .fontColor(this.activeGroup === name ? this.palette.bg : this.palette.text3)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .borderRadius(10)
+      .padding({ left: RR_SP_XL, right: RR_SP_XL, top: RR_SP_MD, bottom: RR_SP_MD })
+      .borderRadius(RR_RADIUS_MD)
       .backgroundColor(this.activeGroup === name ? this.palette.text : 'rgba(0,0,0,0)')
       .borderWidth(1)
       .borderColor(this.activeGroup === name ? this.palette.text : this.palette.line)
@@ -414,11 +415,11 @@ struct Index {
   @Builder
   statusChip(label: string, status: string) {
     Text(label)
-      .fontSize(11)
+      .fontSize(RR_FS_META)
       .fontFamily('monospace')
       .fontColor(this.statusFilter === status ? this.palette.bg : this.palette.text3)
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-      .borderRadius(10)
+      .padding({ left: RR_SP_XL, right: RR_SP_XL, top: RR_SP_MD, bottom: RR_SP_MD })
+      .borderRadius(RR_RADIUS_MD)
       .backgroundColor(this.statusFilter === status ? this.palette.text : 'rgba(0,0,0,0)')
       .borderWidth(1)
       .borderColor(this.statusFilter === status ? this.palette.text : this.palette.line)
@@ -436,7 +437,7 @@ struct Index {
       Column({ space: 12 }) {
         if (this.editorMode === MODE_MENU) {
           Text('管理这本书')
-            .fontSize(14)
+            .fontSize(RR_FS_BODY)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.palette.text)
             .alignSelf(ItemAlign.Start)
@@ -445,33 +446,33 @@ struct Index {
           this.menuButton('移除', MODE_DELETE)
         } else if (this.editorMode === MODE_DELETE) {
           Text('移除这本书？')
-            .fontSize(14)
+            .fontSize(RR_FS_BODY)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.palette.text)
             .alignSelf(ItemAlign.Start)
           Text('只会从书架移除，不会删除你的原文件。')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
             .alignSelf(ItemAlign.Start)
           Row({ space: 10 }) {
             // 视觉约 29vp（13pt 文字 + 上下 8 padding），热区补到 44
             Text('取消')
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.text3)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
-              .padding({ top: 8, bottom: 8 })
+              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .borderWidth(1)
               .borderColor(this.palette.line)
               .accessibilityText('取消')
               .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
               .onClick(() => this.closeEditor())
             Text('移除')
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.bg)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
-              .padding({ top: 8, bottom: 8 })
+              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .backgroundColor(this.palette.red)
               .accessibilityText('移除这本书')
               .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
@@ -491,12 +492,12 @@ struct Index {
           .width('100%')
         } else {
           Text(this.editorMode === MODE_RENAME ? '重命名' : '移动到分组')
-            .fontSize(14)
+            .fontSize(RR_FS_BODY)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.palette.text)
             .alignSelf(ItemAlign.Start)
           TextInput({ placeholder: this.editorMode === MODE_RENAME ? '书名' : '分组名', text: this.editorText })
-            .fontSize(14)
+            .fontSize(RR_FS_BODY)
             .fontColor(this.palette.text)
             .backgroundColor(this.palette.bg)
             .borderWidth(1)
@@ -508,14 +509,14 @@ struct Index {
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(this.groups, (g: string) => {
                 Text(g === GROUP_UNFILED ? '移出分组' : g)
-                  .fontSize(11)
+                  .fontSize(RR_FS_META)
                   .fontFamily('monospace')
                   .fontColor(this.palette.text)
-                  .padding({ left: 9, right: 9, top: 5, bottom: 5 })
-                  .borderRadius(10)
+                  .padding({ left: RR_SP_LG, right: RR_SP_LG, top: RR_SP_MD, bottom: RR_SP_MD })
+                  .borderRadius(RR_RADIUS_MD)
                   .borderWidth(1)
                   .borderColor(this.palette.line)
-                  .margin({ right: 8, bottom: 8 })
+                  .margin({ right: RR_SP_LG, bottom: RR_SP_LG })
                   .onClick(() => {
                     this.editorText = g;
                   })
@@ -525,20 +526,20 @@ struct Index {
           }
           Row({ space: 10 }) {
             Text('取消')
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.text3)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
-              .padding({ top: 8, bottom: 8 })
+              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .borderWidth(1)
               .borderColor(this.palette.line)
               .onClick(() => this.closeEditor())
             Text('确定')
-              .fontSize(13)
+              .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.bg)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
-              .padding({ top: 8, bottom: 8 })
+              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .backgroundColor(this.palette.text)
               .onClick(() => {
                 this.submitEditor();
@@ -549,7 +550,7 @@ struct Index {
       }
       .width('86%')
       .padding(18)
-      .borderRadius(12)
+      .borderRadius(RR_RADIUS_CARD)
       // 用 overlay（≈92% 主题底色，**不透明**）而不是 card（3%，几乎全透明）：
       // 卡片盖在深色遮罩上，背景一透明，文字就会跟着遮罩走 ——
       // 深色主题是白字所以没事，一切到护眼主题（深褐字）就彻底看不见了（真机反馈 #5）
@@ -566,12 +567,12 @@ struct Index {
   @Builder
   menuButton(label: string, nextMode: string) {
     Text(label)
-      .fontSize(14)
+      .fontSize(RR_FS_BODY)
       // 用主题的 red（浅底上的红更深，保证「移除」这类危险操作在护眼主题下也看得清）
       .fontColor(nextMode === MODE_DELETE ? this.palette.red : this.palette.text)
       .width('100%')
       .textAlign(TextAlign.Start)
-      .padding({ top: 10, bottom: 10 })
+      .padding({ top: RR_SP_XL, bottom: RR_SP_XL })
       // 视觉约 34vp → 热区补到 44；朗读要说出菜单项名字
       .accessibilityText(label)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
@@ -608,17 +609,17 @@ struct Index {
         // 顶部
         Row() {
           Text($r('app.string.shelf_title'))
-            .fontSize(22)
+            .fontSize(RR_FS_DISPLAY)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.palette.text)
           Text(`${this.items.length} 本`)
-            .fontSize(11)
+            .fontSize(RR_FS_META)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
-            .margin({ left: 10 })
+            .margin({ left: RR_SP_XL })
           Blank()
           Text('▤')
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text)
             .width(30)
             .height(30)
@@ -627,12 +628,12 @@ struct Index {
             .borderColor(this.palette.line)
             // 视觉 30，热区 46：30vp 的点击目标太小（触摸标准 ≥44）
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
-            .margin({ left: 8 })
+            .margin({ left: RR_SP_LG })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Stats' });
             })
           Text('Aa')
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text)
             .width(30)
             .height(30)
@@ -640,12 +641,12 @@ struct Index {
             .borderWidth(1)
             .borderColor(this.palette.line)
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
-            .margin({ left: 8 })
+            .margin({ left: RR_SP_LG })
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
             })
           Text(this.busy ? '···' : '＋')
-            .fontSize(15)
+            .fontSize(RR_FS_HEADING)
             .fontColor(this.palette.text)
             .width(30)
             .height(30)
@@ -653,14 +654,14 @@ struct Index {
             .borderWidth(1)
             .borderColor(this.palette.line)
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
-            .margin({ left: 8 })
+            .margin({ left: RR_SP_LG })
             .onClick(() => {
               this.onImport();
             })
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
-        .padding({ top: 10, bottom: 14 })
+        .padding({ top: RR_SP_XL, bottom: RR_SP_2XL })
 
         // 分组筛选（只有存在两个及以上分组时才出现，避免只有「未分组」时白占一行）
         if (this.groups.length > 1) {
@@ -676,7 +677,7 @@ struct Index {
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
           .width('100%')
-          .margin({ bottom: 8 })
+          .margin({ bottom: RR_SP_LG })
         }
 
         // 阅读状态筛选（未读 / 在读 / 已读）
@@ -688,7 +689,7 @@ struct Index {
             this.statusChip('已读', STATUS_DONE)
           }
           .width('100%')
-          .margin({ bottom: 12 })
+          .margin({ bottom: RR_SP_2XL })
         }
 
         // 继续阅读只在「全部」时显示：它是快捷入口，不是列表项 ——
@@ -707,10 +708,10 @@ struct Index {
           // 主句讲"本地、不上传"，副句讲"断网完整"，两句合起来才是完整的承诺。
           Column({ space: 8 }) {
             Text('书在你手上，哪儿也不去')
-              .fontSize(14)
+              .fontSize(RR_FS_BODY)
               .fontColor(this.palette.text2)
             Text('断网也能读完整本书')
-              .fontSize(11)
+              .fontSize(RR_FS_META)
               .fontColor(this.palette.text3)
           }
           .width('100%')
@@ -724,19 +725,19 @@ struct Index {
                   Column({ space: 6 }) {
                     this.bookCover(item.book, 88)
                     Text(item.book.title)
-                      .fontSize(11.5)
+                      .fontSize(RR_FS_META)
                       .fontColor(this.palette.text)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                     this.cellBar(item.percent, 2)
                     Row() {
                       Text(item.book.format.toUpperCase())
-                        .fontSize(9)
+                        .fontSize(RR_FS_MICRO)
                         .fontFamily('monospace')
                         .fontColor(this.palette.text3)
                       Blank()
                       Text(percentText(item.percent))
-                        .fontSize(9)
+                        .fontSize(RR_FS_MICRO)
                         .fontFamily('monospace')
                         .fontColor(this.palette.text3)
                     }
@@ -764,17 +765,17 @@ struct Index {
 
         Row() {
           Text('LOCAL ONLY')
-            .fontSize(9)
+            .fontSize(RR_FS_MICRO)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
         }
         .width('100%')
-        .padding({ bottom: 16, top: 8 })
+        .padding({ bottom: RR_SP_3XL, top: RR_SP_LG })
       }
       .width('100%')
       .height('100%')
       .backgroundColor(this.palette.bg)
-      .padding({ left: 22, right: 22 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
 
       if (this.editorMode !== MODE_NONE) {
         this.editorPanel()
@@ -859,38 +860,38 @@ struct Index {
 
       Column() {
         Text('PRIVACY')
-          .fontSize(10)
+          .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
-          .margin({ bottom: 10 })
+          .margin({ bottom: RR_SP_XL })
 
         Text('关于你的隐私')
-          .fontSize(17)
+          .fontSize(RR_FS_TITLE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.palette.text)
-          .margin({ bottom: 14 })
+          .margin({ bottom: RR_SP_2XL })
 
         // 审查报告 B25：四条要点必须显式设色 —— 系统默认色在深色遮罩上是黑字对黑底
         Column() {
           Text('· 不收集任何个人信息，没有账号、没有登录')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
-            .margin({ bottom: 6 })
+            .margin({ bottom: RR_SP_MD })
           Text('· 书籍与进度只存在你的设备里，不上传')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
-            .margin({ bottom: 6 })
+            .margin({ bottom: RR_SP_MD })
           Text('· 不申请任何权限，不具备联网能力')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
-            .margin({ bottom: 6 })
+            .margin({ bottom: RR_SP_MD })
           Text('· 卸载应用即删除全部数据')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
         }
         .alignItems(HorizontalAlign.Start)
         .width('100%')
-        .margin({ bottom: 16 })
+        .margin({ bottom: RR_SP_3XL })
 
         /**
          * ⚠️ 审核点名的**空白复选框**（默认不勾）。
@@ -908,20 +909,20 @@ struct Index {
               hilog.info(DOMAIN, TAG, 'privacy checkbox => %{public}s', String(checked));
             })
           Text('我已阅读并同意上述隐私政策')
-            .fontSize(12)
+            .fontSize(RR_FS_META)
             .fontColor(this.palette.text2)
-            .margin({ left: 10 })
+            .margin({ left: RR_SP_XL })
             .layoutWeight(1)
             .onClick(() => {
               this.privacyChecked = !this.privacyChecked;
             })
         }
         .width('100%')
-        .margin({ bottom: 12 })
+        .margin({ bottom: RR_SP_2XL })
 
         // 「查看完整版」独占一行、文字态：让人先把条款读完再决定，但不抢「同意」的权重
         Button('查看完整版', { type: ButtonType.Normal, stateEffect: true })
-          .fontSize(12)
+          .fontSize(RR_FS_META)
           .fontColor(this.palette.text3)
           .backgroundColor(Color.Transparent)
           .width('100%')
@@ -936,11 +937,11 @@ struct Index {
            * 描边态而非实心红 —— 用户不该被吓到，只是需要一条真实存在的拒绝路径。
            */
           Button('拒绝', { type: ButtonType.Normal, stateEffect: true })
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text2)
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: this.palette.line })
-            .borderRadius(6)
+            .borderRadius(RR_RADIUS_SM)
             .height(40)
             .layoutWeight(1)
             .onClick(() => {
@@ -951,11 +952,11 @@ struct Index {
            * 置灰的对比度与读屏"已停用"由系统给，比手动改透明度更合规。
            */
           Button('同意', { type: ButtonType.Normal, stateEffect: true })
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.palette.bg)
             .backgroundColor(this.palette.text)
-            .borderRadius(6)
+            .borderRadius(RR_RADIUS_SM)
             .height(40)
             .layoutWeight(1)
             .enabled(this.privacyChecked)
@@ -964,13 +965,13 @@ struct Index {
             })
         }
         .width('100%')
-        .margin({ top: 8 })
+        .margin({ top: RR_SP_LG })
       }
       .width('86%')
-      .padding({ left: 22, right: 22, top: 24, bottom: 22 })
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_5XL, bottom: RR_SP_4XL })
       // 审查报告 B25：card 色 alpha≈3%，压在黑遮罩上等于没有底色 —— 用不透明的 bg 色
       .backgroundColor(this.palette.bg)
-      .borderRadius(14)
+      .borderRadius(RR_RADIUS_CARD)
       .border({ width: 1, color: this.palette.line })
     }
     .width('100%')

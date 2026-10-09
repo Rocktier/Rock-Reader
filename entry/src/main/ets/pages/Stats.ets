@@ -12,6 +12,7 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookRecord } from '../common/Types';
 import { byBook, BookTotal, dailyMs, durationText, msOfDay, ReadSession, streakDays, totalMs } from '../engine/stats/ReadStats';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_RADIUS_CARD } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -108,24 +109,24 @@ struct Stats {
   metricCard(label: string, value: string, hint: string) {
     Column() {
       Text(label)
-        .fontSize(10)
+        .fontSize(RR_FS_DIGIT)
         .fontFamily('monospace')
         .fontColor(this.palette.text3)
       Text(value)
-        .fontSize(22)
+        .fontSize(RR_FS_DISPLAY)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.palette.text)
-        .margin({ top: 6 })
+        .margin({ top: RR_SP_MD })
       Text(hint)
-        .fontSize(9)
+        .fontSize(RR_FS_MICRO)
         .fontFamily('monospace')
         .fontColor(this.palette.text3)
-        .margin({ top: 4 })
+        .margin({ top: RR_SP_SM })
     }
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
     .padding(14)
-    .borderRadius(12)
+    .borderRadius(RR_RADIUS_CARD)
     .backgroundColor(this.palette.card)
     .borderWidth(1)
     .borderColor(this.palette.line)
@@ -136,7 +137,7 @@ struct Stats {
       // 顶部
       Row() {
         Text('‹')
-          .fontSize(20)
+          .fontSize(RR_FS_TITLE)
           .fontColor(this.palette.text)
           .width(30)
           .height(30)
@@ -148,24 +149,24 @@ struct Stats {
             this.getUIContext().getRouter().back();
           })
         Text('阅读统计')
-          .fontSize(18)
+          .fontSize(RR_FS_TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.palette.text)
-          .margin({ left: 12 })
+          .margin({ left: RR_SP_2XL })
         Blank()
         Text(`${WINDOW_DAYS} 天`)
-          .fontSize(9)
+          .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ top: 10, bottom: 16 })
+      .padding({ top: RR_SP_XL, bottom: RR_SP_3XL })
 
       if (this.loading) {
         Column() {
           Text('···')
-            .fontSize(13)
+            .fontSize(RR_FS_LABEL)
             .fontColor(this.palette.text3)
         }
         .width('100%')
@@ -186,12 +187,12 @@ struct Stats {
               this.metricCard('会话', this.sessionCount + ' 次', '3 秒以上')
             }
             .width('100%')
-            .margin({ top: 10 })
+            .margin({ top: RR_SP_XL })
 
             // 近 7 天柱状
             Column() {
               Text(`近 ${CHART_DAYS} 天`)
-                .fontSize(10)
+                .fontSize(RR_FS_DIGIT)
                 .fontFamily('monospace')
                 .fontColor(this.palette.text3)
                 .alignSelf(ItemAlign.Start)
@@ -213,12 +214,12 @@ struct Stats {
               .width('100%')
               .height(BAR_MAX_VP)
               .alignItems(VerticalAlign.Bottom)
-              .margin({ top: 10 })
+              .margin({ top: RR_SP_XL })
 
               Row() {
                 ForEach(this.week, (ms: number, i: number) => {
                   Text(i === this.week.length - 1 ? '今天' : `${this.week.length - 1 - i}天前`)
-                    .fontSize(8)
+                    .fontSize(RR_FS_MICRO)
                     .fontFamily('monospace')
                     .fontColor(this.palette.text3)
                     .layoutWeight(1)
@@ -226,21 +227,21 @@ struct Stats {
                 }, (ms: number, i: number) => 'lb' + i)
               }
               .width('100%')
-              .margin({ top: 6 })
+              .margin({ top: RR_SP_MD })
             }
             .width('100%')
             .padding(14)
-            .borderRadius(12)
+            .borderRadius(RR_RADIUS_CARD)
             .backgroundColor(this.palette.card)
             .borderWidth(1)
             .borderColor(this.palette.line)
-            .margin({ top: 10 })
+            .margin({ top: RR_SP_XL })
 
             // 每本书
             if (this.rows.length > 0) {
               Column() {
                 Text('读得最多的书')
-                  .fontSize(10)
+                  .fontSize(RR_FS_DIGIT)
                   .fontFamily('monospace')
                   .fontColor(this.palette.text3)
                   .alignSelf(ItemAlign.Start)
@@ -248,34 +249,34 @@ struct Stats {
                 ForEach(this.rows, (row: BookStatRow) => {
                   Row() {
                     Text(row.title)
-                      .fontSize(12.5)
+                      .fontSize(RR_FS_LABEL)
                       .fontColor(this.palette.text)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .layoutWeight(1)
                     Text(durationText(row.ms))
-                      .fontSize(11)
+                      .fontSize(RR_FS_META)
                       .fontFamily('monospace')
                       .fontColor(this.palette.text3)
                   }
                   .width('100%')
-                  .padding({ top: 10 })
+                  .padding({ top: RR_SP_XL })
                 }, (row: BookStatRow) => row.title + row.ms)
               }
               .width('100%')
               .padding(14)
-              .borderRadius(12)
+              .borderRadius(RR_RADIUS_CARD)
               .backgroundColor(this.palette.card)
               .borderWidth(1)
               .borderColor(this.palette.line)
-              .margin({ top: 10 })
+              .margin({ top: RR_SP_XL })
             }
 
             Text('全部数据都在你的设备上，不上传、不联网')
-              .fontSize(9.5)
+              .fontSize(RR_FS_MICRO)
               .fontFamily('monospace')
               .fontColor(this.palette.text3)
-              .margin({ top: 16, bottom: 20 })
+              .margin({ top: RR_SP_3XL, bottom: RR_SP_4XL })
           }
           .width('100%')
         }
@@ -286,6 +287,6 @@ struct Stats {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
-    .padding({ left: 22, right: 22 })
+    .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
   }
 }
