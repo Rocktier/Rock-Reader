@@ -405,6 +405,7 @@ struct Index {
       .borderWidth(1)
       .borderColor(this.activeGroup === name ? this.palette.text : this.palette.line)
       // 视觉约 21vp（11pt + 上下 5 padding），远小于触摸标准 44 → 热区必须撑开
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(`分组 ${name}`)
       .responseRegion({ x: 0, y: -12, width: '100%', height: 44 })
       .onClick(() => {
@@ -424,6 +425,7 @@ struct Index {
       .borderWidth(1)
       .borderColor(this.statusFilter === status ? this.palette.text : this.palette.line)
       // 同 groupChip：视觉约 21vp，热区撑到 44；朗读要说出筛选名
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(`筛选 ${label}`)
       .responseRegion({ x: 0, y: -12, width: '100%', height: 44 })
       .onClick(() => {
@@ -464,6 +466,7 @@ struct Index {
               .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .borderWidth(1)
               .borderColor(this.palette.line)
+              .stateStyles({ pressed: { opacity: 0.6 } })
               .accessibilityText('取消')
               .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
               .onClick(() => this.closeEditor())
@@ -474,6 +477,7 @@ struct Index {
               .textAlign(TextAlign.Center)
               .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .backgroundColor(this.palette.red)
+              .stateStyles({ pressed: { opacity: 0.6 } })
               .accessibilityText('移除这本书')
               .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
               .onClick(() => {
@@ -525,22 +529,42 @@ struct Index {
             .width('100%')
           }
           Row({ space: 10 }) {
-            Text('取消')
+            /**
+             * 这里从 `Text` + `onClick` 换成真`Button`（2026-10-09，审核后无障碍整改）。
+             *
+             * 为什么这一处值得换：它是**对话框的动作按钮**，语义就是按钮。
+             * 换来的收益都是真实的：读屏报"按钮"而非普通文本、有按压反馈
+             * （`stateEffect: true`）、天生长出无障碍焦点、禁用态语义正确。
+             *
+             * ⚠️ `ButtonType.Normal` **必须显式写死**：默认值在 **API 18 变过**
+             *   （<18 = Capsule，≥18 = ROUNDED_RECTANGLE）。本应用覆盖 API 16~20，
+             *   不写死则 16/17 与 18+ 设备的按钮形状不同 ⇒ 同一款应用两种长相。
+             *
+             * ⚠️ 用固定`height` 而非原来的上下 `padding`：Button 自带内边距，
+             *   沿用 padding 会把高度撑成两倍。34vp 是本应用既有的控件高度
+             *   （代码里原本就有 11 处在用），不是新造的尺寸。
+             *
+             * 不换的：书架行 / 菜单项 / 芯片 —— 它们已有 `accessibilityText`
+             *   + `responseRegion`（朗读标签与 44vp 热区都齐了），换 Button
+             *   无障碍零增益却要重排布局，性价比不对等。
+             */
+            Button('取消', { type: ButtonType.Normal, stateEffect: true })
               .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.text3)
+              .backgroundColor(Color.Transparent)
               .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
+              .height(34)
               .borderWidth(1)
               .borderColor(this.palette.line)
+              .borderRadius(RR_RADIUS_MD)
               .onClick(() => this.closeEditor())
-            Text('确定')
+            Button('确定', { type: ButtonType.Normal, stateEffect: true })
               .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.bg)
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-              .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
               .backgroundColor(this.palette.text)
+              .layoutWeight(1)
+              .height(34)
+              .borderRadius(RR_RADIUS_MD)
               .onClick(() => {
                 this.submitEditor();
               })
@@ -574,6 +598,7 @@ struct Index {
       .textAlign(TextAlign.Start)
       .padding({ top: RR_SP_XL, bottom: RR_SP_XL })
       // 视觉约 34vp → 热区补到 44；朗读要说出菜单项名字
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(label)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => {
@@ -746,6 +771,7 @@ struct Index {
                   .width('100%')
                   // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
                   // 审查报告 B28：管理操作只有长按手势，读屏用户不可达 —— 文案里明确告知
+                  .stateStyles({ pressed: { opacity: 0.6 } })
                   .accessibilityText(item.book.title + '，长按可重命名、分组或移除')
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))

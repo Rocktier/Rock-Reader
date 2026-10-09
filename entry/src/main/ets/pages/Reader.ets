@@ -109,6 +109,7 @@ struct ChapterItem {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         // 无障碍：屏幕阅读器要能读出章名（AGC 审核会查）
+        .stateStyles({ pressed: { opacity: 0.6 } })
         .accessibilityText(this.title)
         .layoutWeight(1)
     }
@@ -905,6 +906,7 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
           .accessibilityText('上一章')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex - 1))
@@ -914,6 +916,7 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
           .accessibilityText('目录')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => {
@@ -925,6 +928,7 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
           .accessibilityText('排版设置')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => {
@@ -936,6 +940,7 @@ struct Reader {
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
           .accessibilityText('下一章')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex + 1))
@@ -1083,6 +1088,7 @@ struct Reader {
           .height(34)
           .textAlign(TextAlign.Center)
           // 视觉 44×34：宽度已达标，高度差 10 → 热区上下各撑 5 补到 44
+          .stateStyles({ pressed: { opacity: 0.6 } })
           .accessibilityText(`${this.kindLabel(kind)} ${n}`)
           .responseRegion({ x: 0, y: -5, width: 44, height: 44 })
           .onClick(() => this.pickLevel(kind, n))
@@ -1124,6 +1130,7 @@ struct Reader {
       .height(34)
       .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
       .textAlign(TextAlign.Center)
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(`主题 ${themeLabel(theme)}`)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickTheme(theme))
@@ -1141,6 +1148,7 @@ struct Reader {
       .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
       .textAlign(TextAlign.Center)
       .maxLines(1)
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(`字体 ${label}`)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickFont(family))
@@ -1232,6 +1240,7 @@ struct Reader {
         .width('100%')
         .height(48)
         .textAlign(TextAlign.Center)
+        .stateStyles({ pressed: { opacity: 0.6 } })
         .accessibilityText('更多设置')
         .onClick(() => {
           this.showSettings = false;

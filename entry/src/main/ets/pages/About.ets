@@ -94,6 +94,7 @@ struct About {
     // 全页只有一个条目时再画下边框，看起来像被截断的列表。
     .onClick(() => onClick())
     .responseRegion({ x: 0, y: -4, width: '100%', height: 52 })
+    .stateStyles({ pressed: { opacity: 0.6 } })
     .accessibilityText(label + '，' + note)
   }
 

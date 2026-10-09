@@ -233,6 +233,7 @@ struct Settings {
               .height(CHIP_HEIGHT)
               .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
               // 视觉 CHIP_HEIGHT(34) < 触摸标准 44 → 热区上下各撑 5；朗读要说出"简繁 不转换"
+              .stateStyles({ pressed: { opacity: 0.6 } })
               .accessibilityText(`简繁 ${it[1]}`)
               .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
               .onClick(() => this.pickConvert(it[0]))
@@ -259,6 +260,7 @@ struct Settings {
       .borderRadius(RR_RADIUS_COVER)
       .height(CHIP_HEIGHT)
       .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
+      .stateStyles({ pressed: { opacity: 0.6 } })
       .accessibilityText(`字体 ${label}`)
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickFont(family))
