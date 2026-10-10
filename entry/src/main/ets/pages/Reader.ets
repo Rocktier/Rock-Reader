@@ -98,7 +98,8 @@ struct ChapterItem {
   @Prop current: boolean = false;
   @Prop textColor: string = '';
   @Prop text2Color: string = '';
-  @Prop redColor: string = '';
+  /** 当前章的强调色竖条（原家族红，2026-10-10 随原生化改为官方系统蓝） */
+  @Prop accentColor: string = '';
   private onJump: (index: number) => void = () => {};
 
   build() {
@@ -115,12 +116,12 @@ struct ChapterItem {
     }
     .width('100%')
     .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_2XL, bottom: RR_SP_2XL })
-    // 当前章 = 左侧红竖条。原来的序号列去掉了：它是"第几个条目"，与章名里作者写的
-    // 「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
+    // 当前章 = 左侧强调色竖条（原家族红 → 官方系统蓝）。原来的序号列去掉了：它是"第几个条目"，
+    // 与章名里作者写的「第N章」并列时数字对不上（版权页/序章也占号），真机反馈 #4 —— 只看数字必被误导；
     // 真实的位置指示由页脚 16/182 承担。
     .border({
       width: { left: 3 },
-      color: this.current ? this.redColor : Color.Transparent
+      color: this.current ? this.accentColor : Color.Transparent
     })
     .onClick(() => this.onJump(this.index))
   }
@@ -850,6 +851,8 @@ struct Reader {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.palette.text)
         .maxLines(1)
+        // 与书架卡片书名的共享元素转场（同 id）；book 还是 null 时 id 配不上，退化为普通转场，不崩
+        .sharedTransition('rr-title-' + (this.book !== null ? this.book.id : ''), { duration: 300 })
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: RR_SP_MD })
         .layoutWeight(1)
@@ -998,7 +1001,7 @@ struct Reader {
           .fontColor(this.palette.text)
           .placeholderColor(this.palette.text3)
           .placeholderFont({ size: 12.5 })
-          .caretColor(this.palette.red)
+          .caretColor(this.palette.accent)
           .backgroundColor(Color.Transparent)
           .borderRadius(RR_RADIUS_COVER)
           .padding(0)
@@ -1039,7 +1042,7 @@ struct Reader {
                 current: item.index === this.chapterIndex,
                 textColor: this.palette.text,
                 text2Color: this.palette.text2,
-                redColor: this.palette.red,
+                accentColor: this.palette.accent,
                 onJump: (i: number) => this.jumpToChapter(i)
               })
             }

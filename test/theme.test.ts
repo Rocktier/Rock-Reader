@@ -67,7 +67,7 @@ function contrast(fg: string, bg: string): number {
 }
 
 test('四个主题都有完整色板（没有缺失字段）', () => {
-  const keys: string[] = ['bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'red', 'card', 'cover', 'overlay'];
+  const keys: string[] = ['bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'accent', 'card', 'cover', 'overlay'];
   for (const t of THEMES) {
     const p = paletteOf(t) as unknown as Record<string, string>;
     for (const k of keys) {
@@ -94,11 +94,11 @@ test('text2 / text3 对比度 ≥ 4.5:1（AA —— 页码、章节号是功能�
   }
 });
 
-test('红点对比度 ≥ 4:1（强调色、非正文；护眼底上要做到不比浅色主题差）', () => {
+test('强调色对比度 ≥ 4:1（accent、非正文；护眼底上要做到不比浅色主题差）', () => {
   for (const t of THEMES) {
     const p = paletteOf(t);
-    const c: number = contrast(p.red, p.bg);
-    assert.ok(c >= 4, `${t}.red 只有 ${c.toFixed(2)}:1`);
+    const c: number = contrast(p.accent, p.bg);
+    assert.ok(c >= 4, `${t}.accent 只有 ${c.toFixed(2)}:1`);
   }
 });
 

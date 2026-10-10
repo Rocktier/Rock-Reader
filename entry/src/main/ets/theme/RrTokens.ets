@@ -102,14 +102,21 @@ export const RR_SP_TOP: number = 80;
  * 圆角阶（vp）
  * ================================================================== */
 
-/** **书封面 0 圆角** —— v1-design §8 已确认决定 1：矩形更像书 */
-export const RR_RADIUS_COVER: number = 0;
+/**
+ * ⚠️ 2026-10-10 原生化：圆角改为**华为官方五档**（《圆角参数-视觉风格-手机/折叠屏/平板》：
+ * 通用超小 4vp / 小 8vp / 中 12vp / 大 16vp / 超大 24vp）。
+ * 旧值是 0 / 6 / 10 / 12 —— 6、10、0 都不落在官方档位上（Nothing 风的"零圆角更像书"），
+ * 原生化后统一取官方刻度。
+ */
 
-/** 小元素（缩略图、chip） */
-export const RR_RADIUS_SM: number = 6;
+/** **书封面**：官方超小圆角 4vp（原 0 直角是 Nothing 风决定，随原生化改为 4） */
+export const RR_RADIUS_COVER: number = 4;
 
-/** 输入框 / 内联控件 */
-export const RR_RADIUS_MD: number = 10;
+/** 小元素（缩略图、chip）—— 官方小圆角 8vp */
+export const RR_RADIUS_SM: number = 8;
 
-/** **卡片 / 面板 / 浮层** —— v1-design §8 已确认决定 1：12 */
-export const RR_RADIUS_CARD: number = 12;
+/** 输入框 / 内联控件 —— 官方中圆角 12vp */
+export const RR_RADIUS_MD: number = 12;
+
+/** **卡片 / 面板 / 浮层** —— 官方大圆角 16vp */
+export const RR_RADIUS_CARD: number = 16;

@@ -98,6 +98,10 @@ struct Index {
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
   private theme: ThemeName = THEME_DARK;
+  /** 页面当前是否在前台 —— 后台时 @State 变更不触发重渲染，进度信号要等可见再补拉 */
+  private visible: boolean = false;
+  /** 不可见期间收到过进度保存信号 → onPageShow 时补一次重拉 */
+  private pendingReload: boolean = false;
 
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
@@ -120,11 +124,17 @@ struct Index {
 
   /** 阅读页进度写库完成 → 重拉书架数据（修"返回书架进度不刷新"，审核驳回第 3 条） */
   onProgressSaved(): void {
-    hilog.info(DOMAIN, TAG, 'onProgressSaved fired, reloading shelf');
-    this.load();
+    hilog.info(DOMAIN, TAG, 'onProgressSaved fired, visible=%{public}s', String(this.visible));
+    if (this.visible) {
+      this.load();
+    } else {
+      // 页面不可见时 load() 就算拿到新值也不重渲染（ArkUI 行为）→ 攒着，等 onPageShow 补拉
+      this.pendingReload = true;
+    }
   }
 
   onPageShow(): void {
+    this.visible = true;
     // 从设置页返回：主题可能改了
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
@@ -133,6 +143,25 @@ struct Index {
     // 以前只在 aboutToAppear 里 load 过一次，从阅读页返回书架时进度条不刷新，
     // 要杀掉应用重进才更新 —— 审核员实测到了。本地数据库查一次很快，直接重查最稳。
     this.load();
+    // 补拉：不可见期间攒下的进度信号（见 onProgressSaved）
+    if (this.pendingReload) {
+      this.pendingReload = false;
+      this.load();
+    }
+    // **双保险**：阅读页 onPageHide 的写库是**异步**的（Promise.all 完成后才发信号），
+    // 上面这次 load() 很可能跑在写库前面 → 读到旧进度，表现为"进度条不刷新、要切页才更新"
+    // （华为 HarmonyOS 7 / API 26 实测到）。短延后再查一次，确保读库落在写库之后。
+    setTimeout(() => {
+      if (!this.visible) {
+        return;
+      }
+      hilog.info(DOMAIN, TAG, 'onPageShow deferred reload fired');
+      this.load();
+    }, 80);
+  }
+
+  onPageHide(): void {
+    this.visible = false;
   }
 
   private applyTheme(): void {
@@ -349,43 +378,59 @@ struct Index {
     }
   }
 
+  /**
+   * 「继续阅读」卡片。
+   *
+   * ⚠️ **必须无参、在 Builder 内部读 `this.resume`** —— @Builder **按值传参不驱动刷新**
+   * （抽屉档位那个 bug 就是这么来的，见 findings；groupChip 已按同样原则修过）。
+   * 原来写成 `resumeCard(item: ShelfItem)`：load() 明明更新了 resume，卡片却仍显示旧进度
+   * —— 华为实测「返回书架后网格进度变 2%、顶部这张还是 0%，切一下筛选标签才跟上」，
+   * 就是因为切标签会强制整块重建、顺便把新值带进去。
+   */
   @Builder
-  resumeCard(item: ShelfItem) {
-    Row({ space: 14 }) {
-      this.bookCover(item.book, 58)
-      Column({ space: 6 }) {
-        // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
-        Text('继续阅读')
-          .fontSize(RR_FS_MICRO)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-          .letterSpacing(1)
-        Text(item.book.title)
-          .fontSize(RR_FS_HEADING)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.palette.text)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(item.book.format.toUpperCase())
-          .fontSize(RR_FS_DIGIT)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-        this.cellBar(item.percent, 2)
-        Text(percentText(item.percent))
-          .fontSize(RR_FS_MICRO)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
+  resumeCard() {
+    if (this.resume !== null) {
+      Row({ space: 14 }) {
+        this.bookCover(this.resume.book, 58)
+        Column({ space: 6 }) {
+          // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
+          Text('继续阅读')
+            .fontSize(RR_FS_MICRO)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .letterSpacing(1)
+          Text(this.resume.book.title)
+            .fontSize(RR_FS_HEADING)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.palette.text)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.resume.book.format.toUpperCase())
+            .fontSize(RR_FS_DIGIT)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+          this.cellBar(this.resume.percent, 2)
+          Text(percentText(this.resume.percent))
+            .fontSize(RR_FS_MICRO)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
       }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
+      .width('100%')
+      .padding(14)
+      .borderRadius(RR_RADIUS_CARD)
+      .backgroundColor(this.palette.card)
+      .borderWidth(1)
+      .borderColor(this.palette.line)
+      // 闭包里类型窄化不算数（延迟执行），这里再判一次空
+      .onClick(() => {
+        if (this.resume !== null) {
+          this.openBook(this.resume.book);
+        }
+      })
     }
-    .width('100%')
-    .padding(14)
-    .borderRadius(RR_RADIUS_CARD)                      // 卡片 12 圆角
-    .backgroundColor(this.palette.card)
-    .borderWidth(1)
-    .borderColor(this.palette.line)
-    .onClick(() => this.openBook(item.book))
   }
 
   @Builder
@@ -476,7 +521,7 @@ struct Index {
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
               .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
-              .backgroundColor(this.palette.red)
+              .backgroundColor(this.palette.accent)
               .stateStyles({ pressed: { opacity: 0.6 } })
               .accessibilityText('移除这本书')
               .responseRegion({ x: 0, y: -8, width: '100%', height: 44 })
@@ -558,10 +603,14 @@ struct Index {
               .borderColor(this.palette.line)
               .borderRadius(RR_RADIUS_MD)
               .onClick(() => this.closeEditor())
+            // 主行动：官方 `ButtonStyleMode.EMPHASIZED`（语义就是"指向最重要任务的按钮"）
+            // + 官方系统蓝实心。字色仍用 palette.bg —— 深蓝上黑字 5.25:1、浅蓝上白字 5.56:1，
+            // 都比固定白字（深蓝上仅 4.0:1）更清楚。
             Button('确定', { type: ButtonType.Normal, stateEffect: true })
+              .buttonStyle(ButtonStyleMode.EMPHASIZED)
               .fontSize(RR_FS_LABEL)
               .fontColor(this.palette.bg)
-              .backgroundColor(this.palette.text)
+              .backgroundColor(this.palette.accent)
               .layoutWeight(1)
               .height(34)
               .borderRadius(RR_RADIUS_MD)
@@ -593,7 +642,7 @@ struct Index {
     Text(label)
       .fontSize(RR_FS_BODY)
       // 用主题的 red（浅底上的红更深，保证「移除」这类危险操作在护眼主题下也看得清）
-      .fontColor(nextMode === MODE_DELETE ? this.palette.red : this.palette.text)
+      .fontColor(nextMode === MODE_DELETE ? this.palette.accent : this.palette.text)
       .width('100%')
       .textAlign(TextAlign.Start)
       .padding({ top: RR_SP_XL, bottom: RR_SP_XL })
@@ -722,7 +771,7 @@ struct Index {
         // 筛「未读」时顶部还杵着一张在读的书，会让人以为状态判定错了（真机反馈 #2：
         // 用户正是因此以为那本 EPUB 同时出现在未读/在读/已读里）
         if (this.resume !== null && this.activeGroup === GROUP_ALL && this.statusFilter === STATUS_ALL) {
-          this.resumeCard(this.resume)
+          this.resumeCard()
           Row()
             .height(14)
         }
@@ -755,6 +804,9 @@ struct Index {
                       .fontColor(this.palette.text)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      // 原生化：与阅读页顶部书名的**共享元素转场**（官方 sharedTransition）。
+                      // 只给网格卡片加 —— 「继续阅读」卡片也有书名，同 id 会冲突。
+                      .sharedTransition('rr-title-' + item.book.id, { duration: 300 })
                     this.cellBar(item.percent, 2)
                     Row() {
                       Text(item.book.format.toUpperCase())
@@ -980,10 +1032,11 @@ struct Index {
            * 置灰的对比度与读屏"已停用"由系统给，比手动改透明度更合规。
            */
           Button('同意', { type: ButtonType.Normal, stateEffect: true })
+            .buttonStyle(ButtonStyleMode.EMPHASIZED)
             .fontSize(RR_FS_LABEL)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.palette.bg)
-            .backgroundColor(this.palette.text)
+            .backgroundColor(this.palette.accent)
             .borderRadius(RR_RADIUS_SM)
             .height(40)
             .layoutWeight(1)
