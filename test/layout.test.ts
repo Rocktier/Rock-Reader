@@ -8,13 +8,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  BP_LARGE_VP,
+  BP_SMALL_VP,
   clampLevel,
   clampWeightLevel,
   fontSizeFpOf,
   fontWeightOf,
   layoutKey,
   lineHeightRatioOf,
-  marginVpOf
+  marginVpOf,
+  MAX_LINE_CHARS,
+  readingMarginOf,
+  shelfColsOf
 } from '../entry/src/main/ets/common/LayoutStyle.ets';
 
 test('档位表：字号 14/16/18/20/22 fp，默认档 3 = 18', () => {
@@ -70,4 +75,46 @@ test('layoutKey：换字重必须变（加粗会改字宽与断行，沿用旧�
   const bold = { fontSizeLevel: 3, lineHeightLevel: 3, marginLevel: 3, fontWeightLevel: 3 };
   assert.notEqual(base, layoutKey(bold, 54, 102.6, 900, ''));
   assert.equal(base, layoutKey(lv, 54, 102.6, 900, ''));
+});
+
+// ── P0-5 大屏适配（纯逻辑守门）────────────────────────────────────────
+// 模拟器 shell 没有 wm 命令改不了分辨率，断点靠单测守 —— 改错档位这里直接红。
+
+test('书架断点：手机 3 列 / 平板竖屏 4 列 / 平板横屏 6 列', () => {
+  assert.equal(shelfColsOf(360), 3, '典型手机竖屏');
+  assert.equal(shelfColsOf(419), 3, '本模拟器宽度档');
+  assert.equal(shelfColsOf(BP_SMALL_VP - 1), 3, '断点前一格仍是 3 列');
+  assert.equal(shelfColsOf(BP_SMALL_VP), 4, '断点值本身算大屏');
+  assert.equal(shelfColsOf(800), 4, '平板竖屏');
+  assert.equal(shelfColsOf(BP_LARGE_VP), 6, '断点值本身算大屏');
+  assert.equal(shelfColsOf(1280), 6, '平板横屏/折叠屏展开');
+});
+
+test('阅读版心：手机竖屏不封顶（边距原样，行为与旧版一致）', () => {
+  // 手机 419vp，档位边距 20 ⇒ 正文 379vp；18fp 时封顶值是 630vp，到不了
+  assert.equal(readingMarginOf(419, 20, 18), 20);
+  assert.equal(readingMarginOf(419, 36, 18), 36, '大边距档也不该被改');
+});
+
+test('阅读版心：平板封顶居中（行长 ≤ MAX_LINE_CHARS 个字）', () => {
+  const m = readingMarginOf(1000, 20, 18);           // 18fp 时封顶 630vp
+  assert.ok(m > 20, '大屏必须加边距把版心收窄');
+  const contentVp = 1000 - m * 2;                    // 收窄后的正文宽度
+  assert.ok(contentVp <= 18 * MAX_LINE_CHARS + 1, `行长超限：${contentVp}vp`);
+  assert.ok(contentVp >= 18 * MAX_LINE_CHARS - 2, '别收得比上限还窄（浪费版面）');
+});
+
+test('阅读版心：行长恒定 35 字（字号越大版心越宽，不是固定像素宽）', () => {
+  const small = readingMarginOf(1000, 20, 14);       // 小字 ⇒ 35 字占得少 ⇒ 版心窄、边距大
+  const large = readingMarginOf(1000, 20, 22);       // 大字 ⇒ 35 字占得多 ⇒ 版心宽、边距小
+  assert.ok(small > large, '小字号的边距必须更大（行长字数是恒定的那一个量）');
+  assert.equal(1000 - 2 * small, 14 * MAX_LINE_CHARS);
+  assert.equal(1000 - 2 * large, 22 * MAX_LINE_CHARS);
+});
+
+test('阅读版心：超大字号+窄屏绝不给负边距（宁可行长超限也不能裁字）', () => {
+  // 40fp 时 35 字 = 1400vp，比任何屏都宽 ⇒ 必须放弃收窄
+  assert.equal(readingMarginOf(419, 20, 40), 20);
+  assert.ok(readingMarginOf(419, 20, 40) >= 0, '边距不能为负');
+  assert.equal(readingMarginOf(1000, 20, 40), 20);
 });

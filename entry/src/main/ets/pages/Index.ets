@@ -27,6 +27,7 @@ import {
   STATUS_UNREAD
 } from '../engine/shelf/ShelfRules';
 import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
+import { shelfColsOf } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER, RR_RADIUS_SM, RR_RADIUS_MD, RR_RADIUS_CARD } from '../theme/RrTokens';
@@ -894,10 +895,9 @@ struct Index {
             .rowsGap(16)
             .width('100%')
             // P0-5 平板断点：3 列是手机竖屏构图；平板上格子被拉到 200vp+ 宽，
-            // 封面和标题比例失调。按视口宽换档（600/840 为华为 breakpoint 标准档位）。
+            // 封面和标题比例失调。判定在 LayoutStyle.shelfColsOf（纯逻辑，CI 有单测守门）。
             .onAreaChange((oldValue: Area, newValue: Area) => {
-              const w: number = newValue.width as number;
-              const c: number = w >= 840 ? 6 : (w >= 600 ? 4 : 3);
+              const c: number = shelfColsOf(newValue.width as number);
               if (c !== this.shelfCols) {
                 this.shelfCols = c;
               }

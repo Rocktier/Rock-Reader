@@ -71,6 +71,45 @@ export function marginVpOf(level: number): number {
   return at(MARGIN_VP, level);
 }
 
+// ── 大屏适配（P0-5，2026-10-22）────────────────────────────────────
+// 纯逻辑、可 CI 单测（不碰 UIContext）：断点判定写在这里，
+// UI 层只传视口宽度进来取结果。理由：断点错了一眼看不见，
+// 且模拟器没有 wm 命令改分辨率验证 —— 用单测守门更可靠。
+
+/** 断点档位（vp）：华为官方 breakpoint 标准档位 */
+export const BP_SMALL_VP: number = 600;
+export const BP_LARGE_VP: number = 840;
+/** 每行的最大字数（中文）：超过后逐行扫视易丢行 */
+export const MAX_LINE_CHARS: number = 35;
+
+/** 书架网格列数：<600 = 3 列（手机竖屏）/ 600~839 = 4 列 / ≥840 = 6 列（平板横屏） */
+export function shelfColsOf(widthVp: number): number {
+  if (widthVp >= BP_LARGE_VP) {
+    return 6;
+  }
+  if (widthVp >= BP_SMALL_VP) {
+    return 4;
+  }
+  return 3;
+}
+
+/**
+ * 阅读页等效左右边距（vp）：行长超过 MAX_LINE_CHARS 个字时把版心封顶居中。
+ * 返回等效边距 —— 渲染端 padding 用它，正文宽度 = 视口宽 − 2×边距，自动收窄居中。
+ * 手机竖屏到不了封顶 ⇒ 原样返回档位边距（行为与旧版完全一致）。
+ */
+export function readingMarginOf(viewWidthVp: number, marginVp: number, fontSizeFp: number): number {
+  const contentVp: number = viewWidthVp - marginVp * 2;
+  const maxVp: number = fontSizeFp * MAX_LINE_CHARS;
+  if (contentVp <= maxVp) {
+    return marginVp;
+  }
+  // 超大字号 + 窄屏：35 个字的版心比可用宽度还宽 ⇒ 放弃收窄（否则边距为负、
+  // 正文溢出屏幕）。宁可行长超限，也不能让文字被裁掉。
+  const eff: number = Math.round((viewWidthVp - maxVp) / 2);
+  return eff > marginVp ? eff : marginVp;
+}
+
 /** 字重值（FontWeight 用的数字）。索引 = 档位 - 1 */
 const FONT_WEIGHT: number[] = [400, 500, 700];
 

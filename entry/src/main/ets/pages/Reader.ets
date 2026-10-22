@@ -27,6 +27,7 @@ import {
   LEVEL_MAX,
   lineHeightRatioOf,
   marginVpOf,
+  readingMarginOf,
   WEIGHT_MAX
 } from '../common/LayoutStyle';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
@@ -141,12 +142,6 @@ const FOOTER_VP: number = 30;
 const SPEAKER_ICON_VP: number = 28;
 /** 正文顶部留白（vp） */
 const HEADER_VP: number = 34;
-/**
- * 版心最大行长（字数，P0-5 平板适配）：排版宽度超过 字号 × 此值 时封顶居中。
- * 中文长行的可读性上限约 35 字（超过后换行扫视易丢行）；35 字在最大字号（28fp）
- * 时约 980vp —— 主流平板（10~11 寸 ≈ 700~840vp 宽）竖屏也在封顶范围内受控。
- */
-const RR_MAX_LINE_CHARS: number = 35;
 /** 每次翻页落一次进度太重 → 章内每 5 页落一次；切章 / 退出必落 */
 const PERSIST_EVERY_PAGES: number = 5;
 /** 翻页动画时长（ms）——短促，对齐 spec「动效 ≈0.2s」 */
@@ -550,17 +545,13 @@ struct Reader {
     const fontSizeFp: number = fontSizeFpOf(levels.fontSizeLevel);
     const fontSizePx: number = this.getUIContext().fp2px(fontSizeFp);
     const lineHeightPx: number = fontSizePx * lineHeightRatioOf(levels.lineHeightLevel);
-    let marginVp: number = marginVpOf(levels.marginLevel);
-    // P0-5 平板版心（2026-10-22）：行宽按「最多 RR_MAX_LINE_CHARS 个字」封顶 ——
+    // P0-5 平板版心（2026-10-22）：行宽按「最多 MAX_LINE_CHARS 个字」封顶 ——
     // 平板满屏一行 40+ 字，逐行扫视必丢行（可读性硬伤）。封顶超出部分折进
     // 等效边距（正文居中），手机竖屏到不了封顶、行为与旧版完全一致。
+    // 判定在 LayoutStyle.readingMarginOf（纯逻辑，CI 有单测守门）；
     // 测量 widthPx 与渲染 padding 同源于此，断行不会分叉。
-    let widthPx: number = this.getUIContext().vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
-    const maxLinePx: number = Math.round(fontSizePx * RR_MAX_LINE_CHARS);
-    if (widthPx > maxLinePx) {
-      widthPx = maxLinePx;
-      marginVp = Math.round((this.viewWidthVp - this.getUIContext().px2vp(maxLinePx)) / 2);
-    }
+    const marginVp: number = readingMarginOf(this.viewWidthVp, marginVpOf(levels.marginLevel), fontSizeFp);
+    const widthPx: number = this.getUIContext().vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
     const heightPx: number = this.getUIContext().vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
     return {
       fontSizeFp: fontSizeFp,
