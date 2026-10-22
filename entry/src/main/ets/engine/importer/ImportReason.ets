@@ -18,9 +18,12 @@ export function reasonText(reason: string): string {
       // 用户自己取消的，不要打扰
       return '';
     case 'NOT_SUPPORTED':
-      // 文案跟着实际支持的格式走：早先只支持 TXT/EPUB 时写死了这句话，
-      // 后来加了 HTML/MD/FB2/MOBI/AZW3 —— 报不支持却不说清支持什么，用户会以为文件坏了
-      return '这个格式不支持（TXT/EPUB/HTML/MD/FB2/MOBI/AZW3 可以）';
+      // 文案跟着实际支持的格式走（P1-9 诚实度整改，2026-10-22）：
+      // 早先写成「TXT/EPUB/HTML/MD/FB2/MOBI/AZW3 可以」，但 MOBI/AZW3 实际只支持
+      // PalmDOC/无压缩 —— HUFF/CDIC 压缩（新版 MOBI 很常见）解析时直接抛异常，
+      // 用户拿着解不开的 MOBI 来，文案却说 MOBI 可以，等于把人往坑里带。
+      // 「部分支持」不进宣传清单：能吃进去是惊喜，吃不进去不欠解释。
+      return '这个格式不支持（TXT/EPUB/HTML/MD/FB2 可以）';
     case 'TOO_LARGE':
       return '文件太大';
     case 'EMPTY':
@@ -28,7 +31,16 @@ export function reasonText(reason: string): string {
     case 'COPY_FAILED':
       return '读取文件失败';
     case 'PARSE_FAILED':
+      // 只指 book 非空的场景（书已入库但章节目录没解出来），文案与事实一致
       return '已导入，但目录解析失败';
+    case 'PARSE_CRASHED':
+      // 解析过程抛了异常、书**没有**进书架（book: null）。旧的 catch 兜底共用
+      // PARSE_FAILED，用户会看到「已导入」却找不到书 —— 说的和事实相反。
+      return '这本书读取失败（文件可能损坏或格式较新）';
+    case 'MOBI_TOO_NEW':
+      // MobiParser 抛 MOBI_UNSUPPORTED_COMPRESSION（HUFF/CDIC，新版 MOBI 常见）：
+      // 说清是"格式较新"而不是"文件坏了"，也不承诺 MOBI 整体支持（见 NOT_SUPPORTED）
+      return '这本 MOBI 用了较新的压缩方式，暂时打不开（旧版 MOBI 可以）';
     default:
       // ⚠️ 成功时 reason 就是空串，会落到这里。这里必须是"不弹"：
       // 返回任何失败文案，都会造成"导入成功却报失败"。

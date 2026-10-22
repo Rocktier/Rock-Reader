@@ -4,3 +4,14 @@
 -enable-toplevel-obfuscation
 -enable-filename-obfuscation
 -enable-export-obfuscation
+
+# ── P1-8 决策记录（2026-10-22）：本工程不需要 -keep 白名单 ──────────
+# 属性混淆只在「对象属性名被写进持久化数据、跨版本按名读回」时才致命。
+# 本工程全部持久化走两条路，都不受属性名混淆影响：
+#   1. relationalStore（BookDb）：列名是显式字符串（'id'/'title'/...），
+#      字符串字面量不参与属性混淆；
+#   2. ReaderPrefs / FontStore（Preferences）：标量 key-value，key 是显式字符串。
+# 全工程无 JSON.stringify(对象) 落盘点（grep 证：仅日志与异常）。
+# ⚠️ 例外预警：将来若给 ReaderPrefs 加结构化对象存储，或加书签/摘录的
+#    JSON 导出，必须同步补 -keep-property-whitelist（参照 RockJournal 的清单）。
+

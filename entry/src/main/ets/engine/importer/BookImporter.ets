@@ -6,6 +6,18 @@
  *     `HarmonyOS_Samples/readerkit_samplecode_arkts`（Apache-2.0）
  *   - 其余为本项目自写
  * 未借鉴：`waylau/harmonyos-tutorial`（仓库无 LICENSE = 保留所有权利，只能看 API 形态）
+ *
+ * ── P1-4 决策记录（2026-10-22）：导入解析不上 taskpool，维持主线程同步 ──
+ * 现状：parseTxtSync / parseEpub / parseMarkupSync / parseMobiSync 全在主线程
+ * 同步计算，大文件导入期间 UI 冻结（逐本 await 循环只隔离了"本与本"，单本内不切片）。
+ * 不改造的理由：
+ *   1. 导入是低频显式操作，用户预期就是"等一下"；无并发朗读/动画竞争窗口；
+ *   2. taskpool @Concurrent 要求模块级函数 + 参数/返回值全可序列化，
+ *      四个解析器 + BookRecord 大字符串数组都要过序列化边界，重构面大；
+ *   3. 回归风险（解析正确性 > 导入卡顿的体感代价）。
+ * 触发条件（满足其一再立项）：
+ *   a) 实测导入 20MB EPUB 主线程阻塞 > 2s，且用户可感知卡顿反馈；
+ *   b) 增加"导入中进度"需求（切片天然要求异步化）。
  */
 import { picker, fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
@@ -27,7 +39,7 @@ const BOOKS_DIR = 'books';
 
 export interface ImportResult {
   ok: boolean;
-  /** CANCELLED / NOT_SUPPORTED / TOO_LARGE / EMPTY / COPY_FAILED / PARSE_FAILED */
+  /** CANCELLED / NOT_SUPPORTED / TOO_LARGE / EMPTY / COPY_FAILED / PARSE_FAILED / PARSE_CRASHED / MOBI_TOO_NEW */
   reason: string;
   book: BookRecord | null;
 }
@@ -242,7 +254,14 @@ export class BookImporter {
         one = await this.importFromUri(uris[i]);
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'import one failed: %{public}s', JSON.stringify(e));
-        one = { ok: false, reason: 'PARSE_FAILED', book: null };
+        // 压缩不支持是"格式较新"而非"文件坏了"，单独认出来给准话；
+        // 其余意外统一 PARSE_CRASHED（书没进书架，不能再说"已导入"）
+        const msg: string = e instanceof Error ? e.message : String(e);
+        one = {
+          ok: false,
+          reason: msg.indexOf('MOBI_UNSUPPORTED_COMPRESSION') >= 0 ? 'MOBI_TOO_NEW' : 'PARSE_CRASHED',
+          book: null
+        };
       }
       last = one;
       if (one.ok) {

@@ -64,6 +64,8 @@ struct Index {
   @State activeGroup: string = GROUP_ALL;
   /** 阅读状态筛选（未读 / 在读 / 已读），与分组是两个独立维度 */
   @State statusFilter: string = STATUS_ALL;
+  /** 书架网格列数（P0-5 平板断点：<600vp=3 列 / 600~839=4 列 / ≥840=6 列） */
+  @State shelfCols: number = 3;
   @State resume: ShelfItem | null = null;
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
@@ -236,6 +238,15 @@ struct Index {
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'load shelf failed: %{public}s', JSON.stringify(e));
     }
+  }
+
+  /** 列数 → columnsTemplate 字符串（'1fr 1fr 1fr'），避免手写三份模板漂移 */
+  private colsTemplateOf(cols: number): string {
+    const parts: string[] = [];
+    for (let i = 0; i < cols; i++) {
+      parts.push('1fr');
+    }
+    return parts.join(' ');
   }
 
   /** 先按分组筛，再按阅读状态筛（两个维度独立） */
@@ -878,10 +889,19 @@ struct Index {
               // 格子进度条与百分比停在旧值（审查报告 B26，与审核驳回第 3 条同病灶）
               }, (item: ShelfItem) => item.book.id + '|' + item.percent)
             }
-            .columnsTemplate('1fr 1fr 1fr')
+            .columnsTemplate(this.colsTemplateOf(this.shelfCols))
             .columnsGap(14)
             .rowsGap(16)
             .width('100%')
+            // P0-5 平板断点：3 列是手机竖屏构图；平板上格子被拉到 200vp+ 宽，
+            // 封面和标题比例失调。按视口宽换档（600/840 为华为 breakpoint 标准档位）。
+            .onAreaChange((oldValue: Area, newValue: Area) => {
+              const w: number = newValue.width as number;
+              const c: number = w >= 840 ? 6 : (w >= 600 ? 4 : 3);
+              if (c !== this.shelfCols) {
+                this.shelfCols = c;
+              }
+            })
           }
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)

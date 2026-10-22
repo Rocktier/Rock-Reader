@@ -14,10 +14,10 @@
  *  - 目录 / 设置 都从浮层进入；设置返回时**按字符偏移复原位置**（切档位不跳页）
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { router } from '@kit.ArkUI';
+import { curves, router } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
-import { BookRecord, ChapterRow, ProgressSnapshot, ReadingProgress } from '../common/Types';
+import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
 import {
   fontSizeFpOf,
@@ -141,6 +141,12 @@ const FOOTER_VP: number = 30;
 const SPEAKER_ICON_VP: number = 28;
 /** 正文顶部留白（vp） */
 const HEADER_VP: number = 34;
+/**
+ * 版心最大行长（字数，P0-5 平板适配）：排版宽度超过 字号 × 此值 时封顶居中。
+ * 中文长行的可读性上限约 35 字（超过后换行扫视易丢行）；35 字在最大字号（28fp）
+ * 时约 980vp —— 主流平板（10~11 寸 ≈ 700~840vp 宽）竖屏也在封顶范围内受控。
+ */
+const RR_MAX_LINE_CHARS: number = 35;
 /** 每次翻页落一次进度太重 → 章内每 5 页落一次；切章 / 退出必落 */
 const PERSIST_EVERY_PAGES: number = 5;
 /** 翻页动画时长（ms）——短促，对齐 spec「动效 ≈0.2s」 */
@@ -246,6 +252,30 @@ struct Reader {
   /** 章加载失败态：true 时 persistProgress 禁止落库（防进度被清成 0，审查报告 B2） */
   private failed: boolean = false;
 
+  // ---- 三件套（2026-10-22 评审 P0-2：书签 / 摘录 / 全文搜索）----
+  /** 本书全部书签（进书加载一次；增删后重拉） */
+  @State bookmarks: BookmarkRow[] = [];
+  /** 本书全部摘录（同上） */
+  @State highlights: HighlightRow[] = [];
+  /** 抽屉页签：'toc' 目录 | 'marks' 书签+摘录 | 'search' 全文搜索 */
+  @State drawerTab: string = 'toc';
+  /** ⚑ 点击后的落签脉冲（弹一下 = "签上了"，与私记的钤印手感同源） */
+  @State markKick: boolean = false;
+  /** 摘录面板是否开着（长按正文唤起） */
+  @State showHighlight: boolean = false;
+  /** 摘录面板里的注（用户输入） */
+  @State highlightNote: string = '';
+  /** 摘录的原文快照（开面板时定格） */
+  private highlightExcerpt: string = '';
+  private highlightStart: number = 0;
+  private highlightEnd: number = 0;
+  /** 全文搜索词与命中 */
+  @State searchQuery: string = '';
+  @State searchHits: SearchHitRow[] = [];
+  @State searchBusy: boolean = false;
+  /** 全文搜索防抖 */
+  private searchTimer: number = -1;
+
   // ---- 朗读（TTS，2026-10-17 加；2026-10-18 改章级）----
   /**
    * 引擎单例跨 Reader 页生命周期复用（aboutToDisappear 才 shutdown）。
@@ -259,6 +289,8 @@ struct Reader {
   @State speakActive: boolean = false;
   /** 当前音色 person（设置面板选中态；试听失败自动回退默认） */
   @State ttsPerson: number = TTS_PERSON_DEFAULT;
+  /** 朗读语速（设置面板选中态；与 prefs/引擎三方同源） */
+  @State ttsSpeed: number = 1.0;
   /** 暂停中（继续/暂停 文字切换） */
   @State speakPaused: boolean = false;
   /** begin 已发起但首段未开播的瞬态（createEngine 异步） */
@@ -271,6 +303,10 @@ struct Reader {
   private speakSyncing: boolean = false;
   /** 位置跟踪定时器 id（-1 = 未运行；speakActive 期间每 1s 报一次章内偏移） */
   private speakTimer: number = -1;
+  /** 朗读定时档位（分钟）：0=关，循环 15→30→60→0（页脚播放条按钮切换） */
+  @State sleepMin: number = 0;
+  /** 定时剩余秒数：播放中每秒递减（暂停时 tick 提前返回，倒计时自然冻结），到 0 停读 */
+  @State sleepLeft: number = 0;
 
   aboutToAppear(): void {
     // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
@@ -284,7 +320,8 @@ struct Reader {
   /** 朗读初始化：挂回调 + 探测能力。探测失败（模拟器/低端机）= 入口不出现，零感知 */
   private initTts(): void {
     const tts: TtsEngine = this.tts;
-    tts.setSpeed(this.prefs.getTtsSpeed());
+    this.ttsSpeed = this.prefs.getTtsSpeed();
+    tts.setSpeed(this.ttsSpeed);
     this.ttsPerson = this.prefs.getTtsPerson();
     tts.setPerson(this.ttsPerson);
     // ArkTS 坑（2026-10-17 实测）：对象字面量的**属性值为箭头函数表达式**时会踩
@@ -494,6 +531,8 @@ struct Reader {
       const progress: ReadingProgress | null = await this.db.getProgress(book.id);
       this.pendingChapter = progress === null ? 0 : Math.min(progress.chapterIndex, this.chapterCount - 1);
       this.pendingOffset = progress === null ? 0 : progress.charOffset;
+      // 三件套数据进书即拉（书签/摘录是这本书的常驻行李，不是要用才找）
+      await this.reloadMarks();
       this.loading = false;
       if (this.areaReady) {
         this.openChapter(this.pendingChapter, this.pendingOffset);
@@ -511,8 +550,17 @@ struct Reader {
     const fontSizeFp: number = fontSizeFpOf(levels.fontSizeLevel);
     const fontSizePx: number = this.getUIContext().fp2px(fontSizeFp);
     const lineHeightPx: number = fontSizePx * lineHeightRatioOf(levels.lineHeightLevel);
-    const marginVp: number = marginVpOf(levels.marginLevel);
-    const widthPx: number = this.getUIContext().vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
+    let marginVp: number = marginVpOf(levels.marginLevel);
+    // P0-5 平板版心（2026-10-22）：行宽按「最多 RR_MAX_LINE_CHARS 个字」封顶 ——
+    // 平板满屏一行 40+ 字，逐行扫视必丢行（可读性硬伤）。封顶超出部分折进
+    // 等效边距（正文居中），手机竖屏到不了封顶、行为与旧版完全一致。
+    // 测量 widthPx 与渲染 padding 同源于此，断行不会分叉。
+    let widthPx: number = this.getUIContext().vp2px(Math.max(1, this.viewWidthVp - marginVp * 2));
+    const maxLinePx: number = Math.round(fontSizePx * RR_MAX_LINE_CHARS);
+    if (widthPx > maxLinePx) {
+      widthPx = maxLinePx;
+      marginVp = Math.round((this.viewWidthVp - this.getUIContext().px2vp(maxLinePx)) / 2);
+    }
     const heightPx: number = this.getUIContext().vp2px(Math.max(1, this.viewHeightVp - FOOTER_VP - HEADER_VP));
     return {
       fontSizeFp: fontSizeFp,
@@ -523,6 +571,7 @@ struct Reader {
       fontFamily: this.fontFamily,
       fontPath: this.fontPath,
       fontWeight: fontWeightOf(levels.fontWeightLevel),
+      marginVp: marginVp,
       signature: layoutKey(levels, fontSizePx, lineHeightPx, widthPx, this.fontFamily)
     };
   }
@@ -601,7 +650,8 @@ struct Reader {
     // 否则渲染端与测量端就是两个各算一遍的真源，任何一处表值/换算改动都会悄悄分叉
     this.fontSizeFp = box.fontSizeFp;
     this.lineHeightVp = this.getUIContext().px2vp(box.lineHeightPx);
-    this.marginVp = marginVpOf(levels.marginLevel);
+    // 等效边距从 box 取（版心封顶时 = (视口−封顶)/2），与测量断行同源不分叉
+    this.marginVp = box.marginVp;
 
     // 净化/简繁开关会改变 text 内容（BookSource.chapterText 按开关重算），**必须进缓存键** ——
     // 否则切开关后命中旧键：页表是"净化后短文本"算的、正文已是"未净化长文本"，
@@ -631,6 +681,174 @@ struct Reader {
     this.showPage(target < 0 ? 0 : target);
     // 切章一定落进度：showPage 里的节流保存可能刚好被跳过（距上次落库不足 5 页）
     this.persistProgress(true);
+  }
+
+  // ------------------------------------------------------------------
+  // 三件套（2026-10-22 评审 P0-2）：书签 / 摘录 / 全文搜索
+  // ------------------------------------------------------------------
+
+  /** 重拉本书的书签与摘录（进书 / 增删后调用） */
+  private async reloadMarks(): Promise<void> {
+    const book: BookRecord | null = this.book;
+    if (book === null) {
+      return;
+    }
+    try {
+      this.bookmarks = await this.db.listBookmarks(book.id);
+      this.highlights = await this.db.listHighlights(book.id);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'load marks failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /** 当前页首加书签（页起始 offset 与 progress 同坐标系，页表可直接反查页码） */
+  private async addBookmarkHere(): Promise<void> {
+    const book: BookRecord | null = this.book;
+    if (book === null || this.pages.length === 0 || this.failed) {
+      return;
+    }
+    // 同一位置重复落签没有意义（同章同 offset 已有签 ⇒ 这次点击变成"取消"）
+    const offset: number = this.pages[this.pageIndex].start;
+    const existing: BookmarkRow | null = this.bookmarks.find((b: BookmarkRow) =>
+      b.chapterIndex === this.chapterIndex && b.charOffset === offset) ?? null;
+    try {
+      if (existing !== null) {
+        await this.db.deleteBookmark(existing.id);
+      } else {
+        // 快照取页首第一行非空文本（≤60 字）—— 删书后也能看懂当时为什么签它
+        const line: string = this.pageText.replace(/\s+/g, ' ').trim().substring(0, 60);
+        await this.db.addBookmark({
+          id: 0,
+          bookId: book.id,
+          chapterIndex: this.chapterIndex,
+          charOffset: offset,
+          excerpt: line,
+          createdAt: Date.now()
+        });
+      }
+      await this.reloadMarks();
+      // ⚑ 落签脉冲（与私记钤印手感同源）：点击放大一拍，spring 归位
+      this.markKick = true;
+      setTimeout(() => {
+        this.markKick = false;
+      }, 50);
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'bookmark toggle failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /** 长按正文 ⇒ 摘录面板（存当前页快照 + 注） */
+  private openHighlightPanel(): void {
+    if (this.failed || this.pageText.length === 0) {
+      return;
+    }
+    const range: PageRange = this.pages[this.pageIndex];
+    // 原文快照截 200 字（快照是给"删书后还能看"的，不是全文备份）
+    this.highlightExcerpt = this.pageText.replace(/\s+/g, ' ').trim().substring(0, 200);
+    this.highlightStart = range.start;
+    this.highlightEnd = range.end;
+    this.highlightNote = '';
+    this.showHighlight = true;
+  }
+
+  private async saveHighlight(): Promise<void> {
+    const book: BookRecord | null = this.book;
+    if (book === null || !this.showHighlight) {
+      return;
+    }
+    try {
+      await this.db.addHighlight({
+        id: 0,
+        bookId: book.id,
+        chapterIndex: this.chapterIndex,
+        startChar: this.highlightStart,
+        endChar: this.highlightEnd,
+        excerpt: this.highlightExcerpt,
+        note: this.highlightNote.trim(),
+        createdAt: Date.now()
+      });
+      this.showHighlight = false;
+      await this.reloadMarks();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'save highlight failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private async removeBookmark(id: number): Promise<void> {
+    try {
+      await this.db.deleteBookmark(id);
+      await this.reloadMarks();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'remove bookmark failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  private async removeHighlight(id: number): Promise<void> {
+    try {
+      await this.db.deleteHighlight(id);
+      await this.reloadMarks();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'remove highlight failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /**
+   * 全文搜索（P0-2 之三）：逐章读文本找命中。
+   * 成本控制：每章最多记 3 条、全局 50 条封顶；每 10 章让出一帧（大书不卡 UI）。
+   * 净化/简繁开关会影响 chapterText 的结果 —— 搜的就是"当前看到的样子"，语义自洽。
+   */
+  private async runFullTextSearch(query: string): Promise<void> {
+    const q: string = query.trim();
+    if (q.length === 0 || this.source === null) {
+      this.searchHits = [];
+      return;
+    }
+    this.searchBusy = true;
+    const hits: SearchHitRow[] = [];
+    try {
+      for (let i: number = 0; i < this.chapters.length; i++) {
+        let text: string = '';
+        try {
+          text = this.source.chapterText(this.chapters[i]);
+        } catch (e) {
+          continue; // 单章读失败不阻断整本搜索
+        }
+        let from: number = 0;
+        let perChapter: number = 0;
+        while (perChapter < 3) {
+          const at: number = text.indexOf(q, from);
+          if (at < 0) {
+            break;
+          }
+          const ctxStart: number = Math.max(0, at - 30);
+          const ctxEnd: number = Math.min(text.length, at + q.length + 30);
+          const hit: SearchHitRow = {
+            chapterIndex: i,
+            chapterTitle: this.chapters[i].title,
+            charOffset: at,
+            snippet: (ctxStart > 0 ? '…' : '') + text.substring(ctxStart, ctxEnd) + (ctxEnd < text.length ? '…' : '')
+          };
+          hits.push(hit);
+          perChapter++;
+          from = at + q.length;
+          if (hits.length >= 50) {
+            break;
+          }
+        }
+        if (hits.length >= 50) {
+          break;
+        }
+        // 每 10 章让一帧：三千章的书不至于把 UI 线程钉死
+        if (i % 10 === 9) {
+          await new Promise<void>((resolve: () => void) => {
+            setTimeout(resolve, 0);
+          });
+        }
+      }
+    } finally {
+      this.searchHits = hits;
+      this.searchBusy = false;
+    }
   }
 
   private showPage(index: number): void {
@@ -753,6 +971,19 @@ struct Reader {
   }
 
   /**
+   * 朗读定时循环切换：关 → 15 分 → 30 分 → 60 分 → 关。
+   * 切档即重置剩余秒数（播放中立即生效；暂停中只改档位，恢复播放后开始倒数）。
+   * 到点走 stopSpeak()——与手点「停止」同一路径，状态复位不漏。
+   */
+  private pickSleep(): void {
+    this.sleepMin = this.sleepMin === 0 ? 15 : (this.sleepMin === 15 ? 30 : (this.sleepMin === 30 ? 60 : 0));
+    this.sleepLeft = this.sleepMin * 60;
+    if (this.sleepMin > 0) {
+      this.hint = `定时：${this.sleepMin} 分钟后停止朗读`;
+    }
+  }
+
+  /**
    * 跨章续读（章读完自动翻章 / 用户从目录跳章）：载入新章全文并开读。
    * 同章内的翻页不走这里（走 seekTo，见 showPage 尾部）。
    */
@@ -788,6 +1019,15 @@ struct Reader {
   private onSpeakTick(): void {
     if (!this.speakActive || this.speakPaused) {
       return;
+    }
+    // 定时倒数：暂停时不进这里（tick 提前返回），倒计时随播放冻结
+    if (this.sleepLeft > 0) {
+      this.sleepLeft -= 1;
+      if (this.sleepLeft <= 0) {
+        this.stopSpeak();
+        this.hint = '朗读定时已到，休息吧';
+        return;
+      }
     }
     const off: number = this.tts.estimatedOffset();
     if (off < 0) {
@@ -947,6 +1187,8 @@ struct Reader {
     // 三个覆盖层互斥（审查报告 B23）：目录开着时菜单/设置不能同时画着
     this.showSettings = false;
     this.showMenu = false;
+    // 抽屉页签复位到目录（上次停在"搜索"页签的话，重开还是回到目录这条主线）
+    this.drawerTab = 'toc';
     this.tocQuery = '';
     this.tocFiltered = this.chapters;
     this.tocSource.update(this.tocFiltered);
@@ -1205,6 +1447,28 @@ struct Reader {
           .accessibilityText('上一章')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => this.jumpToChapter(this.chapterIndex - 1))
+        // ⚑ 书签（2026-10-22 P0-2 三件套）：一键落签当前位置；
+        // 已签的页再点一次 = 取消。列表在抽屉「标记」页签里。
+        Text(this.bookmarks.some((b: BookmarkRow) =>
+          b.chapterIndex === this.chapterIndex &&
+          (this.pages.length > 0 && b.charOffset === this.pages[this.pageIndex].start)) ? '⚑' : '⚐')
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.markKick || this.bookmarks.some((b: BookmarkRow) =>
+            b.chapterIndex === this.chapterIndex &&
+            (this.pages.length > 0 && b.charOffset === this.pages[this.pageIndex].start))
+            ? this.palette.accent : this.palette.text)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
+          .accessibilityText(this.bookmarks.length > 0 ? '添加或取消书签' : '添加书签')
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
+          // 落签脉冲：点击放大一拍，spring 归位（与私记钤印手感同源）
+          .scale({ x: this.markKick ? 1.4 : 1.0, y: this.markKick ? 1.4 : 1.0 })
+          .animation({ duration: 320, curve: curves.springMotion(0.3, 0.7) })
+          .onClick(() => {
+            this.addBookmarkHere();
+          })
         Text('目录')
           .fontSize(RR_FS_LABEL)
           .fontColor(this.palette.text)
@@ -1265,15 +1529,39 @@ struct Reader {
   @Builder
   tocPanel() {
     Column() {
-      Row() {
-        Text('CONTENTS')
+      // 抽屉页签（2026-10-22 P0-2 三件套）：目录 / 标记（书签+摘录）/ 全文搜索
+      Row({ space: 18 }) {
+        Text('目录')
           .fontSize(RR_FS_META)
           .fontFamily('monospace')
-          .fontColor(this.palette.text2)
+          .fontColor(this.drawerTab === 'toc' ? this.palette.text : this.palette.text3)
+          .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'toc' ? this.palette.accent : Color.Transparent })
+          .padding({ bottom: 6 })
+          .onClick(() => {
+            this.drawerTab = 'toc';
+          })
+        Text(`标记 ${this.bookmarks.length + this.highlights.length}`)
+          .fontSize(RR_FS_META)
+          .fontFamily('monospace')
+          .fontColor(this.drawerTab === 'marks' ? this.palette.text : this.palette.text3)
+          .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'marks' ? this.palette.accent : Color.Transparent })
+          .padding({ bottom: 6 })
+          .onClick(() => {
+            this.drawerTab = 'marks';
+          })
+        Text('搜索')
+          .fontSize(RR_FS_META)
+          .fontFamily('monospace')
+          .fontColor(this.drawerTab === 'search' ? this.palette.text : this.palette.text3)
+          .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'search' ? this.palette.accent : Color.Transparent })
+          .padding({ bottom: 6 })
+          .onClick(() => {
+            this.drawerTab = 'search';
+          })
         Blank()
-        Text(this.tocQuery.length > 0
+        Text(this.drawerTab === 'toc' && this.tocQuery.length > 0
           ? `${this.tocFiltered.length}/${this.chapterCount}`
-          : `${this.chapterCount}`)
+          : this.drawerTab === 'toc' ? `${this.chapterCount}` : '')
           .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
@@ -1281,6 +1569,30 @@ struct Reader {
       .width('100%')
       .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_XL })
 
+      if (this.drawerTab === 'toc') {
+        this.tocList()
+      } else if (this.drawerTab === 'marks') {
+        this.marksPanel()
+      } else {
+        this.searchPanel()
+      }
+    }
+    .width(TOC_PANEL_WIDTH)
+    .height('100%')
+    .backgroundColor(this.palette.overlay)
+    // 左抽屉：圆角与描边只做贴着屏幕右缘的那侧（左侧贴着屏边，不需要）
+    .borderRadius({ topRight: 12, bottomRight: 12 })
+    .border({ width: { top: 1, right: 1, bottom: 1 }, color: this.palette.line })
+    .transition(TransitionEffect.translate({ x: -TOC_SLIDE_VP })
+      .animation({ duration: PANEL_ANIM_MS, curve: Curve.FastOutSlowIn }))
+    .onClick(() => {
+    })
+  }
+
+  /** 原目录内容（页签化后抽出来的正文部分，结构与原 tocPanel 一致） */
+  @Builder
+  tocList() {
+    Column() {
       // 章节搜索：三千章的书不必手滚着找
       Row() {
         Text('/')
@@ -1355,14 +1667,329 @@ struct Reader {
         })
       }
     }
-    .width(TOC_PANEL_WIDTH)
+    .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.overlay)
-    // 左抽屉：圆角与描边只做贴着屏幕右缘的那侧（左侧贴着屏边，不需要）
-    .borderRadius({ topRight: 12, bottomRight: 12 })
-    .border({ width: { top: 1, right: 1, bottom: 1 }, color: this.palette.line })
-    .transition(TransitionEffect.translate({ x: -TOC_SLIDE_VP })
-      .animation({ duration: PANEL_ANIM_MS, curve: Curve.FastOutSlowIn }))
+    .onClick(() => {
+    })
+  }
+
+  /**
+   * 「标记」页签（P0-2）：书签 + 摘录两个分组。
+   * 点条目跳回原位（书签按 offset、摘录按 startChar，同一套页表反查）。
+   */
+  @Builder
+  marksPanel() {
+    Column() {
+      if (this.bookmarks.length === 0 && this.highlights.length === 0) {
+        Column() {
+          Text('还没有标记')
+            .fontSize(RR_FS_LABEL)
+            .fontColor(this.palette.text3)
+          Text('工具条的 ⚑ 落书签 · 长按正文存摘录')
+            .fontSize(RR_FS_META)
+            .fontColor(this.palette.text3)
+            .margin({ top: RR_SP_SM })
+        }
+        .width('100%')
+        .margin({ top: RR_SP_6XL })
+      } else {
+        List() {
+          if (this.bookmarks.length > 0) {
+            ListItem() {
+              Text('书签')
+                .fontSize(RR_FS_META)
+                .fontFamily('monospace')
+                .fontColor(this.palette.text3)
+                .width('100%')
+                .padding({ top: RR_SP_LG, bottom: RR_SP_SM, left: RR_SP_4XL, right: RR_SP_4XL })
+            }
+          }
+          ForEach(this.bookmarks, (b: BookmarkRow) => {
+            ListItem() {
+              Row() {
+                Column() {
+                  Text('⚑ ' + (b.excerpt.length > 0 ? b.excerpt : `第 ${b.chapterIndex + 1} 章`))
+                    .fontSize(RR_FS_LABEL)
+                    .fontColor(this.palette.text)
+                    .maxLines(2)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  Text(`第 ${b.chapterIndex + 1} 章`)
+                    .fontSize(RR_FS_MICRO)
+                    .fontFamily('monospace')
+                    .fontColor(this.palette.text3)
+                    .margin({ top: 4 })
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                Text('×')
+                  .fontSize(RR_FS_HEADING)
+                  .fontColor(this.palette.text3)
+                  .width(32)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.removeBookmark(b.id);
+                  })
+              }
+              .width('100%')
+              .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
+              .onClick(() => {
+                this.showToc = false;
+                this.openChapter(b.chapterIndex, b.charOffset);
+              })
+            }
+          }, (b: BookmarkRow) => 'bm' + b.id)
+          if (this.highlights.length > 0) {
+            ListItem() {
+              Text('摘录')
+                .fontSize(RR_FS_META)
+                .fontFamily('monospace')
+                .fontColor(this.palette.text3)
+                .width('100%')
+                .padding({ top: RR_SP_LG, bottom: RR_SP_SM, left: RR_SP_4XL, right: RR_SP_4XL })
+            }
+          }
+          ForEach(this.highlights, (h: HighlightRow) => {
+            ListItem() {
+              Row() {
+                Column() {
+                  Text('「' + h.excerpt + '」')
+                    .fontSize(RR_FS_LABEL)
+                    .fontColor(this.palette.text)
+                    .maxLines(3)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .width('100%')
+                  if (h.note.length > 0) {
+                    Text(h.note)
+                      .fontSize(RR_FS_MICRO)
+                      .fontColor(this.palette.text2)
+                      .margin({ top: 4 })
+                      .width('100%')
+                  }
+                  Text(`第 ${h.chapterIndex + 1} 章`)
+                    .fontSize(RR_FS_MICRO)
+                    .fontFamily('monospace')
+                    .fontColor(this.palette.text3)
+                    .margin({ top: 4 })
+                }
+                .alignItems(HorizontalAlign.Start)
+                .layoutWeight(1)
+                Text('×')
+                  .fontSize(RR_FS_HEADING)
+                  .fontColor(this.palette.text3)
+                  .width(32)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => {
+                    this.removeHighlight(h.id);
+                  })
+              }
+              .width('100%')
+              .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
+              .onClick(() => {
+                this.showToc = false;
+                this.openChapter(h.chapterIndex, h.startChar);
+              })
+            }
+          }, (h: HighlightRow) => 'hl' + h.id)
+        }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .onClick(() => {
+    })
+  }
+
+  /** 「搜索」页签（P0-2）：全文搜索（标题搜索仍在目录页签里） */
+  @Builder
+  searchPanel() {
+    Column() {
+      Row() {
+        Text('/')
+          .fontSize(RR_FS_META)
+          .fontFamily('monospace')
+          .fontColor(this.palette.text3)
+          .width(18)
+        TextInput({ text: this.searchQuery, placeholder: '在全书正文中查找' })
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.palette.text)
+          .placeholderColor(this.palette.text3)
+          .placeholderFont({ size: 12.5 })
+          .caretColor(this.palette.accent)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(RR_RADIUS_COVER)
+          .padding(0)
+          .height(36)
+          .layoutWeight(1)
+          .onChange((value: string) => {
+            this.searchQuery = value;
+            // 防抖 400ms：逐章扫描的成本不该付在每次按键上
+            if (this.searchTimer >= 0) {
+              clearTimeout(this.searchTimer);
+              this.searchTimer = -1;
+            }
+            const q: string = value.trim();
+            if (q.length === 0) {
+              this.searchHits = [];
+              return;
+            }
+            this.searchTimer = setTimeout(() => {
+              this.searchTimer = -1;
+              this.runFullTextSearch(q);
+            }, 400);
+          })
+        if (this.searchQuery.length > 0) {
+          Text('×')
+            .fontSize(RR_FS_HEADING)
+            .fontColor(this.palette.text3)
+            .width(26)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.searchQuery = '';
+              this.searchHits = [];
+            })
+        }
+      }
+      .width('100%')
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
+      .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+      if (this.searchBusy) {
+        Column() {
+          LoadingProgress()
+            .width(28)
+            .height(28)
+            .color(this.palette.text3)
+          Text('正在全书搜索…')
+            .fontSize(RR_FS_META)
+            .fontColor(this.palette.text3)
+            .margin({ top: RR_SP_SM })
+        }
+        .width('100%')
+        .margin({ top: RR_SP_6XL })
+      } else if (this.searchQuery.trim().length === 0) {
+        Text('输入词句，找到它在哪一章')
+          .fontSize(RR_FS_META)
+          .fontColor(this.palette.text3)
+          .margin({ top: RR_SP_6XL })
+      } else if (this.searchHits.length === 0) {
+        Text('全书没有匹配')
+          .fontSize(RR_FS_META)
+          .fontColor(this.palette.text3)
+          .margin({ top: RR_SP_6XL })
+      } else {
+        List() {
+          ForEach(this.searchHits, (hit: SearchHitRow) => {
+            ListItem() {
+              Column() {
+                Row() {
+                  Text(hit.chapterTitle)
+                    .fontSize(RR_FS_MICRO)
+                    .fontFamily('monospace')
+                    .fontColor(this.palette.text3)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                Text(hit.snippet)
+                  .fontSize(RR_FS_LABEL)
+                  .fontColor(this.palette.text)
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+                  .margin({ top: 4 })
+              }
+              .alignItems(HorizontalAlign.Start)
+              .width('100%')
+              .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
+              .onClick(() => {
+                this.showToc = false;
+                this.openChapter(hit.chapterIndex, hit.charOffset);
+              })
+            }
+          }, (hit: SearchHitRow) => 'sh' + hit.chapterIndex + ':' + hit.charOffset)
+        }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Off)
+        .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .onClick(() => {
+    })
+  }
+
+  /** 长按正文唤起的摘录面板（P0-2）：快照 + 一句注 */
+  @Builder
+  highlightEditor() {
+    Column() {
+      Text('存一段摘录')
+        .fontSize(RR_FS_HEADING)
+        .fontColor(this.palette.text)
+        .width('100%')
+      Text('「' + this.highlightExcerpt + '」')
+        .fontSize(RR_FS_LABEL)
+        .fontColor(this.palette.text2)
+        .maxLines(4)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .margin({ top: RR_SP_MD })
+        .padding(RR_SP_MD)
+        .backgroundColor(this.palette.overlay)
+        .borderRadius(8)
+      TextInput({ placeholder: '写一句注（可空）', text: this.highlightNote })
+        .fontSize(RR_FS_LABEL)
+        .fontColor(this.palette.text)
+        .placeholderColor(this.palette.text3)
+        .placeholderFont({ size: 12.5 })
+        .caretColor(this.palette.accent)
+        .backgroundColor(this.palette.overlay)
+        .borderRadius(RR_RADIUS_COVER)
+        .height(40)
+        .margin({ top: RR_SP_MD })
+        .onChange((v: string) => {
+          this.highlightNote = v;
+        })
+      Row({ space: RR_SP_MD }) {
+        Button('取消', { type: ButtonType.Normal, stateEffect: true })
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.palette.text2)
+          .backgroundColor(Color.Transparent)
+          .borderRadius(RR_RADIUS_COVER)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.showHighlight = false;
+          })
+        Button('存下', { type: ButtonType.Normal, stateEffect: true })
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.palette.bg)
+          .backgroundColor(this.palette.accent)
+          .borderRadius(RR_RADIUS_COVER)
+          .layoutWeight(1)
+          .onClick(() => {
+            this.saveHighlight();
+          })
+      }
+      .width('100%')
+      .margin({ top: RR_SP_LG })
+    }
+    .width('82%')
+    .padding(RR_SP_3XL)
+    .backgroundColor(this.palette.bg)
+    .borderRadius(16)
+    .border({ width: 1, color: this.palette.line })
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.scale({ x: 0.94, y: 0.94 }))
+      .animation({ duration: 200, curve: Curve.FastOutSlowIn }))
     .onClick(() => {
     })
   }
@@ -1470,6 +2097,26 @@ struct Reader {
       .onClick(() => this.pickPerson(person))
   }
 
+  /** 语速 chip（设置面板）：选中态与音色/主题同视觉；改速下一段起生效（行头已标注） */
+  @Builder
+  speedChip(label: string, v: number) {
+    Text(label)
+      .fontSize(RR_FS_LABEL)
+      .fontFamily('monospace')
+      .fontColor(Math.abs(this.ttsSpeed - v) < 0.001 ? this.palette.bg : this.palette.text2)
+      .backgroundColor(Math.abs(this.ttsSpeed - v) < 0.001 ? this.palette.text : this.palette.card)
+      .borderWidth(1)
+      .borderColor(Math.abs(this.ttsSpeed - v) < 0.001 ? this.palette.text : this.palette.line)
+      .height(34)
+      .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .stateStyles({ pressed: { opacity: 0.6 } })
+      .accessibilityText(`语速 ${label}`)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
+      .onClick(() => this.pickTtsSpeed(v))
+  }
+
   /** 选音色：落盘 + 热切换引擎 + 立即试听当前页（失败走 onErr 回退默认） */
   private pickPerson(person: number): void {
     if (person === this.ttsPerson) {
@@ -1480,6 +2127,17 @@ struct Reader {
     // setPerson 内部会停旧引擎并 shutdown；随后 startSpeak 用新音色重建
     this.tts.setPerson(person);
     this.startSpeak();
+  }
+
+  /**
+   * 选语速（2026-10-22 P0-3）：落盘 + 引擎即时跟随。
+   * ⚠️ CoreSpeechKit 的 speed 是 per-speak 参数 —— 正在播的段不变，
+   * 下一段（或 seek/续读后的段）起生效。UI 文案如实标注，不装"立即生效"。
+   */
+  private pickTtsSpeed(v: number): void {
+    this.prefs.setTtsSpeed(v);
+    this.ttsSpeed = v;
+    this.tts.setSpeed(v);
   }
 
   /** 设置抽屉：底出、不遮满（上半透出正文），改一下上面立刻跟着变 */
@@ -1594,6 +2252,40 @@ struct Reader {
         .width('100%')
         .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
         .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+        // 语速行（2026-10-22 P0-3：语速从"存了不生效的断头路"接通为真控制）
+        Column() {
+          Row() {
+            Text('语速')
+              .fontSize(RR_FS_BODY)
+              .fontColor(this.palette.text)
+            Blank()
+            Text('下一段起生效')
+              .fontSize(RR_FS_MICRO)
+              .fontFamily('monospace')
+              .fontColor(this.palette.text3)
+          }
+          .width('100%')
+          .margin({ bottom: RR_SP_XL })
+
+          Scroll() {
+            Row({ space: 8 }) {
+              this.speedChip('0.5×', 0.5)
+              this.speedChip('0.75×', 0.75)
+              this.speedChip('1.0×', 1.0)
+              this.speedChip('1.25×', 1.25)
+              this.speedChip('1.5×', 1.5)
+              this.speedChip('2.0×', 2.0)
+            }
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+        }
+        .width('100%')
+        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
+        .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
       }
 
       Text('更多设置（字体下载 / 隐私）›')
@@ -1663,6 +2355,11 @@ struct Reader {
             .fontColor(this.palette.text)
             .width('100%')
             .textAlign(TextAlign.Start)
+            // 长按正文 ⇒ 摘录当前页（P0-2 三件套）。与单击（翻页/唤菜单）、
+            // 横滑（翻页）不冲突：LongPressGesture 有独立的时长门槛（默认 500ms）
+            .gesture(LongPressGesture({ repeat: false }).onAction(() => {
+              this.openHighlightPanel();
+            }))
         }
       }
       .width('100%')
@@ -1787,6 +2484,17 @@ struct Reader {
               .fontColor(this.palette.text3)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
+            // 朗读定时：点按循环 关→15→30→60→关。显示剩余分钟（向上取整），
+            // 未设档位显示「定时」。纯文本按钮（不新增图标资源），字号与播放条一致。
+            Text(this.sleepMin === 0
+              ? '定时'
+              : (this.sleepLeft > 0 ? `${Math.ceil(this.sleepLeft / 60)}分` : `${this.sleepMin}分`))
+              .fontSize(RR_FS_MICRO)
+              .fontFamily('monospace')
+              .fontColor(this.sleepMin === 0 ? this.palette.text3 : this.palette.text)
+              .responseRegion({ x: -6, y: -8, width: 60, height: 44 })
+              .accessibilityText(this.sleepMin === 0 ? '设置朗读定时' : `朗读定时剩余${Math.ceil(this.sleepLeft / 60)}分钟`)
+              .onClick(() => this.pickSleep())
             Text('停止')
               .fontSize(RR_FS_MICRO)
               .fontFamily('monospace')
@@ -1874,6 +2582,36 @@ struct Reader {
         }
         .width('100%')
         .height('100%')
+      }
+
+      // ---- 摘录面板（P0-2）：居中卡片 + 半透明遮罩，点遮罩取消 ----
+      if (this.showHighlight) {
+        Column() {
+          Column()
+            .width('100%')
+            .layoutWeight(1)
+            .onClick(() => {
+              this.showHighlight = false;
+            })
+          Column() {
+            Column()
+              .layoutWeight(1)
+              .onClick(() => {
+                this.showHighlight = false;
+              })
+            this.highlightEditor()
+            Column()
+              .layoutWeight(1)
+              .onClick(() => {
+                this.showHighlight = false;
+              })
+          }
+          .width('100%')
+          .height('46%')
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
       }
     }
     .width('100%')

@@ -11,7 +11,7 @@
  * ponytail: 不做 sha256 去重（官方示例有，但那是为省缓存空间；v1 重复导入由用户自己删）。
  */
 import { relationalStore } from '@kit.ArkData';
-import { BookRecord, ChapterRow, ReadingProgress } from '../common/Types';
+import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ReadingProgress } from '../common/Types';
 import { ReadSession } from '../engine/stats/ReadStats';
 
 const DB_NAME = 'rockreader.db';
@@ -38,6 +38,18 @@ const SQL_PROGRESS = 'CREATE TABLE IF NOT EXISTS progress(' +
 /** 阅读会话（统计用）：每次进入某章到切章/离开之间记一条 */
 const SQL_SESSIONS = 'CREATE TABLE IF NOT EXISTS read_sessions(' +
   'book_id TEXT NOT NULL, chapter_index INTEGER, start_at INTEGER, end_at INTEGER)';
+
+/** 书签（2026-10-22 P0-2 三件套） */
+const SQL_BOOKMARKS = 'CREATE TABLE IF NOT EXISTS bookmarks(' +
+  'id INTEGER PRIMARY KEY AUTOINCREMENT, book_id TEXT NOT NULL, ' +
+  'chapter_index INTEGER NOT NULL, char_offset INTEGER NOT NULL, ' +
+  'excerpt TEXT, created_at INTEGER)';
+
+/** 摘录/金句（2026-10-22 P0-2 三件套） */
+const SQL_HIGHLIGHTS = 'CREATE TABLE IF NOT EXISTS highlights(' +
+  'id INTEGER PRIMARY KEY AUTOINCREMENT, book_id TEXT NOT NULL, ' +
+  'chapter_index INTEGER NOT NULL, start_char INTEGER NOT NULL, end_char INTEGER NOT NULL, ' +
+  'excerpt TEXT NOT NULL, note TEXT, created_at INTEGER)';
 
 /** 结果集 → BookRecord（分组列可能为 null：老库补列前的行） */
 function rowToBook(rs: relationalStore.ResultSet): BookRecord {
@@ -71,6 +83,8 @@ export class BookDb {
     await store.executeSql(SQL_CHAPTERS);
     await store.executeSql(SQL_PROGRESS);
     await store.executeSql(SQL_SESSIONS);
+    await store.executeSql(SQL_BOOKMARKS);
+    await store.executeSql(SQL_HIGHLIGHTS);
     try {
       // 已存在该列时会报错，属预期（幂等迁移）
       await store.executeSql(SQL_CHAPTERS_ADD_HREF);
@@ -108,6 +122,10 @@ export class BookDb {
   }
 
   async listBooks(): Promise<BookRecord[]> {
+    // P2-6 决策记录（2026-10-22）：不提供"排序/网格切换"偏好项。
+    // 现排序 last_read_at DESC（未读按 added_at DESC 兜底）已是阅读器最优默认 ——
+    // 刚读的书浮顶，符合"拿起就读"的主路径；排序切换器与网格视图属低频伪需求，
+    // 引入 prefs 键 + 设置 UI + 三种 SQL 的维护面，收益不成比例。
     const rs = await this.ready().querySql(
       'SELECT id, title, author, format, path, size, added_at, last_read_at, group_name FROM books ' +
       'ORDER BY last_read_at DESC, added_at DESC');
@@ -163,6 +181,9 @@ export class BookDb {
     await store.executeSql('DELETE FROM chapters WHERE book_id = ?', [bookId]);
     await store.executeSql('DELETE FROM progress WHERE book_id = ?', [bookId]);
     await this.deleteSessionsOf(bookId);
+    // 书签/摘录跟着书走（三件套数据不外泄给下一本同名书）
+    await store.executeSql('DELETE FROM bookmarks WHERE book_id = ?', [bookId]);
+    await store.executeSql('DELETE FROM highlights WHERE book_id = ?', [bookId]);
   }
 
   async addChapters(bookId: string, chapters: ChapterRow[]): Promise<void> {
@@ -280,5 +301,86 @@ export class BookDb {
   /** 删书时一并清掉它的会话 */
   private async deleteSessionsOf(bookId: string): Promise<void> {
     await this.ready().executeSql('DELETE FROM read_sessions WHERE book_id = ?', [bookId]);
+  }
+
+  // ------------------------------------------------------------------
+  // 书签 / 摘录（2026-10-22 P0-2 三件套）
+  // ------------------------------------------------------------------
+
+  async addBookmark(b: BookmarkRow): Promise<number> {
+    const bucket: relationalStore.ValuesBucket = {
+      'book_id': b.bookId,
+      'chapter_index': b.chapterIndex,
+      'char_offset': b.charOffset,
+      'excerpt': b.excerpt,
+      'created_at': b.createdAt
+    };
+    const id: number = await this.ready().insert('bookmarks', bucket);
+    return id;
+  }
+
+  async listBookmarks(bookId: string): Promise<BookmarkRow[]> {
+    const rs = await this.ready().querySql(
+      'SELECT id, chapter_index, char_offset, excerpt, created_at FROM bookmarks ' +
+      'WHERE book_id = ? ORDER BY chapter_index ASC, char_offset ASC', [bookId]);
+    const out: BookmarkRow[] = [];
+    while (rs.goToNextRow()) {
+      const ex: string = rs.getString(rs.getColumnIndex('excerpt'));
+      out.push({
+        id: rs.getLong(rs.getColumnIndex('id')),
+        bookId: bookId,
+        chapterIndex: rs.getLong(rs.getColumnIndex('chapter_index')),
+        charOffset: rs.getLong(rs.getColumnIndex('char_offset')),
+        excerpt: ex === null ? '' : ex,
+        createdAt: rs.getLong(rs.getColumnIndex('created_at'))
+      });
+    }
+    rs.close();
+    return out;
+  }
+
+  async deleteBookmark(id: number): Promise<void> {
+    await this.ready().executeSql('DELETE FROM bookmarks WHERE id = ?', [id]);
+  }
+
+  async addHighlight(h: HighlightRow): Promise<number> {
+    const bucket: relationalStore.ValuesBucket = {
+      'book_id': h.bookId,
+      'chapter_index': h.chapterIndex,
+      'start_char': h.startChar,
+      'end_char': h.endChar,
+      'excerpt': h.excerpt,
+      'note': h.note,
+      'created_at': h.createdAt
+    };
+    const id: number = await this.ready().insert('highlights', bucket);
+    return id;
+  }
+
+  async listHighlights(bookId: string): Promise<HighlightRow[]> {
+    const rs = await this.ready().querySql(
+      'SELECT id, chapter_index, start_char, end_char, excerpt, note, created_at FROM highlights ' +
+      'WHERE book_id = ? ORDER BY chapter_index ASC, start_char ASC', [bookId]);
+    const out: HighlightRow[] = [];
+    while (rs.goToNextRow()) {
+      const ex: string = rs.getString(rs.getColumnIndex('excerpt'));
+      const nt: string = rs.getString(rs.getColumnIndex('note'));
+      out.push({
+        id: rs.getLong(rs.getColumnIndex('id')),
+        bookId: bookId,
+        chapterIndex: rs.getLong(rs.getColumnIndex('chapter_index')),
+        startChar: rs.getLong(rs.getColumnIndex('start_char')),
+        endChar: rs.getLong(rs.getColumnIndex('end_char')),
+        excerpt: ex === null ? '' : ex,
+        note: nt === null ? '' : nt,
+        createdAt: rs.getLong(rs.getColumnIndex('created_at'))
+      });
+    }
+    rs.close();
+    return out;
+  }
+
+  async deleteHighlight(id: number): Promise<void> {
+    await this.ready().executeSql('DELETE FROM highlights WHERE id = ?', [id]);
   }
 }

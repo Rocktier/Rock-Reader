@@ -563,15 +563,17 @@ export class TtsEngine {
       return;
     }
     this.reqSeq++;
-    // ⚠️ 一期**不传 extraParams**（语速用系统默认）：
-    //   官方 extraParams 类型是 Record<string, Object>，而本机 ArkTS 的
-    //   arkts-no-untyped-obj-literals 规则拒一切对象字面量赋值 ——
-    //   Record<string, Object> 字面量报"无类型"，裸 Record 报"需要 2 个泛型参数"，
-    //   显式 interface 又过不了结构化类型兼容。三条路全堵（2026-10-17 逐一实测）。
-    //   且 speed 键的类型行为（整数/小数）本来就要真机实测（见 findings §15）。
-    //   ReaderPrefs.ttsSpeed 已就位，真机验证时一并接上：届时若官方 SDK 放开，
-    //   补 `const extra: Record<string, Object> = { speed: this.speed }` 即可。
+    // 语速接入（2026-10-22 评审 P0-3 断头路清零）：
+    //   一期注释说"extraParams 三条路全堵"——堵的真因是**无类型注解的字面量**
+    //   （arkts-no-untyped-obj-literals 只拒裸字面量；官方 workaround 恰恰就是
+    //   带注解的 Record 字面量：`let r: Record<string, Object> = {'k': 123}` 是
+    //   ArkTS 文档原例）。带注解写法编译通过，语速终于生效。
+    //   speed 为浮点（0.5~2.0，setSpeed 已夹取）；键名用官方口径 'speed'。
+    //   ⚠️ CoreSpeechKit 的 speed 是 **per-speak 参数**：改速对正在播的段不生效，
+    //   下一段起生效（UI 文案如实标注）。
+    const extra: Record<string, Object> = { 'speed': this.speed };
     const params: textToSpeech.SpeakParams = { requestId: 'rr-' + Date.now() + '-' + this.reqSeq };
+    params.extraParams = extra;
     this.activeReqId = params.requestId;
     try {
       eng.speak(text, params);

@@ -32,6 +32,12 @@ export interface LayoutBox {
    * 两边断行不一致 → 页面溢出（末行被裁）。已进 layoutKey。
    */
   fontWeight: number;
+  /**
+   * 等效左右边距（vp）：正常 = 档位表 marginVpOf(level)；版心封顶（平板/横屏）
+   * 时 = (视口宽 − 封顶宽) / 2，渲染端 padding 用它，正文自动居中。
+   * 与 widthPx 由 boxOf() 同一次产出 —— 测量断行与渲染容器永远同宽。
+   */
+  marginVp: number;
   /** 缓存键，见 common/LayoutStyle.layoutKey */
   signature: string;
 }

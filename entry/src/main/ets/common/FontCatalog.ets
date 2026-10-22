@@ -49,11 +49,24 @@ const RawBase: string = 'https://raw.githubusercontent.com/Rocktier/Rock-Reader/
 
 /** 下载源顺序：CDN（国内可达）→ Release 附件 → raw。加一款字体 = 加一条记录。 */
 export const FONT_CATALOG: FontEntry[] = [
-  // 楷体（霞鹜文楷 Lite 子集）**首版不收录**：
-  // 首版走"零联网"（已删除 INTERNET 权限，见 module.json5），一旦收录就得留着下载入口，
-  // 而点了必然失败 —— 宁可不放。它是**后续版本增加字体时的第一个候选**，
-  // 届时两条路：① 直接内置（受 ≤5MB 铁律约束，可能要重切更小子集）② 加回 INTERNET 走下载。
-  // 下载管线（FontStore.download）已保留，加回权限即可用。
+  // 楷体（霞鹜文楷 Lite 子集）**继续不收录**（2026-10-22 评审 P0-3 复核后的工程决策）：
+  //
+  // 评审曾把「下载管线完整、入口整段隐藏」记为断头路。复核结论：**保留隐藏**，
+  // 但这次是有据的决策而不是遗忘 ——
+  //   ① 托管源已验证存在（fonts-v1 tag，RockReaderKai.ttf 文件头 TTF magic 正确），
+  //     技术上只差 module.json5 加回 INTERNET 权限即可用；
+  //   ② 但加权限 = 一次上架叙事级变更：隐私政策要加回"何时联网"一节（756.html），
+  //     AGC 隐私标签口径变化、商店文案同步 —— 四个门面文件联动；
+  //   ③ 门面文件必须与真实版本同发（家族纪律：一份法律文件一个底稿），
+  //     在代码大扫除里顺手加权限 = 代码与门面再度脱节（P1-5 批评的病根）。
+  //
+  // **触发条件**（下一个功能版本收录楷体时，按序做）：
+  //   1. module.json5 加回 ohos.permission.INTERNET；
+  //   2. 取消下方注释（SHA256 不变，托管文件已验证）；
+  //   3. 756.html 隐私政策加回联网下载说明 + 应用内 Privacy.ets 同步（双写纪律）；
+  //   4. AGC 隐私标签/商店文案同步；下载 UI 自动出现（Settings.ets hasDownloadable()），
+  //     下载 UI 的既有义务不变：明示联网+体积、进度可见、失败可重试说人话、
+  //     下载记录落盘（ReaderPrefs），失败不静默。
   // {
   //   id: 'rockreader-kai',
   //   displayName: '楷体 RockReader Kai',

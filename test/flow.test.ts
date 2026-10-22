@@ -58,7 +58,7 @@ function makeEpub(chapterCount: number, parasPerChapter: number): Uint8Array {
 function boxOf(signature: string, fontFamily: string = ''): LayoutBox {
   return {
     fontSizeFp: 27, fontSizePx: 54, lineHeightPx: 102, widthPx: 900, heightPx: 1400,
-    fontFamily: fontFamily, fontPath: '', fontWeight: 400, signature: signature
+    fontFamily: fontFamily, fontPath: '', fontWeight: 400, marginVp: 20, signature: signature
   };
 }
 

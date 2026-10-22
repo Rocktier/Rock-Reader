@@ -15,18 +15,6 @@
     {
       "name": "shelf_title",
       "value": "Shelf"
-    },
-    {
-      "name": "shelf_empty_hint",
-      "value": "No books yet"
-    },
-    {
-      "name": "shelf_import",
-      "value": "Import"
-    },
-    {
-      "name": "reader_placeholder",
-      "value": "Reader"
     }
   ]
 }

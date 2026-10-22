@@ -15,18 +15,6 @@
     {
       "name": "shelf_title",
       "value": "书架"
-    },
-    {
-      "name": "shelf_empty_hint",
-      "value": "还没有书"
-    },
-    {
-      "name": "shelf_import",
-      "value": "导入"
-    },
-    {
-      "name": "reader_placeholder",
-      "value": "阅读"
     }
   ]
 }
