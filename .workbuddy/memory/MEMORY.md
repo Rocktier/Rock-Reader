@@ -78,6 +78,13 @@ RockJournal 的 JSON 落盘字段被 release 混淆改了名 —— **1.0.2 已�
 - 迁移守卫单测在 `test/indexcodec.test.ts`（3 条）。
 - RockReader 侧无对象 JSON 落盘（显式字符串列名），不受影响，规则文件里写了预警。
 
+## ⚠️ 日期一律用本地时区（todayKey/dateKeyOf），禁用 toISOString（UTC）
+
+东八区 00:00~08:00 时 UTC 还是前一天 ⇒ 用 `new Date().toISOString().substring(0,10)`
+做文件名会**写成昨天**。这个坑**出现过两次**：Editor.ets:171 先修过一次，
+Settings 的备份/导出两处漏网（2026-10-23 凌晨实测：文件名显示 10-22，实为 10-23）。
+CI 守门：`test/notemeta.test.ts`「dateKeyOf 必须产出本地日历日期，不是 UTC」。
+
 ## 命令行编译唯一可用方式（2026-10-22 实证）
 
 项目自带 `hvigorw` wrapper **已损坏**（反复 Hvigor cleaning/installing 后静默退出）。
