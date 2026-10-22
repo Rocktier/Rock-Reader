@@ -112,7 +112,28 @@ export JAVA_HOME="E:/Program Files/Huawei/DevEco Studio/jbr"
   动效类（pageTransition/脉冲/浮现）无法静态验证 → 仍需真机/目视。
 - **平板断点改为单测守门**：模拟器 shell **没有 wm 命令**（改不了分辨率），
   故把 shelfColsOf / readingMarginOf 抽成纯逻辑进 CI（LayoutStyle，共 5 条断言）。
-- tag：RockReader v1.0.1/v1.0.2/v1.0.3 早已存在（指向正确）；RockJournal 本次补
+- tag：RockReader v1.0.1/v1.0.2/v1.0.3 早已存在（指向正确），**v1.0.4 于 2026-10-23
+  补打**（阅读 1.0.4 上架包同日产出，桌面三件）；RockJournal 本次补
   v1.0.0/v1.0.2（1.0.1 跳号既成事实不伪造）。**均为本地 tag 未 push**——
   push tag 会触发 CI 建 GitHub Release，发版时机由党哥下令。
-- 测试基线：RockReader 177/177、RockJournal 119/119（npm test，esbuild 管道）。
+- 测试基线：RockReader 182/182、RockJournal 123/123（npm test，esbuild 管道）。
+
+## safe-delete 钩子 vs hvigor 构建（2026-10-23 实证，每次出包必踩）
+
+- 钩子按「单轮批量删除 ≥50 文件需确认」拦截，而 hvigor 清编译缓存 / 替换旧产物
+  （.app、app-symbol.zip 均为含 ≥50 文件的归档）必然触发 → 构建报 00308018/00308001，
+  真因在 `.hvigor/outputs/build-logs/build.log`（搜 safe-delete）。
+- 正解：**改名让开、不删除**——`entry/build/release/cache/default/default@CompileArkTS/
+  esmodule/release/compiler.cache`、`build/outputs/release/*-signed.app`、
+  `build/outputs/release/symbol/release/app-symbol.zip` 逐个 `mv X X.stale` 再重跑，
+  其余任务 UP-TO-DATE 秒过；遗留 .stale 待党哥确认后清。
+- 长期建议：safe-delete 钩子豁免 `**/build/**` 与 `.hvigor/**`。
+- 另：`hap-sign-tool verify-app` 必带 `-outCertChain` / `-outProfile`，否则报 11011008。
+
+## Rock阅读 1.0.4 上架包（2026-10-23 产出，桌面三件）
+
+- `Rock阅读-1.0.4-上架.app`（AGC 传这个，2.3MB）/ `Rock阅读-1.0.4-留底.hap`（3.7MB）/
+  `Rock阅读-1.0.4-更新说明.md`（AGC 粘贴版 + 审核员要点 + 两个商店待办：MOBI 文案同步、截图补拍）。
+- 内容 = 世界百佳评审整改的用户可见部分：三件套（书签/摘录/全文搜索）、语速六档
+  （真接通，Record<string,Object> 类型化字面量）、朗读定时、平板适配、MOBI 诚实化；
+  **taskpool 与书架排序是决策否决/推迟，不在其内**。
