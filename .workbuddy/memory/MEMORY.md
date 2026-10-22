@@ -58,6 +58,26 @@ UI 义务（凡是联网下载功能都要做到）：
 - 模拟器实测有 TTS 能力（findings §15 坑 2 作废，§16 留证）；
   凌飞哲在模拟器缺音色包（码 1002300005），真机才能验证下载链路。
 
+## ⚠️ release 混淆会改名序列化字段（2026-10-22 反汇编实证，数据安全级）
+
+RockJournal 的 JSON 落盘字段被 release 混淆改了名 —— **1.0.2 已带混淆名写盘**：
+
+| | NoteMeta 对象字面量的键 |
+|---|---|
+| debug（不混淆） | `id, date, createdAt, mood, moodText, preview, updatedAt, words, hasImage, imgRef, favorite, tags, unlockAt` |
+| release（四开关全开） | `id, date, **m5**, mood, moodText, preview, **l5**, words, hasImage, **n5**, favorite, tags, unlockAt` |
+
+- 单开 `-enable-property-obfuscation` 或单开 `-enable-toplevel-obfuscation` 都**不**改名
+  ⇒ 是四条开关联合作用的产物，单一 `-keep-property-whitelist` 拦不住
+  （实测 26 字段名白名单：产物与不写逐字相同）。
+- **根治 = 文件级 `-keep`**（保护 IndexCodec/NoteBlocks/BackupService 三个序列化真源），
+  release 产物字段名已验证回到明文。
+- **存量 = 读端 fallback**：NoteMeta 加三个 optional 旧名（m5/l5/n5），
+  IndexCodec 明文优先、旧名兜底 ⇒ 1.0.2 用户升级不丢时间戳与图片引用。
+- 格式坑：`-keep` / `-keep-property-whitelist` 的条目**不能缩进**（缩进 = 不解析）。
+- 迁移守卫单测在 `test/indexcodec.test.ts`（3 条）。
+- RockReader 侧无对象 JSON 落盘（显式字符串列名），不受影响，规则文件里写了预警。
+
 ## 命令行编译唯一可用方式（2026-10-22 实证）
 
 项目自带 `hvigorw` wrapper **已损坏**（反复 Hvigor cleaning/installing 后静默退出）。
@@ -79,13 +99,12 @@ export JAVA_HOME="E:/Program Files/Huawei/DevEco Studio/jbr"
 - 决策记录收口的：索引增量写（>5MB/p95>50ms 触发）、字体下载联网（四步触发，
   牵动 INTERNET 权限+隐私政策+AGC 标签+商店文案，必须随版本走）、导入 taskpool、
   书架排序切换、导入文案诚实化（NOT_SUPPORTED 撤下 MOBI/AZW3 + PARSE_CRASHED/MOBI_TOO_NEW）。
-- **模拟器统一验证清单（未做）**：动效（pageTransition/脉冲/浮现）、三件套
-  （书签/摘录/搜索）、语速生效、朗读定时停止、自定义心情、备份提醒三态、
-  图片删除、平板断点（书架 3/4/6 列 + 版心封顶）。
-- **混淆白名单遗留**：RockJournal 已加 -keep-property-whitelist（26 字段）；
-  ⚠️ 待模拟器拉真实 index.json 验证已上架 1.0.2 是否已带混淆名写盘——
-  若是，下版必须带「旧混淆名→明文名」迁移映射，否则升级丢日记元数据。
-  RockReader 无对象 JSON 落盘，无需白名单（例外预警写在 obfuscation-rules.txt）。
+- **模拟器验证（2026-10-22 晚已完成）**：阅读页三件套（书签/摘录入账，抽屉
+  「标记 N」计数实见 1→2）、朗读取读正常（位置 0%→21%）、定时按钮循环
+  （关→15→30→60→关）与倒计时递减（15 分→72 秒后 14 分）、语速六档面板。
+  动效类（pageTransition/脉冲/浮现）无法静态验证 → 仍需真机/目视。
+- **平板断点改为单测守门**：模拟器 shell **没有 wm 命令**（改不了分辨率），
+  故把 shelfColsOf / readingMarginOf 抽成纯逻辑进 CI（LayoutStyle，共 5 条断言）。
 - tag：RockReader v1.0.1/v1.0.2/v1.0.3 早已存在（指向正确）；RockJournal 本次补
   v1.0.0/v1.0.2（1.0.1 跳号既成事实不伪造）。**均为本地 tag 未 push**——
   push tag 会触发 CI 建 GitHub Release，发版时机由党哥下令。
