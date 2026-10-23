@@ -116,7 +116,10 @@ export JAVA_HOME="E:/Program Files/Huawei/DevEco Studio/jbr"
   补打**（阅读 1.0.4 上架包同日产出，桌面三件）；RockJournal 本次补
   v1.0.0/v1.0.2（1.0.1 跳号既成事实不伪造）。**均为本地 tag 未 push**——
   push tag 会触发 CI 建 GitHub Release，发版时机由党哥下令。
-- 测试基线：RockReader 182/182、RockJournal 123/123（npm test，esbuild 管道）。
+- 测试基线：RockReader 182/182、RockJournal 130/130（npm test，esbuild 管道）。
+- 复评清创（2026-10-23）：私记 517defa 修版本漂移/importAll O(N²)/备份文案/注释失真
+  （见 RockJournal 仓日志）；阅读 8aa0816 修门面失实。教训：删私有方法必须 grep `this.` 全查
+  （esbuild 管道不查 ArkTS，漏改一处 10505001）；出包流程加一步看测试报告（红灯包根因）。
 
 ## safe-delete 钩子 vs hvigor 构建（2026-10-23 实证，每次出包必踩）
 
