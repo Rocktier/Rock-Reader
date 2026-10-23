@@ -12,6 +12,7 @@ import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookRecord } from '../common/Types';
 import { byBook, BookTotal, dailyMs, durationText, msOfDay, ReadSession, streakDays, totalMs } from '../engine/stats/ReadStats';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { formPadOf } from '../common/LayoutStyle';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_RADIUS_CARD } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
@@ -42,6 +43,12 @@ struct Stats {
   @State weekMax: number = 0;
   @State rows: BookStatRow[] = [];
   @State sessionCount: number = 0;
+  /**
+   * 版心单侧补丁（vp）：P0-5 大屏适配。数字卡与柱状图在宽屏上拉满
+   * 会摊成扁带 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
+   * 0 = 手机竖屏 / 未测量，行为与旧版一致。
+   */
+  @State private padX: number = 0;
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
@@ -145,6 +152,7 @@ struct Stats {
           .textAlign(TextAlign.Center)
           .borderWidth(1)
           .borderColor(this.palette.line)
+          .accessibilityText('返回')
           .onClick(() => {
             this.getUIContext().getRouter().back();
           })
@@ -288,6 +296,10 @@ struct Stats {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
-    .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
+    .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX })
+    // 视口宽（vp）→ 版心补丁；旋转 / 分屏自动重算
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.padX = formPadOf(newValue.width as number);
+    })
   }
 }

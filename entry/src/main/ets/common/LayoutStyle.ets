@@ -82,6 +82,29 @@ export const BP_LARGE_VP: number = 840;
 /** 每行的最大字数（中文）：超过后逐行扫视易丢行 */
 export const MAX_LINE_CHARS: number = 35;
 
+/**
+ * 次级页（设置 / 关于 / 统计 / 隐私政策）版心封顶值（vp）。
+ *
+ * 这些页在平板横屏上会被拉成 1000+vp 宽 —— 表单行长得没法扫视，
+ * 且整页内容摊成一条扁带，与"纸面"质感相反。封顶居中即可。
+ * （与阅读页同思路：阅读页封的是"行长字数"，这里封的是"表单宽度"。）
+ */
+export const FORM_MAX_VP: number = 560;
+
+/**
+ * 次级页版心的单侧补丁（vp）：版心封顶 FORM_MAX_VP 居中所需的左右补白。
+ *
+ * UI 层把返回值加进内容容器的左右 padding —— **零结构改动、纯算术**，
+ * 和 readingMarginOf 一个路子（那个改阅读页 padding，这个改表单页 padding）。
+ * 手机竖屏 / 未测量（0）返回 0 ⇒ 行为与旧版逐字一致。
+ */
+export function formPadOf(viewWidthVp: number): number {
+  if (viewWidthVp <= 0 || viewWidthVp <= FORM_MAX_VP) {
+    return 0;
+  }
+  return Math.round((viewWidthVp - FORM_MAX_VP) / 2);
+}
+
 /** 书架网格列数：<600 = 3 列（手机竖屏）/ 600~839 = 4 列 / ≥840 = 6 列（平板横屏） */
 export function shelfColsOf(widthVp: number): number {
   if (widthVp >= BP_LARGE_VP) {

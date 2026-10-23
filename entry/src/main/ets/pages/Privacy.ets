@@ -17,6 +17,7 @@
  * 文案改动必须同步回那篇文章 —— 两处不一致，上架时就是"政策与实现不符"的拒审理由。
  */
 import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
+import { formPadOf } from '../common/LayoutStyle';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_6XL } from '../theme/RrTokens';
 
@@ -90,6 +91,12 @@ const PRIVACY_LINES: Array<string> = [
 @Component
 struct Privacy {
   @State palette: Palette = paletteOf(THEME_DARK);
+  /**
+   * 版心单侧补丁（vp）：P0-5 大屏适配。宽屏上政策正文拉满 1000+vp 一行
+   * 五六十个字，根本读不动 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
+   * 0 = 手机竖屏 / 还没测到视口，行为与旧版一致。
+   */
+  @State private padX: number = 0;
   private prefs: ReaderPrefs = new ReaderPrefs();
 
   aboutToAppear(): void {
@@ -131,6 +138,7 @@ struct Privacy {
           .height(34)
           .textAlign(TextAlign.Center)
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
+          .accessibilityText('返回')
           .onClick(() => this.getUIContext().getRouter().back())
         Text('PRIVACY')
           .fontSize(RR_FS_META)
@@ -153,7 +161,7 @@ struct Privacy {
           }, (line: string, idx: number) => 'p' + idx)
         }
         .width('100%')
-        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_2XL, bottom: RR_SP_6XL })
+        .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX, top: RR_SP_2XL, bottom: RR_SP_6XL })
         .alignItems(HorizontalAlign.Start)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -164,5 +172,9 @@ struct Privacy {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
+    // 视口宽（vp）→ 版心补丁；旋转 / 分屏会自动重算（与 Reader.ets 同款 onAreaChange）
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.padX = formPadOf(newValue.width as number);
+    })
   }
 }

@@ -140,3 +140,44 @@ export JAVA_HOME="E:/Program Files/Huawei/DevEco Studio/jbr"
 - 内容 = 世界百佳评审整改的用户可见部分：三件套（书签/摘录/全文搜索）、语速六档
   （真接通，Record<string,Object> 类型化字面量）、朗读定时、平板适配、MOBI 诚实化；
   **taskpool 与书架排序是决策否决/推迟，不在其内**。
+
+## ⚠️ 浮层「点外部关闭」是**不牢靠的**——layoutWeight 会被内容挤成 0（2026-10-23 实测）
+
+写齿轮抽屉/面板时，**永远要有显式关闭控件（×）**，不要只靠「点上面那条透出的空白」。
+实证：Reader.ets 设置抽屉 = `[关闭带 layoutWeight(1)] + [面板]`，当面板内容总高
+（4 行档位 ~457vp + Scroll 限高 420 + 头部）超过抽屉本体时，**关闭带被压成 2px**
+（实测面板顶边紧贴状态栏）→ 面板铺满全屏且点不关，只剩系统返回一条出路。
+修（四处，缺一不可）：
+1. 面板头部加 `×`（accessibilityText「关闭设置」）—— 兜底出路；
+2. 关闭带改**固定高度**（本项目 `SETTINGS_STRIP_VP=88`），不再用 layoutWeight；
+3. 固定内容（档位行）一并**移进 Scroll**，整面板只留头部固定；
+4. 容器内 Scroll 用 `.layoutWeight(1)` 让它能收缩；父链每层都必须**高度确定**
+   （缺口 .height('100%')/layoutWeight 一层的，layoutWeight 就解析不出来）。
+:::tip `constraintSize({maxHeight})` 不是给 Scroll 限高的正确手段——本项目原写法
+（`constraintSize({maxHeight:420})`）在 Scroll 上未生效，且与 layoutWeight 混用会打架。
+抄 tocList 的模式：`List/Scroll + layoutWeight(1)` + 父高度确定。
+
+## 图表数据顺序约定：左→右 = 过去→现在（ newest 压轴）
+
+`NoteMeta.monthlyWords` 返回**正序**（out[0] 最早、out[N-1] 是当月），理由：柱状图
+从左到右就是时间推进，最新在右才符合读图直觉。曾因实现（最新在前）与页面注释
+（最新在右）矛盾而被新写的单测当场抓出来——**凡是图表数据，顺序必须体现在单测里**。
+
+## 模拟器 UI 自动化（hdc + uitest，免鼠标）
+
+`HDC="E:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe"`
+- 截图：`shell 'uitest screenCap -p /data/local/tmp/x.png'`；取回：`file recv`
+- 操作：`shell 'uitest uiInput click|longClick|inputText|swipe X Y ...'`、
+  `keyEvent Back`、`aa start -b <bundle> -a EntryAbility`
+- 找坐标：`shell 'uitest dumpLayout -p /data/local/tmp/l.json'` → python 读
+  `attributes.bounds`（格式 `[x0,y0][x1,y1]`，本机模拟器分辨率 1256×2760）
+- **hdc 会把所有路径与 cwd 拼接** → 本地路径用相对（cd 到 `/f/AI/HarmonyOS` 再传
+  `RockReader/...`）；设备绝对路径要 `export MSYS_NO_PATHCONV=1` 挡住 Git Bash 转换
+- 状态栏（y<136）吞点击；多步连点会互相干扰 → 每步单独跑，间隔 2~3s
+
+## 横屏/大屏：断点一律走「纯函数 + 单测」，别指望模拟器验证
+
+模拟器 shell **没有 wm 命令**改不了分辨率，所有断点判定必须抽成纯函数从 CI 守：
+- `LayoutStyle.shelfColsOf`（书架列数）/ `readingMarginOf`（阅读版心）/ **`formPadOf`**
+  （表单页版心单侧补丁，FORM_MAX_VP=560，2026-10-23 加，用于 Privacy/About/Stats/Settings
+  四个次级页；UI 层把返回值加进左右 padding，零结构改动）。

@@ -482,6 +482,7 @@ struct Index {
       .borderWidth(1)
       .borderColor(this.palette.line)
       // 闭包里类型窄化不算数（延迟执行），这里再判一次空
+      .accessibilityText('继续阅读')
       .onClick(() => {
         if (this.resume !== null) {
           this.openBook(this.resume.book);
@@ -623,6 +624,7 @@ struct Index {
                   .borderWidth(1)
                   .borderColor(this.palette.line)
                   .margin({ right: RR_SP_LG, bottom: RR_SP_LG })
+                  .accessibilityText('移动到分组 ' + (g === GROUP_UNFILED ? '未分组' : g))
                   .onClick(() => {
                     this.editorText = g;
                   })
@@ -760,6 +762,7 @@ struct Index {
             // 视觉 30，热区 46：30vp 的点击目标太小（触摸标准 ≥44）
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: RR_SP_LG })
+            .accessibilityText('阅读统计')
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Stats' });
             })
@@ -773,6 +776,7 @@ struct Index {
             .borderColor(this.palette.line)
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: RR_SP_LG })
+            .accessibilityText('设置')
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
             })
@@ -786,6 +790,7 @@ struct Index {
             .borderColor(this.palette.line)
             .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
             .margin({ left: RR_SP_LG })
+            .accessibilityText('导入书籍')
             .onClick(() => {
               this.onImport();
             })

@@ -12,6 +12,7 @@ import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { formPadOf } from '../common/LayoutStyle';
 import { FontStore } from '../data/FontStore';
 import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_XS, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER } from '../theme/RrTokens';
@@ -41,6 +42,12 @@ struct Settings {
   /** 正在下载的字体 id（'' = 空闲） */
   @State busyFontId: string = '';
   @State fontNote: string = '';
+  /**
+   * 版心单侧补丁（vp）：P0-5 大屏适配。设置项在宽屏上拉满一行五六十个字，
+   * 扫视困难且整页摊成扁带 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
+   * 0 = 手机竖屏 / 未测量，行为与旧版一致。
+   */
+  @State private padX: number = 0;
 
   private prefs: ReaderPrefs = new ReaderPrefs();
   private fontStore: FontStore | null = null;
@@ -211,6 +218,7 @@ struct Settings {
           .borderRadius(RR_RADIUS_COVER)
           .height(CHIP_HEIGHT)
           .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
+          .accessibilityText('正文去广告：' + (this.purifyOn ? '开' : '关'))
           .onClick(() => this.pickPurify(!this.purifyOn))
       }
       .width('100%')
@@ -349,6 +357,7 @@ struct Settings {
               .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
               .height(30)
               .border({ width: 1, color: this.palette.line })
+              .accessibilityText(this.fontActionText(entry) + ' ' + entry.displayName)
               .onClick(() => {
                 if (entry.builtin) {
                   return;
@@ -425,6 +434,7 @@ struct Settings {
           .height(34)
           .textAlign(TextAlign.Center)
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
+          .accessibilityText('返回')
           .onClick(() => this.getUIContext().getRouter().back())
         Text('SETTINGS')
           .fontSize(RR_FS_META)
@@ -468,13 +478,14 @@ struct Settings {
           .width('100%')
           .padding({ top: RR_SP_3XL, bottom: RR_SP_2XL })
           .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+          .accessibilityText('关于本应用与隐私政策')
           .onClick(() => {
             router.pushUrl({ url: 'pages/About' });
           })
           .responseRegion({ x: 0, y: -4, width: '100%', height: 52 })
         }
         .width('100%')
-        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_LG })
+        .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX, top: RR_SP_3XL, bottom: RR_SP_LG })
         .alignItems(HorizontalAlign.Start)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -494,11 +505,15 @@ struct Settings {
           .margin({ top: RR_SP_MD })
       }
       .width('100%')
-      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, bottom: RR_SP_5XL })
+      .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX, bottom: RR_SP_5XL })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
+    // 视口宽（vp）→ 版心补丁；旋转 / 分屏自动重算
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.padX = formPadOf(newValue.width as number);
+    })
   }
 }

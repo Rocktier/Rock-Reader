@@ -40,6 +40,11 @@ export const TTS_SPEED_MAX: number = 2.0;
 /** 音色白名单（脏值/历史值一律回默认）：聆小珊内置无需下载；凌飞哲需下载 */
 export const TTS_PERSON_DEFAULT: number = 13;
 export const TTS_PERSONS: number[] = [13, 21];
+/** 内置音色（包在系统里，无需下载）：聆小珊 13 */
+export const TTS_PERSON_BUILTIN: number = 13;
+/** 已下载音色的 person 列表（preferences 存逗号串，如 "13,21"）。
+ *  党口径：下载记录进 prefs —— 重开 App / 换设备恢复备份后不重复引导下载。 */
+const KEY_TTS_VOICE_DL: string = 'tts_voice_dl';
 
 export const CONVERT_OFF: string = 'off';
 
@@ -65,6 +70,8 @@ export class ReaderPrefs {
   private convertMode: string = CONVERT_OFF;
   private ttsSpeed: number = TTS_SPEED_DEFAULT;
   private ttsPerson: number = TTS_PERSON_DEFAULT;
+  /** 已下载音色（内置款永远就绪；reload 时从 store 重读） */
+  private voiceReady: number[] = [TTS_PERSON_BUILTIN];
 
   /** 幂等：重复调用直接返回 */
   open(ctx: Context): void {
@@ -155,6 +162,22 @@ export class ReaderPrefs {
     return TTS_PERSON_DEFAULT;
   }
 
+  /** 已下载音色读取（逗号串 → number[]；脏值丢弃，内置款永远包含） */
+  private readVoiceReady(store: preferences.Preferences): number[] {
+    const out: number[] = [TTS_PERSON_BUILTIN];
+    const raw: preferences.ValueType = store.getSync(KEY_TTS_VOICE_DL, '');
+    if (typeof raw === 'string' && raw.length > 0) {
+      const parts: string[] = raw.split(',');
+      for (let i: number = 0; i < parts.length; i++) {
+        const n: number = Number(parts[i].trim());
+        if (Number.isFinite(n) && out.indexOf(n) < 0) {
+          out.push(n);
+        }
+      }
+    }
+    return out;
+  }
+
   /**
    * 重新从 store 读一遍。
    * 必要性：设置页与阅读页各持一个 ReaderPrefs 实例，设置页改了档位后，
@@ -172,6 +195,25 @@ export class ReaderPrefs {
     this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);
     this.ttsSpeed = this.readTtsSpeed(store);
     this.ttsPerson = this.readTtsPerson(store);
+    this.voiceReady = this.readVoiceReady(store);
+  }
+
+  /** 该音色是否已就绪（内置 = 永远 true；其余看下载记录） */
+  isVoiceReady(person: number): boolean {
+    return this.voiceReady.indexOf(person) >= 0;
+  }
+
+  /**
+   * 记录音色下载成功（失败不记录 —— 失败态由 UI 当场反馈「可重试」，
+   * 不落脏状态；党口径「失败可重试、不重复下载已有资源」由 ok=true 分支保证）。
+   */
+  markVoiceDownloaded(person: number, ok: boolean): void {
+    if (!ok || this.voiceReady.indexOf(person) >= 0) {
+      return;
+    }
+    this.voiceReady.push(person);
+    this.put(KEY_TTS_VOICE_DL, this.voiceReady.join(','));
+    this.flush();
   }
 
   getLevels(): LayoutLevels {

@@ -400,6 +400,58 @@ export class TtsEngine {
     this.supported = null; // 下次进入 Reader 重新探测（设备能力不会变，但便宜且干净）
   }
 
+  /**
+   * 下载音色包（凌飞哲 person 21）—— **走系统语音服务**（官方 downloadVoice）。
+   *
+   * 第一性原则 + 党口径（用户可主动联网下载资源，但入口必须明示）：
+   *  ① 下载由**系统**执行，本应用不直接发起网络连接 ⇒ **不需要 INTERNET 权限** ——
+   *     这正是 2026-09-25「删权限」叙事能保住的原因（字体下载要自家联网，音色不用）；
+   *  ② 进度 / 完成 / 取消 / 失败全事件面，UI 侧兑现「进度可见、失败说人话、可重试」；
+   *  ③ 成功后由调用方记 ReaderPrefs（下载记录进 prefs，不重复引导）。
+   *
+   * 官方 API（sdk/default/hms/ets/api/@hms.ai.textToSpeech.d.ts:705）：
+   *  downloadVoice(VoiceDownload{requestId, language, person, style},
+   *                AsyncCallback<DownloadResponse>)
+   *  DownloadResponse 事件：start / progress(string) / complete(VoiceInfo) / cancel / error。
+   *  ⚠️ 与 createEngine 同一模态：成功回调的 err 是 **undefined 不是 null**。
+   */
+  downloadVoice(person: number, onProgress: (pct: number) => void, onDone: (ok: boolean, msg: string) => void): void {
+    const params: textToSpeech.VoiceDownload = {
+      requestId: 'rr-voice-' + person + '-' + Date.now().toString(36),
+      language: 'zh-CN',
+      person: person,
+      style: ''
+    };
+    try {
+      textToSpeech.downloadVoice(params, (err: BusinessError | null | undefined, resp?: textToSpeech.DownloadResponse) => {
+        if ((err !== undefined && err !== null) || resp === undefined) {
+          hilog.warn(DOMAIN, TAG, 'downloadVoice start failed');
+          onDone(false, '系统暂不支持音色下载');
+          return;
+        }
+        resp.on('progress', (p: string) => {
+          const n: number = Number(p);
+          onProgress(Number.isFinite(n) ? n : -1);
+        });
+        resp.on('complete', () => {
+          hilog.info(DOMAIN, TAG, 'downloadVoice complete: %{public}d', person);
+          onDone(true, '');
+        });
+        resp.on('cancel', () => {
+          onDone(false, '下载已取消');
+        });
+        resp.on('error', (err: BusinessError) => {
+          // ⚠️ error 事件的回调参数是 BusinessError（与 progress/complete 的 string 不同，官方声明如此）
+          hilog.warn(DOMAIN, TAG, 'downloadVoice error: %{public}d', err !== undefined && err !== null ? err.code : -1);
+          onDone(false, '下载失败');
+        });
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'downloadVoice threw: %{public}s', JSON.stringify(e));
+      onDone(false, '音色下载出错');
+    }
+  }
+
   // ----------------------------------------------------------------
   // 内部
   // ----------------------------------------------------------------

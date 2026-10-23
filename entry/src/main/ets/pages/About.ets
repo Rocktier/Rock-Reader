@@ -16,6 +16,7 @@
 import { router } from '@kit.ArkUI';
 import { bundleManager } from '@kit.AbilityKit';
 import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
+import { formPadOf } from '../common/LayoutStyle';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL } from '../theme/RrTokens';
 
@@ -30,6 +31,12 @@ struct About {
   @State palette: Palette = paletteOf(THEME_DARK);
   /** 取不到版本就不显示（不编造一个假版本号） */
   @State versionText: string = '';
+  /**
+   * 版心单侧补丁（vp）：P0-5 大屏适配。slogan 与条目在宽屏上拉满一行
+   * 六七十个字，"纸面"会摊成横幅 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
+   * 0 = 手机竖屏 / 未测量，行为与旧版一致。
+   */
+  @State private padX: number = 0;
   private prefs: ReaderPrefs = new ReaderPrefs();
 
   aboutToAppear(): void {
@@ -109,6 +116,7 @@ struct About {
           .height(34)
           .textAlign(TextAlign.Center)
           .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
+          .accessibilityText('返回')
           .onClick(() => this.getUIContext().getRouter().back())
         Text('ABOUT')
           .fontSize(RR_FS_META)
@@ -180,7 +188,7 @@ struct About {
           })
         }
         .width('100%')
-        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_5XL, bottom: RR_SP_5XL })
+        .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX, top: RR_SP_5XL, bottom: RR_SP_5XL })
         .alignItems(HorizontalAlign.Start)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -196,11 +204,15 @@ struct About {
           .fontColor(this.palette.text3)
           .width('100%')
           .textAlign(TextAlign.Start)
-          .padding({ left: RR_SP_4XL, right: RR_SP_4XL, bottom: RR_SP_5XL })
+          .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX, bottom: RR_SP_5XL })
       }
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
+    // 视口宽（vp）→ 版心补丁；旋转 / 分屏自动重算
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      this.padX = formPadOf(newValue.width as number);
+    })
   }
 }

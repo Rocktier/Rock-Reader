@@ -14,7 +14,7 @@
  *  - 目录 / 设置 都从浮层进入；设置返回时**按字符偏移复原位置**（切档位不跳页）
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { curves, router } from '@kit.ArkUI';
+import { curves, promptAction, router } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
@@ -165,6 +165,15 @@ const TOC_PANEL_WIDTH: string = '72%';
 const TOC_SLIDE_VP: number = 320;
 const SETTINGS_SLIDE_VP: number = 460;
 const PANEL_ANIM_MS: number = 220;
+/**
+ * 设置抽屉顶部「点外部关闭」带的最小高度（vp）。
+ *
+ * ⚠️ 2026-10-23 复评实测补：原设计给关闭带 layoutWeight(1)，但面板内容
+ * （4 行档位 + 主题/字体/音色/语速 + 更多设置）总高超过抽屉本身时，
+ * 关闭带被挤成 **0 像素** —— 面板铺满全屏且点上面关不掉，只能靠系统返回。
+ * 改成固定最小高度 + 面板内部 Scroll 收缩，两条关闭路（点带 / ×）都常在。
+ */
+const SETTINGS_STRIP_VP: number = 88;
 
 @Entry
 @Component
@@ -302,6 +311,14 @@ struct Reader {
   @State sleepMin: number = 0;
   /** 定时剩余秒数：播放中每秒递减（暂停时 tick 提前返回，倒计时自然冻结），到 0 停读 */
   @State sleepLeft: number = 0;
+  /** 播放/暂停的一拍即走脉冲（topBar 喇叭与页脚文字共用；两段式，见 kickSpeak） */
+  @State private speakKick: boolean = false;
+  /** 音色下载中（person；0 = 无）—— chip 上显示进度，2026-10-23 复评补齐 */
+  @State private voiceBusyPerson: number = 0;
+  /** 音色「确认下载」态（person；0 = 无）：两击确认的第一击，防误触 */
+  @State private voiceArmedPerson: number = 0;
+  /** 音色下载进度（-1 = 未知/未开始） */
+  @State private voicePct: number = -1;
 
   aboutToAppear(): void {
     // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
@@ -422,6 +439,16 @@ struct Reader {
     // 音色偏好同步（设置里试听失败回退过 prefs；此处以 prefs 为准对齐引擎）
     this.ttsPerson = this.prefs.getTtsPerson();
     this.tts.setPerson(this.ttsPerson);
+    // 回前台续听（2026-10-23 复评）：onPageHide 暂停后原来**不自动恢复**，
+    // 用户每次切回本页都要手点「继续」。现在暂停态且引擎仍是 paused 时自动续。
+    // 边界说明：锁屏/后台持续播放在无 AVSession 前维持「即停」策略（期二），
+    // 这里只消灭「回前台还要多点一下」的摩擦，不冒充后台播放。
+    if (this.speakActive && this.speakPaused && this.tts.state === 'paused') {
+      this.tts.resume();
+      this.speakPaused = false;
+      this.speakPreparing = true;
+      this.startSpeakTimer();
+    }
     // 从独立设置页返回：浮层全部复位（审查报告 B23 —— 菜单卡在开启态）
     this.showMenu = false;
     this.showToc = false;
@@ -944,10 +971,20 @@ struct Reader {
       this.speakPreparing = true;
       this.speakProgress = '准备中';
       this.startSpeakTimer();
+      this.kickSpeak();
     } else {
       this.tts.pause();
       this.speakPaused = true;
+      this.kickSpeak();
     }
+  }
+
+  /** 播放/暂停脉冲：置 true 后 220ms 归位（与保存脉冲同参数，EaseOut 稳手感） */
+  private kickSpeak(): void {
+    this.speakKick = true;
+    setTimeout(() => {
+      this.speakKick = false;
+    }, 220);
   }
 
   /** 停止朗读（收工：复位全部状态） */
@@ -1349,6 +1386,7 @@ struct Reader {
         .height(34)
         .textAlign(TextAlign.Center)
         .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
+        .accessibilityText('返回书架')
         .onClick(() => this.getUIContext().getRouter().back())
       Text(this.title)
         .fontSize(RR_FS_LABEL)
@@ -1380,6 +1418,9 @@ struct Reader {
           .height(SPEAKER_ICON_VP)
           .fillColor(this.palette.text)
           .margin({ left: RR_SP_MD })
+          // 播放/暂停一拍即走：喇叭同步脉冲（与页脚文字按钮同一状态）
+          .scale({ x: this.speakKick ? 1.2 : 1.0, y: this.speakKick ? 1.2 : 1.0 })
+          .animation({ duration: 220, curve: Curve.EaseOut })
           // 视觉 28vp，热区 56×44：触摸标准 ≥44（上下各撑 8，左右各撑 14）
           .responseRegion({ x: -14, y: -8, width: 56, height: 44 })
           .accessibilityText(this.speakActive ? (this.speakPaused ? '继续朗读' : '暂停朗读') : '开始朗读')
@@ -1391,6 +1432,10 @@ struct Reader {
     .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
     .backgroundColor(this.palette.overlay)
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+    // 中央菜单唤起时自上滑入（复评整改：原瞬现）
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: -16 }))
+      .animation({ duration: 180, curve: Curve.EaseOut }))
   }
 
   @Builder
@@ -1513,6 +1558,10 @@ struct Reader {
     .padding({ left: RR_SP_3XL, right: RR_SP_3XL, top: RR_SP_3XL, bottom: RR_SP_5XL })
     .backgroundColor(this.palette.overlay)
     .border({ width: { top: 1 }, color: this.palette.lineSoft })
+    // 中央菜单唤起时自下滑入（复评整改：原瞬现）
+    .transition(TransitionEffect.OPACITY
+      .combine(TransitionEffect.translate({ y: 16 }))
+      .animation({ duration: 180, curve: Curve.EaseOut }))
     .onClick(() => {
     })
   }
@@ -1528,6 +1577,7 @@ struct Reader {
           .fontColor(this.drawerTab === 'toc' ? this.palette.text : this.palette.text3)
           .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'toc' ? this.palette.accent : Color.Transparent })
           .padding({ bottom: 6 })
+          .accessibilityText('目录页签')
           .onClick(() => {
             this.drawerTab = 'toc';
           })
@@ -1537,6 +1587,7 @@ struct Reader {
           .fontColor(this.drawerTab === 'marks' ? this.palette.text : this.palette.text3)
           .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'marks' ? this.palette.accent : Color.Transparent })
           .padding({ bottom: 6 })
+          .accessibilityText('标记页签，共 ' + (this.bookmarks.length + this.highlights.length) + ' 条')
           .onClick(() => {
             this.drawerTab = 'marks';
           })
@@ -1546,6 +1597,7 @@ struct Reader {
           .fontColor(this.drawerTab === 'search' ? this.palette.text : this.palette.text3)
           .border({ width: { bottom: 1.5 }, color: this.drawerTab === 'search' ? this.palette.accent : Color.Transparent })
           .padding({ bottom: 6 })
+          .accessibilityText('全文搜索页签')
           .onClick(() => {
             this.drawerTab = 'search';
           })
@@ -1612,6 +1664,7 @@ struct Reader {
             .fontColor(this.palette.text3)
             .width(26)
             .textAlign(TextAlign.Center)
+            .accessibilityText('清除目录搜索')
             .onClick(() => {
               this.tocQuery = '';
               this.applyTocQuery('');
@@ -1718,6 +1771,7 @@ struct Reader {
                   .fontColor(this.palette.text3)
                   .width(32)
                   .textAlign(TextAlign.Center)
+                  .accessibilityText('删除这个书签')
                   .onClick(() => {
                     this.removeBookmark(b.id);
                   })
@@ -1770,6 +1824,7 @@ struct Reader {
                   .fontColor(this.palette.text3)
                   .width(32)
                   .textAlign(TextAlign.Center)
+                  .accessibilityText('删除这条摘录')
                   .onClick(() => {
                     this.removeHighlight(h.id);
                   })
@@ -1840,6 +1895,7 @@ struct Reader {
             .fontColor(this.palette.text3)
             .width(26)
             .textAlign(TextAlign.Center)
+            .accessibilityText('清除搜索')
             .onClick(() => {
               this.searchQuery = '';
               this.searchHits = [];
@@ -2069,10 +2125,17 @@ struct Reader {
   }
 
   /** 音色 chip（设置面板）：选中即试听当前页 —— 官方无网页试听页，
-   *  RockReader 自己就是最佳试听器（同一引擎，模拟器可出声） */
+   *  RockReader 自己就是最佳试听器（同一引擎，模拟器可出声）。
+   *  2026-10-23 复评：凌飞哲未下载时 chip 明示「需下载」（原来是点了就
+   *  createEngine 报错回退的死选项，没有任何下载路径）；下载中显示进度；
+   *  首次点未下载音色进入「确认」态（两击确认，防误触），再点一次才发起。 */
   @Builder
   personChip(label: string, person: number) {
-    Text(label)
+    Text(this.voiceBusyPerson === person
+      ? (label + ' · ' + (this.voicePct >= 0 ? this.voicePct + '%' : '下载中'))
+      : (this.voiceArmedPerson === person
+        ? label + ' · 确认下载'
+        : (this.prefs.isVoiceReady(person) ? label : label + ' · 需下载')))
       .fontSize(RR_FS_LABEL)
       .fontColor(this.ttsPerson === person ? this.palette.bg : this.palette.text2)
       .backgroundColor(this.ttsPerson === person ? this.palette.text : this.palette.card)
@@ -2083,7 +2146,8 @@ struct Reader {
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .stateStyles({ pressed: { opacity: 0.6 } })
-      .accessibilityText(`音色 ${label}`)
+      .accessibilityText(this.voiceBusyPerson === person ? `音色 ${label} 下载中`
+        : (this.prefs.isVoiceReady(person) ? `音色 ${label}` : `音色 ${label}，需要下载`))
       .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
       .onClick(() => this.pickPerson(person))
   }
@@ -2113,11 +2177,46 @@ struct Reader {
     if (person === this.ttsPerson) {
       return;
     }
+    // 未下载的音色（凌飞哲 21）：不再「选了就报错回退」——
+    // 第一击进入「确认下载」态（toast 明示：系统语音服务下载、消耗流量），
+    // 第二击才真正发起（两击确认，防误触也防流量意外）。
+    if (!this.prefs.isVoiceReady(person)) {
+      if (this.voiceArmedPerson === person) {
+        this.voiceArmedPerson = 0;
+        this.runVoiceDownload(person);
+      } else {
+        this.voiceArmedPerson = person;
+        promptAction.showToast({ message: '凌飞哲音色由系统语音服务下载（消耗流量），再点一次开始' });
+      }
+      return;
+    }
+    this.voiceArmedPerson = 0;
     this.prefs.setTtsPerson(person);
     this.ttsPerson = person;
     // setPerson 内部会停旧引擎并 shutdown；随后 startSpeak 用新音色重建
     this.tts.setPerson(person);
     this.startSpeak();
+  }
+
+  /** 跑下载：进度进 chip，完成自动选中试听，失败 toast 可重试（不落失败态，下次仍引导） */
+  private runVoiceDownload(person: number): void {
+    this.voiceBusyPerson = person;
+    this.voicePct = -1;
+    this.tts.downloadVoice(person,
+      (pct: number) => {
+        this.voicePct = pct;
+      },
+      (ok: boolean, msg: string) => {
+        this.voiceBusyPerson = 0;
+        this.voicePct = -1;
+        if (ok) {
+          this.prefs.markVoiceDownloaded(person, true);
+          promptAction.showToast({ message: '音色下载完成' });
+          this.pickPerson(person); // 直接选中并试听
+        } else {
+          promptAction.showToast({ message: msg + '，可重试' });
+        }
+      });
   }
 
   /**
@@ -2145,18 +2244,33 @@ struct Reader {
           .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
           .fontColor(this.palette.text3)
+        // 显式关闭键（2026-10-23 复评实测补）：面板内容总高会超过抽屉高度，
+        // 「点上半透出的正文关闭」那条路可能被压成 0 像素 —— × 是兜底出路。
+        Text('×')
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.palette.text2)
+          .width(44)
+          .height(44)
+          .textAlign(TextAlign.Center)
+          .accessibilityText('关闭设置')
+          .onClick(() => {
+            this.showSettings = false;
+          })
       }
       .width('100%')
       .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_SM })
 
-      this.settingsRow('字号', LEVEL_MAX, 'font')
-      this.settingsRow('行距', LEVEL_MAX, 'line')
-      this.settingsRow('页边距', LEVEL_MAX, 'margin')
-      this.settingsRow('字重', WEIGHT_MAX, 'weight')
-
-      // 审查报告 B24：抽屉内容整体可滚 + 限高 —— 矮视口/横屏时"更多设置"不再被推出屏幕
+      // 审查报告 B24：抽屉内容整体可滚 + 限高 —— 矮视口/横屏时"更多设置"不再被推出屏幕。
+      // ⚠️ 2026-10-23 复评实测修正：4 行档位**也必须进 Scroll** —— 它们留在外面时
+      //    固定占 ~457vp，加上限高 420 的 Scroll，面板总高超过抽屉，顶部关闭带被挤成 0。
+      //    现在整面板只有头部固定，其余全滚 + layoutWeight 收缩，任何视口都关得掉。
       Scroll() {
         Column() {
+
+          this.settingsRow('字号', LEVEL_MAX, 'font')
+          this.settingsRow('行距', LEVEL_MAX, 'line')
+          this.settingsRow('页边距', LEVEL_MAX, 'margin')
+          this.settingsRow('字重', WEIGHT_MAX, 'weight')
 
       Row({ space: 8 }) {
         Text('主题')
@@ -2294,12 +2408,13 @@ struct Reader {
         }
         .width('100%')
       }
+      .layoutWeight(1)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
-      .constraintSize({ maxHeight: 420 })
       .scrollBar(BarState.Off)
     }
     .width('100%')
+    .height('100%')
     .backgroundColor(this.palette.overlay)
     .borderRadius({ topLeft: 12, topRight: 12 })
     .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
@@ -2395,6 +2510,9 @@ struct Reader {
           }
         }
       })
+      // 读屏可达性：正文区对读屏用户念明操作方式（点击三区分屏的等效说明；
+      // 翻页的无障碍替代路径 = 目录/标记/搜索跳转，均为带标签的真按钮）
+      .accessibilityText('正文：点左边缘上一页，右边缘下一页，中间唤出菜单；也可用目录、标记、搜索跳转位置')
       .onClick((event: ClickEvent) => {
         const third: number = this.viewWidthVp / 3;
         if (this.showToc) {
@@ -2461,6 +2579,8 @@ struct Reader {
       // 高度不变（FOOTER_VP=30）：文字按钮 + responseRegion 撑热区，不新增浮层。
       Column() {
         if (this.speakActive) {
+          // 播放条入场：从下方淡入（停播时章名/页码反向退场）—— 页脚是阅读页
+          // 唯一常驻控件，朗读起停的"换脏器"不该是硬切换（2026-10-23 复评整改）
           Row() {
             Text(this.speakPaused ? '继续' : '暂停')
               .fontSize(RR_FS_MICRO)
@@ -2468,6 +2588,9 @@ struct Reader {
               .fontColor(this.palette.text)
               .responseRegion({ x: -8, y: -8, width: 56, height: 44 })
               .accessibilityText(this.speakPaused ? '继续朗读' : '暂停朗读')
+              // 播放/暂停一拍即走：放大 1.15，EaseOut 归位（与保存脉冲同语言）
+              .scale({ x: this.speakKick ? 1.15 : 1.0, y: this.speakKick ? 1.15 : 1.0 })
+              .animation({ duration: 220, curve: Curve.EaseOut })
               .onClick(() => this.toggleSpeak())
             Text(this.speakPreparing ? '准备中' : this.speakProgress)
               .fontSize(RR_FS_MICRO)
@@ -2495,6 +2618,9 @@ struct Reader {
               .onClick(() => this.stopSpeak())
           }
           .width('100%')
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: 10 }))
+            .animation({ duration: 180, curve: Curve.EaseOut }))
         } else {
           Row() {
             Text(this.chapterTitle)
@@ -2510,6 +2636,9 @@ struct Reader {
               .fontColor(this.palette.text3)
           }
           .width('100%')
+          .transition(TransitionEffect.OPACITY
+            .combine(TransitionEffect.translate({ y: -10 }))
+            .animation({ duration: 180, curve: Curve.EaseOut }))
         }
       }
       .width('100%')
@@ -2539,6 +2668,11 @@ struct Reader {
         }
         .width('100%')
         .height('100%')
+        // 中央菜单整体渐入（2026-10-23 复评整改）：此前 showMenu 直接渲染、
+        // 上下两栏瞬现——与目录抽屉/设置抽屉/摘录卡的转场语言不一致。
+        // 方向性滑入在各栏 builder 内挂（topBar 自上、bottomBar 自下）
+        .transition(TransitionEffect.OPACITY
+          .animation({ duration: 160, curve: Curve.EaseOut }))
         // 自身对命中测试透明：让位出的页脚播放条区域要能点到 footer 的按钮
         // （Default 模式下全屏容器自身会吞掉落点 —— 2026-10-18 实测，
         // 不加这行播放条照样死区，只是不再被 bottomBar 盖而是被本层盖）
@@ -2563,13 +2697,20 @@ struct Reader {
       // ---- 设置抽屉（底出、不遮满：上半透出正文，改一下上面立刻跟着变）----
       if (this.showSettings) {
         Column() {
+          // 顶部关闭带：**固定最小高度**（原来是 layoutWeight(1)，会被长内容
+          // 挤成 0 像素，面板铺满全屏且点不关 —— 2026-10-23 复评实测的坑）。
           Column()
             .width('100%')
-            .layoutWeight(1)
+            .height(SETTINGS_STRIP_VP)
             .onClick(() => {
               this.showSettings = false;
             })
-          this.settingsPanel()
+          // 面板吃满剩余高度；内部 Scroll 用 layoutWeight 收缩，
+          // 所以「更多设置」在任何视口都滚得到，关闭带也永远点在得到。
+          Column() {
+            this.settingsPanel()
+          }
+          .layoutWeight(1)
         }
         .width('100%')
         .height('100%')
