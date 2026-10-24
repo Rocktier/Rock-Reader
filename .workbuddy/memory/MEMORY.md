@@ -181,3 +181,70 @@ export JAVA_HOME="E:/Program Files/Huawei/DevEco Studio/jbr"
 - `LayoutStyle.shelfColsOf`（书架列数）/ `readingMarginOf`（阅读版心）/ **`formPadOf`**
   （表单页版心单侧补丁，FORM_MAX_VP=560，2026-10-23 加，用于 Privacy/About/Stats/Settings
   四个次级页；UI 层把返回值加进左右 padding，零结构改动）。
+
+## ⚠️ @Builder 的值参数不随 @State 重跑（2026-10-25 实证，家族级）
+
+`this.chip(label, this.someState, cb)` 这种**直接调用** @Builder 并传 @State 的写法，
+@State 变了 UI 不一定重绘。实证：私记筛选条里点了「★ 收藏」——**列表确实筛了**
+（说明 @State 变了），但 chip 底色仍是白的；同一行里 ForEach 内的心情 chip 却正常
+变墨底（因为 key 带了 `:on` ⇒ item 重建）。
+
+修法二选一（本质都是「让选中态变化时整段重建」）：
+1. ForEach/条件渲染的 **key 带状态后缀**（`m.id + (selected ? ':on' : '')`）；
+2. 直接调用拆成 **if/else 两个分支**各写一次（条件渲染必然重建）。
+
+同理坑族（本族已第 4 次）：日历染色、收藏星、胶囊剧透、编辑后列表、筛选 chip ——
+**凡是「数据/状态变了但 UI 不更新」，先怀疑 key 有没有带上「变化的那一位」**。
+
+## 模拟器会自动锁屏（黑屏误判源，2026-10-25）
+
+锁屏后 `aa start` 报 `10106102 device screen is locked`，`screenCap` 拍到**纯黑**
+（见 66908 字节这个特征值 = 黑屏）。解锁：`keyEvent Power` + `swipe 628 2680 628 700`
+（必须从最底边往上滑），**但滑动解锁不稳定，会反复锁上**。
+⇒ 排查时先确认不是锁屏，别把黑屏当成自己代码炸了。
+
+## 硬件/构建口径修正（2026-10-25 实测）
+
+- **dpr = 3.5，视口 ≈ 359vp**（此前记的 3.0/419vp 是错的）：心情条 8vp→28px、
+  柱 72vp→252px 双证实。
+- **release 出包命令**：`assembleApp` **不能带 `--mode module`**（报 00306054 任务不存在）。
+  正确（**两仓通用**）：
+  ```bash
+  assembleApp -p product=release -p buildMode=release --no-daemon
+  ```
+  产物在 `build/outputs/release/<工程名>-release-signed.app`（目录名是 **product**）。
+  ⚠️ **`product` 必须是 `release` 不能是 `default`** —— 见下条，血的教训。
+- `hap-sign-tool verify-app` 的 `-outCertChain/-outProfile` 必须是**存在的本地路径**
+  （传 `/tmp/xxx` 报 11012005）。
+
+## ⚠️⚠️ 出包必踩：`-p product=default` 会产出调试签名包 ⇒ AGC 报 993（2026-10-25 实证）
+
+AGC 上传返回 **993 = Profile 文件非法**。两个应用（阅读 1.0.5 / 私记 1.0.4）同时被拒，
+根因只有一个：**`product=default` 的 signingConfig 是 DevEco 自动签名（调试证书 +
+调试 Profile）**。华为官方 993 原因四：「软件包使用的是自动签名，请使用发布 Profile
+进行手动签名」。
+
+- `build-profile.json5` 里两仓都有 `default`（自动签名）和 `release`（发布签名）两个
+  signingConfig 与两个 product；**只有 `product=release` 才走发布 Profile**。
+- 只改 `-p buildMode=release` **不够**——buildMode 只管混淆/优化，不管签名。
+- 1.0.4 那次成功是碰巧用了 `product=release`，后来照抄命令时退化成 `default` ⇒ 今晚翻车。
+
+**出包验收三步**（缺一不可，第二步是这次补上的）：
+1. `verify-app` 验签通过；
+2. **抠出包内 Profile 看 `type`**——验签通过不代表用的是发布 Profile！
+   ```bash
+   python3 -c "import io,re;s=io.open('<导出的>.p7b','rb').read().decode('latin-1');\
+   print(re.search(r'\"type\":\"(\w+)\"',s).group(1), re.search(r'\"bundle-name\":\"([^\"]+)\"',s).group(1))"
+   ```
+   必须是 `type=release` + 本应用包名 + **无 `debug-info` / `development-certificate` 字段**。
+   （调试 Profile 的特征：`"type":"debug"`、带设备 UDID 白名单 `debug-info.device-ids`）
+3. 本地 `keys/*.p7b` 可用同一脚本先验（现役两份：`rockreader-v2.p7b`→rockreader、
+   `rockjournal-v1.p7b`→rockjournal，均 type=release，有效期至 2029-09-24）。
+
+另：993 的快速二分——**先抠包内 Profile**，能一次区分「用错签名」/「Profile 失效」/
+「包名不匹配」三种情况，不用去 AGC 页面瞎猜。
+
+## UIAbility 没有 `onConfigurationUpdate` 的 super（2026-10-25）
+
+ArkTS 里写 `super.onConfigurationUpdate(cfg)` **能编译**，但基类没实现 ⇒ 运行时抛错，
+表现为**窗口存在但内容全空（黑屏）**。不要写 super。
