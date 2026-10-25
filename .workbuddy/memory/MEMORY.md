@@ -34,6 +34,9 @@
 - **ForEach item 无确定宽度时 `width('100%')` 回退成父级全宽**（Journal 统计页柱状图 12 个月并排铺开、只有第 0 个在屏内）：item 加 `layoutWeight(1)`。
 - 图表数据顺序：左→右 = 过去→现在（newest 压轴），必须体现在单测里。
 - 模拟器：dpr=3.5、视口≈359vp；**会自动锁屏**（黑屏截图 66908 字节是特征值；解锁 `keyEvent Power` + `swipe 628 2680 628 700`，不稳定会反复锁）。排查先确认不是锁屏。shell 无 wm 命令 ⇒ 横屏断点一律抽纯函数 + 单测守（shelfColsOf / readingMarginOf / formPadOf）。
-- hdc/uitest 要诀：设备绝对路径需 `MSYS_NO_PATHCONV=1`；本地路径用相对（cd `/f/AI/HarmonyOS`）；键盘弹出后输入框位移，必须重新 dumpLayout 再 inputText；DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。
+- hdc 不在 PATH，绝对路径 `/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`。设备绝对路径需 `MSYS_NO_PATHCONV=1`；本地路径用相对（cd `/f/AI/HarmonyOS`）；键盘弹出后输入框位移，必须重新 dumpLayout 再 inputText；DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。
+- **uitest dumpLayout 会返回旧应用实例的过期布局**（2026-10-25 实测：新 UI 装机后仍报旧 4 按钮菜单）⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；视觉模型会误读选中态，chip 选中态以黑底像素扫描为准。
+- 沙箱写入：hdc shell 的 `cp` 被 SELinux 拒、无 root；但 **`hdc file send` 可写**偏好/DB 文件（先停应用，删 WAL/-shm/-dwr/-compare 残件）。造测试数据可用共享 EPUB 路径 + DB 插行。
+- 存量已知问题（2026-10-25 发现，未修待拍板）：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；建议 flush 加时长上限或生命周期关会话。② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
 - 测试基线：Reader 185/185、Journal 136/136。
 - tag：Reader v1.0.1~1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**；push 会触发 CI 建 GitHub Release，发版时机听党哥）。
