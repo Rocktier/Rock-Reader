@@ -8,7 +8,7 @@
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BookDb } from '../data/BookDb';
-import { ReaderPrefs } from '../data/ReaderPrefs';
+import { ReaderPrefs, DAILY_GOAL_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord } from '../common/Types';
 import { byBook, BookTotal, dailyMs, durationText, msOfDay, ReadSession, streakDays, totalMs } from '../engine/stats/ReadStats';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
@@ -43,6 +43,12 @@ struct Stats {
   @State weekMax: number = 0;
   @State rows: BookStatRow[] = [];
   @State sessionCount: number = 0;
+  /** A4：每日目标（分钟；0 = 关）。党哥 2026-10-25 定默认 20 分钟 */
+  @State private goalMin: number = DAILY_GOAL_DEFAULT;
+  @State private goalText: string = '';
+  @State private goalRatio: number = 0;
+  /** 今日已读毫秒（load 时算一次；切换目标档位时复用，不重查 DB） */
+  private todayMs: number = 0;
   /**
    * 版心单侧补丁（vp）：P0-5 大屏适配。数字卡与柱状图在宽屏上拉满
    * 会摊成扁带 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
@@ -69,7 +75,8 @@ struct Stats {
       const sessions: ReadSession[] = await this.db.listSessions(since);
 
       this.totalText = durationText(totalMs(sessions));
-      this.todayText = durationText(msOfDay(sessions, now));
+      this.todayMs = msOfDay(sessions, now);
+      this.todayText = durationText(this.todayMs);
       this.streak = streakDays(sessions, now);
       this.sessionCount = sessions.length;
 
@@ -105,10 +112,32 @@ struct Stats {
         rows.push(row);
       }
       this.rows = rows;
+      this.refreshGoal();
       this.loading = false;
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'load stats failed: %{public}s', JSON.stringify(e));
       this.loading = false;
+    }
+  }
+
+  /**
+   * A4：按当前目标与今日已读算文案/进度条。
+   * 点目标循环切换档位时调用（不重查 DB —— 今天已读时长在 load 时算过）。
+   */
+  private refreshGoal(): void {
+    this.goalMin = this.prefs.getDailyGoalMin();
+    const target: number = this.goalMin * 60 * 1000;
+    if (this.goalMin <= 0) {
+      this.goalText = '未开启 · 点此设置';
+      this.goalRatio = 0;
+      return;
+    }
+    this.goalRatio = Math.max(0, Math.min(1, this.todayMs / target));
+    if (this.todayMs >= target) {
+      this.goalText = '已达成';
+    } else {
+      const left: number = Math.max(1, Math.ceil((target - this.todayMs) / 60000));
+      this.goalText = `还差 ${left} 分钟`;
     }
   }
 
@@ -195,6 +224,52 @@ struct Stats {
               this.metricCard('会话', this.sessionCount + ' 次', '3 秒以上')
             }
             .width('100%')
+            .margin({ top: RR_SP_XL })
+
+            // A4：今日目标（党哥 2026-10-25 拍板；点击循环切档位：关→10→20→30→60→关，
+            // 与朗读定时同交互，不引弹窗）。达标文案 + 细进度条。
+            Column() {
+              Row() {
+                Text('今日目标')
+                  .fontSize(RR_FS_DIGIT)
+                  .fontFamily('monospace')
+                  .fontColor(this.palette.text3)
+                Blank()
+                Text(this.goalText)
+                  .fontSize(RR_FS_DIGIT)
+                  .fontFamily('monospace')
+                  .fontColor(this.goalMin > 0 && this.goalRatio >= 1 ? this.palette.accent : this.palette.text)
+                  .accessibilityText('今日目标，点击调整档位')
+                  .responseRegion({ x: 0, y: -8, width: 140, height: 44 })
+                  .onClick(() => {
+                    this.prefs.nextDailyGoal();
+                    this.refreshGoal();
+                  })
+              }
+              .width('100%')
+
+              if (this.goalMin > 0) {
+                Row({ space: 0 }) {
+                  Row()
+                    .layoutWeight(Math.max(0.001, this.goalRatio))
+                    .height(6)
+                    .backgroundColor(this.palette.text)
+                  Row()
+                    .layoutWeight(Math.max(0.001, 1 - this.goalRatio))
+                    .height(6)
+                    .backgroundColor(this.palette.line)
+                }
+                .width('100%')
+                .borderRadius(3)
+                .margin({ top: RR_SP_MD })
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .padding(14)
+            .borderRadius(RR_RADIUS_CARD)
+            .backgroundColor(this.palette.card)
+            .borderWidth(1)
+            .borderColor(this.palette.line)
             .margin({ top: RR_SP_XL })
 
             // 近 7 天柱状

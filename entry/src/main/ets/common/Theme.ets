@@ -17,6 +17,16 @@
  *   故深色取 50%（5.28:1）、浅色取 56%（≈4.94:1）—— 层级感保留，AA 不破。
  */
 
+/**
+ * 自动（辰时昼 / 夜间夜）：按固定作息在「晴昼」与「子夜」之间自动切换。
+ *
+ * 对标 Apple Books / Kindle 都有的「自动日夜」——我们原来四套主题全手动，
+ * 读者睡前切一次、早起又忘切回去。2026-10-25 党哥拍板做批次 A 时定：
+ * **不做经纬度日出日落计算**（YAGNI，国内读者固定城市，粗档足够），
+ * 只提供固定边界 + 后续可按需再加「自定义起止时间」。
+ */
+export const THEME_AUTO: string = 'auto';
+
 /** 'dark' | 'light'（不用字面量联合类型，保证 ArkTS 各版本都能编译） */
 export type ThemeName = string;
 
@@ -147,10 +157,43 @@ export function paletteOf(theme: ThemeName): Palette {
 
 /** 未知值一律回落深色（老数据 / 脏值不会渲染出 undefined 色板） */
 export function normalizeTheme(value: string): ThemeName {
-  if (value === THEME_LIGHT || value === THEME_SEPIA || value === THEME_GREEN) {
+  if (value === THEME_AUTO || value === THEME_LIGHT || value === THEME_SEPIA || value === THEME_GREEN) {
     return value;
   }
   return THEME_DARK;
+}
+
+/* ---------------- 自动昼夜（A2，2026-10-25）----------------
+ * 全部是**纯函数**：小时数进、主题名出。UI 只在翻页/回前台时调一次，
+ * 跨昼夜的切换因此完全可单测（本工程横屏断点纪律同款：能纯则纯）。
+ */
+
+/** 入夜时刻（小时，18.5 = 18:30） */
+export const AUTO_NIGHT_START: number = 18.5;
+/** 天亮时刻（小时，6.5 = 6:30） */
+export const AUTO_NIGHT_END: number = 6.5;
+
+/** 该小时是否算夜间：18:30 起 ～ 次日 6:30 前 */
+export function isNightHour(hour: number): boolean {
+  return hour >= AUTO_NIGHT_START || hour < AUTO_NIGHT_END;
+}
+
+/** 自动档在该小时应生效的主题（夜间子夜 / 昼间晴昼） */
+export function themeForHour(hour: number): ThemeName {
+  return isNightHour(hour) ? THEME_DARK : THEME_LIGHT;
+}
+
+/**
+ * 把用户选择解析成**生效主题**：auto 按小时算，其余原样返回。
+ * 色板、系统状态栏、抽屉选中态一律用它的返回值，不要直接用用户选择值。
+ */
+export function resolveTheme(theme: ThemeName, hour: number): ThemeName {
+  return theme === THEME_AUTO ? themeForHour(hour) : theme;
+}
+
+/** 是否自动档（抽屉里要给「当前生效」的提示） */
+export function isAutoTheme(theme: ThemeName): boolean {
+  return theme === THEME_AUTO;
 }
 
 /**
@@ -169,7 +212,7 @@ export function isLightTheme(theme: ThemeName): boolean {
  * **放在这里而不是散在 UI 代码里**：名字和色板是一套，改名字不该去翻页面文件；
  * 也避免"抽屉里叫旧纸、别处写成纸色"这种漂移。
  *
- * 深色 子夜 ／ 浅色 晴昼 ／ 纸 旧纸 ／ 绿 新苔（党哥 2026-09-20 选）
+ * 深色 子夜 ／ 浅色 晴昼 ／ 纸 旧纸 ／ 绿 新苔 ／ 自动 自动（党哥 2026-09-20 选；自动 2026-10-25 加）
  */
 export function themeLabel(theme: ThemeName): string {
   if (theme === THEME_SEPIA) {
@@ -177,6 +220,9 @@ export function themeLabel(theme: ThemeName): string {
   }
   if (theme === THEME_GREEN) {
     return '新苔';
+  }
+  if (theme === THEME_AUTO) {
+    return '自动';
   }
   if (theme === THEME_LIGHT) {
     return '晴昼';

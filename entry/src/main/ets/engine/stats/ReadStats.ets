@@ -158,6 +158,25 @@ export interface BookTotal {
   ms: number;
 }
 
+/* ---------------- A3：本章剩余时间（2026-10-25）---------------- */
+
+/** 中文阅读估算速度（字/分钟）。固定值 + UI 标注「约」—— 不引个人历史（YAGNI）。 */
+export const EST_WPM: number = 350;
+
+/** 本章剩余文案：'本章还剩约 12 分钟' / '本章还剩不到 1 分钟' / ''（已到章末）。
+ *  「不到 1 分钟」只用于**严格不足一分钟**（charsLeft < EST_WPM）—— 单测逼出来的
+ *  口径：350 字 = 1.003 分钟，说"不到"是错的，该说"约 1 分钟"。 */
+export function chapterLeftText(charsLeft: number): string {
+  if (!Number.isFinite(charsLeft) || charsLeft <= 0) {
+    return '';
+  }
+  if (charsLeft < EST_WPM) {
+    return '本章还剩不到 1 分钟';
+  }
+  const mins: number = Math.round(charsLeft / EST_WPM);
+  return `本章还剩约 ${mins} 分钟`;
+}
+
 export function byBook(sessions: ReadSession[]): BookTotal[] {
   const ids: string[] = [];
   const sums: number[] = [];

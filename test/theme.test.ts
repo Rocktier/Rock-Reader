@@ -9,10 +9,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  isAutoTheme,
   isLightTheme,
+  isNightHour,
   normalizeTheme,
   paletteOf,
+  resolveTheme,
+  themeForHour,
   themeLabel,
+  THEME_AUTO,
   THEME_DARK,
   THEME_GREEN,
   THEME_LIGHT,
@@ -20,7 +25,7 @@ import {
   ThemeName
 } from '../entry/src/main/ets/common/Theme.ets';
 
-const THEMES: ThemeName[] = [THEME_DARK, THEME_LIGHT, THEME_SEPIA, THEME_GREEN];
+const THEMES: ThemeName[] = [THEME_DARK, THEME_LIGHT, THEME_SEPIA, THEME_GREEN, THEME_AUTO];
 
 /** '#RRGGBB' 或 '#AARRGGBB' → [r,g,b]（半透明时丢掉 alpha 部分） */
 function hexToRgb(hex: string): number[] {
@@ -107,8 +112,37 @@ test('normalizeTheme：认识四个主题，未知值一律回落深色', () => 
   assert.equal(normalizeTheme(THEME_GREEN), THEME_GREEN);
   assert.equal(normalizeTheme(THEME_LIGHT), THEME_LIGHT);
   assert.equal(normalizeTheme(THEME_DARK), THEME_DARK);
+  assert.equal(normalizeTheme(THEME_AUTO), THEME_AUTO);
   assert.equal(normalizeTheme('不存在的主题'), THEME_DARK);
   assert.equal(normalizeTheme(''), THEME_DARK);
+});
+
+// A2（2026-10-25 党哥批次 A）：自动昼夜。边界 6:30 亮 / 18:30 黑，
+// 含边界值本身（>= 18.5 算夜，< 6.5 算夜）。
+test('自动昼夜：isNightHour / themeForHour 边界（6:30 亮、18:30 黑）', () => {
+  assert.equal(isNightHour(0), true);
+  assert.equal(isNightHour(5), true);
+  assert.equal(isNightHour(6), true);
+  assert.equal(isNightHour(6.4), true);
+  assert.equal(isNightHour(6.5), false);
+  assert.equal(isNightHour(12), false);
+  assert.equal(isNightHour(18), false);
+  assert.equal(isNightHour(18.4), false);
+  assert.equal(isNightHour(18.5), true);
+  assert.equal(isNightHour(23), true);
+  assert.equal(themeForHour(6), THEME_DARK);
+  assert.equal(themeForHour(7), THEME_LIGHT);
+  assert.equal(themeForHour(18), THEME_LIGHT);
+  assert.equal(themeForHour(19), THEME_DARK);
+});
+
+test('resolveTheme：auto 按小时算，固定主题原样返回（色板只认解析后的值）', () => {
+  assert.equal(resolveTheme(THEME_AUTO, 20), THEME_DARK);
+  assert.equal(resolveTheme(THEME_AUTO, 10), THEME_LIGHT);
+  assert.equal(resolveTheme(THEME_SEPIA, 20), THEME_SEPIA);
+  assert.equal(resolveTheme(THEME_DARK, 10), THEME_DARK);
+  assert.equal(isAutoTheme(THEME_AUTO), true);
+  assert.equal(isAutoTheme(THEME_LIGHT), false);
 });
 
 test('isLightTheme：只有深色算深色系（以后新增护眼色自动归浅色，不会漏登记）', () => {

@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   byBook,
+  chapterLeftText,
   dailyMs,
   durationText,
   msInRange,
@@ -140,4 +141,19 @@ test('byBook：按书汇总并降序；非法会话记 0 但仍入表', () => {
 
 test('MIN_SESSION_MS 是合理阈值（翻目录误触不该进统计）', () => {
   assert.equal(MIN_SESSION_MS, 3000);
+});
+
+// A3（2026-10-25 批次 A）：本章剩余时间。固定估算速度 350 字/分 +
+// 文案带「约」；0 / 负 / NaN 一律不出文案（章末不显示）。
+test('chapterLeftText：按 EST_WPM 估算，边界与脏值', () => {
+  assert.equal(chapterLeftText(0), '');
+  assert.equal(chapterLeftText(-100), '');
+  assert.equal(chapterLeftText(NaN), '');
+  assert.equal(chapterLeftText(1), '本章还剩不到 1 分钟');
+  assert.equal(chapterLeftText(175), '本章还剩不到 1 分钟');   // 半分钟也讲"不到 1 分钟"
+  assert.equal(chapterLeftText(349), '本章还剩不到 1 分钟');   // 严格不足一分钟
+  assert.equal(chapterLeftText(350), '本章还剩约 1 分钟');     // 恰好一分钟：是"约 1"，不是"不到 1"
+  assert.equal(chapterLeftText(351), '本章还剩约 1 分钟');
+  assert.equal(chapterLeftText(700), '本章还剩约 2 分钟');
+  assert.equal(chapterLeftText(5000), '本章还剩约 14 分钟');   // 5000/350≈14.3 → 14
 });

@@ -16,6 +16,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { curves, promptAction, router } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
+import { chapterLeftText } from '../engine/stats/ReadStats';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
@@ -37,7 +38,7 @@ import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { TtsEngine, TtsCallbacks } from '../engine/tts/TtsEngine';
-import { Palette, paletteOf, themeLabel, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
 
@@ -234,6 +235,15 @@ struct Reader {
   /** 目录数据源（懒加载）；`tocFiltered` 仍保留，只用来判空 */
   private tocSource: ChapterDataSource = new ChapterDataSource();
   private theme: ThemeName = THEME_DARK;
+  /**
+   * A2（2026-10-25）：**生效主题**。用户选 'auto' 时按小时在晴昼/子夜间解析，
+   * 色板与系统状态栏一律读这个，不读 this.theme（抽屉选中态才看 this.theme）。
+   */
+  private activeTheme: ThemeName = THEME_DARK;
+  /** A1：这本书有没有排版覆盖（抽屉「恢复全局」入口的显隐） */
+  @State private hasOverride: boolean = false;
+  /** A3：本章剩余阅读文案（'本章还剩约 12 分钟'；空 = 不显示） */
+  @State private chapterLeftText: string = '';
   private currentKey: string = '';
   /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
   private purifyOn: boolean = true;
@@ -463,14 +473,29 @@ struct Reader {
    *   ② **阅读页内的设置抽屉**改档位（P11-2：边看边调，正文实时跟着变）
    * 两处共用同一段逻辑，避免"抽屉改了不生效 / 两边行为不一致"。
    */
+  /**
+   * A2（2026-10-25）：把「用户选的主题」解析成「当前生效的主题」落到色板/系统栏。
+   * auto 档按小时在晴昼/子夜间切 —— 阅读页每翻一页（showPage）顺带调一次，
+   * 夜里读到跨 18:30 自动转夜，不用读者手动切。开销：一次 if + 偶尔一次换色板。
+   */
+  private syncTheme(): void {
+    const effective: ThemeName = resolveTheme(this.theme, new Date().getHours());
+    if (effective !== this.activeTheme) {
+      this.activeTheme = effective;
+      this.palette = paletteOf(effective);
+      applyThemeToSystem(this.getUIContext().getHostContext() as Context, effective);
+    }
+  }
+
   private applyPrefsToLayout(): void {
-    const theme: ThemeName = this.prefs.getTheme();
+    const bookId: string = this.book === null ? '' : this.book.id;
+    const theme: ThemeName = this.prefs.effectiveTheme(bookId);
     if (theme !== this.theme) {
       this.theme = theme;
-      this.palette = paletteOf(theme);
-      applyThemeToSystem(this.getUIContext().getHostContext() as Context, theme);
     }
-    const family: string = this.prefs.getFontFamily();
+    this.syncTheme();
+    this.hasOverride = this.prefs.hasBookOverride(bookId);
+    const family: string = this.prefs.effectiveFamily(bookId);
     if (family !== this.fontFamily) {
       this.fontFamily = family;
       this.fontPath = this.fontStore === null ? '' : this.fontStore.uriForFamily(family);
@@ -478,7 +503,7 @@ struct Reader {
     hilog.info(DOMAIN, TAG, 'applyPrefs: family=[%{public}s] path=[%{public}s] key=%{public}s',
       this.fontFamily, this.fontPath, this.currentKey);
     // 抽屉里显示的档位跟着走（无论是否触发重排）
-    this.levels = this.prefs.getLevels();
+    this.levels = this.prefs.effectiveLevels(bookId);
     if (!this.areaReady || this.chapterCount === 0 || this.book === null) {
       return;
     }
@@ -527,8 +552,11 @@ struct Reader {
     try {
       const params = this.getUIContext().getRouter().getParams() as ReaderParams;
       this.prefs.open(this.getUIContext().getHostContext() as Context);
-      this.theme = this.prefs.getTheme();
-      this.palette = paletteOf(this.theme);
+      // A1：这本书的覆盖优先、全局兜底（党哥 2026-10-25 拍板「仅这一本」）
+      this.theme = this.prefs.effectiveTheme(params.bookId);
+      this.levels = this.prefs.effectiveLevels(params.bookId);
+      this.hasOverride = this.prefs.hasBookOverride(params.bookId);
+      this.syncTheme();
 
       await this.db.open(this.getUIContext().getHostContext() as Context);
       const book: BookRecord | null = await this.db.getBook(params.bookId);
@@ -541,7 +569,7 @@ struct Reader {
       this.title = book.title;
       this.source = createBookSource(book, this.prefs);
 
-      this.fontFamily = this.prefs.getFontFamily();
+      this.fontFamily = this.prefs.effectiveFamily(book.id);
       this.fontPath = this.fontStore === null ? '' : this.fontStore.uriForFamily(this.fontFamily);
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
@@ -873,6 +901,8 @@ struct Reader {
     if (this.pages.length === 0) {
       return;
     }
+    // A2：翻页顺带查一次昼夜（auto 档夜里跨 18:30 自动转夜，成本一次 if）
+    this.syncTheme();
     let i: number = index;
     if (i < 0) {
       i = 0;
@@ -904,6 +934,21 @@ struct Reader {
         }
       }
     }
+    this.refreshChapterLeft();
+  }
+
+  /**
+   * A3（2026-10-25）：本章剩余阅读文案，对标 Apple Books「本章还剩 X 分钟」。
+   * 用**固定估算速度**（见 ReadStats.EST_WPM）+ UI 上的「约」字 —— 阅读页不加载
+   * sessions，引个人 WPM 要为此多一条查询，YAGNI；真实速度统计在 Stats 页已有。
+   */
+  private refreshChapterLeft(): void {
+    if (this.pages.length === 0 || this.chapterText.length === 0) {
+      this.chapterLeftText = '';
+      return;
+    }
+    const left: number = this.chapterText.length - this.pages[this.pageIndex].start;
+    this.chapterLeftText = chapterLeftText(left);
   }
 
   // ------------------------------------------------------------------
@@ -1249,8 +1294,25 @@ struct Reader {
     // 否则抽屉叠抽屉、透明区吃点击 —— 返回键都点不动
     this.showToc = false;
     this.showMenu = false;
-    this.levels = this.prefs.getLevels();
+    this.levels = this.prefs.effectiveLevels(this.book === null ? '' : this.book.id);
+    this.hasOverride = this.book === null ? false : this.prefs.hasBookOverride(this.book.id);
     this.showSettings = true;
+  }
+
+  /**
+   * A1（2026-10-25 党哥拍板「仅这一本」）：抽屉里改的排版写进**这本书**的覆盖，
+   * 不碰全局。全局默认值仍归独立设置页管（那边是「所有书」的口径）。
+   */
+  private saveBookLayout(): void {
+    if (this.book === null) {
+      return;
+    }
+    this.hasOverride = true;
+    this.prefs.saveBookOverride(this.book.id, {
+      levels: this.levels,
+      theme: this.theme,
+      fontFamily: this.fontFamily
+    });
   }
 
   /** 挑档位：kind = 'font' | 'line' | 'margin' | 'weight' —— 存下来后立刻重排（不跳页） */
@@ -1262,18 +1324,21 @@ struct Reader {
       marginLevel: kind === 'margin' ? value : cur.marginLevel,
       fontWeightLevel: kind === 'weight' ? value : cur.fontWeightLevel
     };
-    this.prefs.saveLevels(next);
+    this.levels = next;
+    this.saveBookLayout();
     this.applyPrefsToLayout();
   }
 
   private pickTheme(theme: ThemeName): void {
-    this.prefs.saveTheme(theme);
+    this.theme = theme;
+    this.saveBookLayout();
     this.applyPrefsToLayout();
   }
 
   private pickFont(family: string): void {
     hilog.info(DOMAIN, TAG, 'pickFont: %{public}s', family);
-    this.prefs.saveFontFamily(family);
+    this.fontFamily = family;
+    this.saveBookLayout();
     this.applyPrefsToLayout();
   }
 
@@ -1462,6 +1527,15 @@ struct Reader {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
+        if (this.chapterLeftText.length > 0) {
+          Text(this.chapterLeftText)
+            .fontSize(RR_FS_META)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ right: RR_SP_MD })
+        }
         Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
           .fontSize(RR_FS_DIGIT)
           .fontFamily('monospace')
@@ -2272,6 +2346,44 @@ struct Reader {
           this.settingsRow('页边距', LEVEL_MAX, 'margin')
           this.settingsRow('字重', WEIGHT_MAX, 'weight')
 
+      // A1：明示「排版只对这本书生效」+ 恢复全局出路（党哥拍板默认仅这一本）
+      Row() {
+        Text(this.book === null ? '排版跟随全局设置' : `排版仅对《${this.title}》生效`)
+          .fontSize(RR_FS_META)
+          .fontColor(this.palette.text3)
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.hasOverride) {
+          Text('应用到所有书')
+            .fontSize(RR_FS_META)
+            .fontColor(this.palette.accent)
+            .height(34)
+            .accessibilityText('把当前排版应用到所有书')
+            .onClick(() => {
+              // 把当前这本书的排版升格为全局默认（覆盖仍留着，其他书随后续）
+              this.prefs.saveLevels(this.levels);
+              this.prefs.saveTheme(this.theme);
+              this.prefs.saveFontFamily(this.fontFamily);
+              this.applyPrefsToLayout();
+            })
+          Text('恢复全局')
+            .fontSize(RR_FS_META)
+            .fontColor(this.palette.accent)
+            .height(34)
+            .accessibilityText('恢复全局排版')
+            .onClick(() => {
+              if (this.book !== null) {
+                this.prefs.clearBookOverride(this.book.id);
+              }
+              this.hasOverride = false;
+              this.applyPrefsToLayout();
+            })
+        }
+      }
+      .width('100%')
+      .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_SM, bottom: RR_SP_SM })
+
       Row({ space: 8 }) {
         Text('主题')
           .fontSize(RR_FS_BODY)
@@ -2279,6 +2391,8 @@ struct Reader {
         // 四个主题横滚（与下面的字体行一致）：放不下的情况不会挤成一团
         Scroll() {
           Row({ space: 8 }) {
+            // A2：自动放最前（档位循环同款：第一项是默认推荐）
+            this.themeChip(THEME_AUTO)
             this.themeChip(THEME_DARK)
             this.themeChip(THEME_LIGHT)
             this.themeChip(THEME_SEPIA)

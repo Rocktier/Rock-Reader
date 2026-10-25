@@ -31,6 +31,15 @@ const KEY_TTS_SPEED: string = 'tts_speed';
  *  21=凌飞哲男声（需 downloadVoice 下载）。8=劳拉是**英文**音色，中文书不列。 */
 const KEY_TTS_PERSON: string = 'tts_person';
 
+/**
+ * 每本书的排版覆盖（A1，2026-10-25 党哥拍板「仅这一本」）。
+ * **一本书一个 preference key**（而不是一个 map 串）：单键读写、某本书的脏数据
+ * 不会波及其他书、也不需要整表解析。值为 JSON；读端逐字段校验，脏值整体丢弃回落全局。
+ */
+const KEY_BOOK_PREF_PREFIX: string = 'book_pref_';
+/** 每日阅读目标（分钟）；0 = 关闭。党哥默认 20 分钟（A4） */
+const KEY_DAILY_GOAL: string = 'daily_goal_min';
+
 /** 朗读语速默认值（常速） */
 export const TTS_SPEED_DEFAULT: number = 1.0;
 /** 朗读语速档位（产品可选；TtsEngine 侧还有 0.2~2.0 的防御性夹取） */
@@ -47,6 +56,24 @@ export const TTS_PERSON_BUILTIN: number = 13;
 const KEY_TTS_VOICE_DL: string = 'tts_voice_dl';
 
 export const CONVERT_OFF: string = 'off';
+
+/* ---------------- A1：每本书独立排版（2026-10-25 党哥拍板）----------------
+ * 对标 Apple Books / Kindle / 静读天下：排版偏好**记住每本书**。
+ * 社科论文想小字密排、小说想大字疏行，全局一套档位永远有一边不舒服。
+ * 存储：`book_pref_<bookId>` → JSON（levels/theme/fontFamily 的整体快照）。
+ * 读取：有覆盖用覆盖，任何字段缺失/脏 → 回落全局。
+ */
+
+/** 某本书的排版覆盖快照 */
+export interface BookOverride {
+  levels: LayoutLevels;
+  theme: ThemeName;
+  fontFamily: string;
+}
+
+/** 每日阅读目标档位（分钟）；0 = 关。党哥 2026-10-25 定默认 20 */
+export const DAILY_GOAL_STEPS: number[] = [0, 10, 20, 30, 60];
+export const DAILY_GOAL_DEFAULT: number = 20;
 
 /**
  * 用户已确认阅读的**隐私政策版本**（0 = 从未确认）。
@@ -269,6 +296,115 @@ export class ReaderPrefs {
     this.flush();
   }
 
+  /* ---------------- A1：每本书覆盖 ---------------- */
+
+  private bookPrefKey(bookId: string): string {
+    return KEY_BOOK_PREF_PREFIX + bookId;
+  }
+
+  /**
+   * 读某本书的排版覆盖；没有 / 脏 / 缺字段 → null（调用方回落全局）。
+   * 逐字段 clamp：手改过 store、老版本字段不全，都不该把排版搞崩。
+   */
+  getBookOverride(bookId: string): BookOverride | null {
+    if (this.store === null || bookId.length === 0) {
+      return null;
+    }
+    const raw: preferences.ValueType = this.store.getSync(this.bookPrefKey(bookId), '');
+    if (typeof raw !== 'string' || raw.length === 0) {
+      return null;
+    }
+    try {
+      const o = JSON.parse(raw) as BookOverride;
+      const lv = o.levels;
+      if (typeof lv !== 'object' || lv === null) {
+        return null;
+      }
+      return {
+        levels: {
+          fontSizeLevel: safeLevel(lv.fontSizeLevel),
+          lineHeightLevel: safeLevel(lv.lineHeightLevel),
+          marginLevel: safeLevel(lv.marginLevel),
+          fontWeightLevel: safeWeight(lv.fontWeightLevel)
+        },
+        theme: normalizeTheme(String(o.theme)),
+        fontFamily: typeof o.fontFamily === 'string' ? o.fontFamily : ''
+      };
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'book override parse failed: %{public}s', bookId);
+      return null;
+    }
+  }
+
+  /** 写入/更新某本书的覆盖（整包快照，调用方传当前生效值） */
+  saveBookOverride(bookId: string, o: BookOverride): void {
+    if (bookId.length === 0) {
+      return;
+    }
+    this.put(this.bookPrefKey(bookId), JSON.stringify(o));
+    this.flush();
+  }
+
+  /** 删掉覆盖，该书回到全局排版 */
+  clearBookOverride(bookId: string): void {
+    if (this.store === null || bookId.length === 0) {
+      return;
+    }
+    this.put(this.bookPrefKey(bookId), '');
+    this.flush();
+  }
+
+  hasBookOverride(bookId: string): boolean {
+    return this.getBookOverride(bookId) !== null;
+  }
+
+  /** 该书生效的档位（覆盖优先，全局兜底） */
+  effectiveLevels(bookId: string): LayoutLevels {
+    const o: BookOverride | null = this.getBookOverride(bookId);
+    return o === null ? this.levels : o.levels;
+  }
+
+  /** 该书生效的主题选择（可能是 'auto'；auto 的按小时解析在 UI 层 syncTheme） */
+  effectiveTheme(bookId: string): ThemeName {
+    const o: BookOverride | null = this.getBookOverride(bookId);
+    return o === null ? this.theme : o.theme;
+  }
+
+  /** 该书生效的字体族 */
+  effectiveFamily(bookId: string): string {
+    const o: BookOverride | null = this.getBookOverride(bookId);
+    return o === null ? this.fontFamily : o.fontFamily;
+  }
+
+  /* ---------------- A4：每日阅读目标 ---------------- */
+
+  /** 每日目标（分钟）；0 = 关。档位外/脏值回落默认 20 */
+  getDailyGoalMin(): number {
+    if (this.store === null) {
+      return DAILY_GOAL_DEFAULT;
+    }
+    const raw: preferences.ValueType = this.store.getSync(KEY_DAILY_GOAL, DAILY_GOAL_DEFAULT);
+    if (typeof raw === 'number' && DAILY_GOAL_STEPS.indexOf(raw) >= 0) {
+      return raw;
+    }
+    return DAILY_GOAL_DEFAULT;
+  }
+
+  setDailyGoalMin(v: number): void {
+    const goal: number = DAILY_GOAL_STEPS.indexOf(v) >= 0 ? v : DAILY_GOAL_DEFAULT;
+    this.put(KEY_DAILY_GOAL, goal);
+    this.flush();
+  }
+
+  /** 循环切下一个档位（Stats 页点击用：关→10→20→30→60→关，与朗读定时同交互） */
+  nextDailyGoal(): number {
+    const cur: number = this.getDailyGoalMin();
+    const at: number = DAILY_GOAL_STEPS.indexOf(cur);
+    const next: number = DAILY_GOAL_STEPS[(at + 1) % DAILY_GOAL_STEPS.length];
+    this.setDailyGoalMin(next);
+    return next;
+  }
+
   /** TXT 去广告（默认开） */
   isPurifyOn(): boolean {
     return this.purifyOn;
@@ -333,6 +469,18 @@ export class ReaderPrefs {
       hilog.error(DOMAIN, TAG, 'prefs flush failed: %{public}s', e.message);
     });
   }
+}
+
+/** 档位安全读取（A1 用）：非有限值回落默认档，不会把 NaN 灌进排版 */
+function safeLevel(v: Object): number {
+  const n: number = Number(v);
+  return Number.isFinite(n) ? clampLevel(n) : DEFAULT_LEVELS.fontSizeLevel;
+}
+
+/** 字重安全读取（同上） */
+function safeWeight(v: Object): number {
+  const n: number = Number(v);
+  return Number.isFinite(n) ? clampWeightLevel(n) : DEFAULT_LEVELS.fontWeightLevel;
 }
 
 /** 朗读语速夹取（NaN 与非有限值回默认，防脏值把 TTS 搞崩） */
