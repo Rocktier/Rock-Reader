@@ -39,4 +39,6 @@
 - 沙箱写入：hdc shell 的 `cp` 被 SELinux 拒、无 root；但 **`hdc file send` 可写**偏好/DB 文件（先停应用，删 WAL/-shm/-dwr/-compare 残件）。造测试数据可用共享 EPUB 路径 + DB 插行。
 - 存量已知问题（2026-10-25 发现，未修待拍板）：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；建议 flush 加时长上限或生命周期关会话。② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
 - 测试基线：Reader 185/185、Journal 136/136。
-- tag：Reader v1.0.1~1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**；push 会触发 CI 建 GitHub Release，发版时机听党哥）。
+- tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。
+  Reader **1.0.6（code 1000007）已于 2026-10-26 提交 AGC 待审核**——含桌面续读卡片 + 批次 A 四项；
+  上架说明见 `docs/release-notes-1.0.6.md`。push 会触发 CI 建 GitHub Release，发版时机听党哥。
