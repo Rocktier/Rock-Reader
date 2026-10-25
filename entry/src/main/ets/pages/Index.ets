@@ -9,6 +9,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
+import { pushCardUpdate } from '../data/CardData';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { BookImporter, ImportResult, coverPathOf, removeBookFiles } from '../engine/importer/BookImporter';
 import { reasonText } from '../engine/importer/ImportReason';
@@ -79,6 +80,9 @@ struct Index {
   // 只靠 onPageShow + 查库的链路仍然不刷新。
   // 键名两边都写死（同上：装饰器只接受字面量），改要一起改。
   @StorageLink('progressSaved') @Watch('onProgressSaved') progressSaved: ProgressSnapshot = { bookId: '', percent: 0 };
+  // B1 服务卡片「继续读」：卡片点击 → EntryAbility 写 bookId 进来 → 这里 push Reader。
+  // 与 pendingImportUri 同一条转发链路（键名两边写死，改要一起改）。
+  @StorageLink('pendingOpenBook') @Watch('onOpenBookFromCard') pendingOpenBook: string = '';
 
   /** 长按后弹出的菜单/输入框 */
   @State editorMode: string = MODE_NONE;
@@ -127,6 +131,8 @@ struct Index {
     // 冷启动兜底（审查报告 B19）：EntryAbility.onCreate 在 loadContent **之前**写 pendingImportUri，
     // 此时 @Watch 尚未挂上不会触发 —— aboutToAppear 主动消费一次（内部对空 uri 幂等）。
     this.onIncomingFile();
+    // 同理：卡片点击冷启动时 pendingOpenBook 也可能早于 @Watch 写入，这里补消费一次。
+    this.onOpenBookFromCard();
   }
 
   /**
@@ -280,6 +286,25 @@ struct Index {
     this.importUri(uri);
   }
 
+  /**
+   * B1 服务卡片「继续读」→ push Reader（bookId 由 EntryAbility 从卡片 want 里转来）。
+   *
+   * 已经在读同一本时不重复 push（卡片被点无非是想回来继续，应用拉到前台就行；
+   * 重复 push 会在 Reader 上再栈一个 Reader，返回键行为会乱）。
+   */
+  onOpenBookFromCard(): void {
+    const bookId: string = this.pendingOpenBook;
+    if (bookId.length === 0) {
+      return;
+    }
+    AppStorage.setOrCreate('pendingOpenBook', '');
+    const reading: string = AppStorage.get<string>('readerOpenBook') ?? '';
+    if (reading === bookId) {
+      return;
+    }
+    this.openBookById(bookId);
+  }
+
   private async importUri(uri: string): Promise<void> {
     if (this.busy) {
       return;
@@ -375,13 +400,24 @@ struct Index {
       removeBookFiles(book);
       await this.load();
       hilog.info(DOMAIN, TAG, 'doDelete done: id=%{public}s', book.id);
+      // B1：删的可能正是卡片上那本 —— 推一次让卡片回落「最近在读」或空态，
+      // 不然桌面上还挂着一本已经不存在书的进度。
+      pushCardUpdate(this.getUIContext().getHostContext() as Context);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'delete failed: %{public}s', JSON.stringify(e));
     }
   }
 
   private openBook(book: BookRecord): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/Reader', params: { bookId: book.id } });
+    this.openBookById(book.id);
+  }
+
+  /**
+   * 按 id 开 Reader（卡片「继续读」用）—— 不依赖 this.items 已加载：
+   * 冷启动时书架列表可能还没拉到，Reader.init 自己查库，查不到有「找不到这本书」兜底。
+   */
+  private openBookById(bookId: string): void {
+    this.getUIContext().getRouter().pushUrl({ url: 'pages/Reader', params: { bookId: bookId } });
   }
 
   @Builder

@@ -16,7 +16,8 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { curves, promptAction, router } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
-import { chapterLeftText } from '../engine/stats/ReadStats';
+import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
+import { bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
@@ -184,6 +185,10 @@ struct Reader {
   @State chapterTitle: string = '';
   @State chapterIndex: number = 0;
   @State chapterCount: number = 0;
+  /** 各章已确认字数（下标 = 章序，未量过 = 0）。见 computeBookPercent 的口径说明。 */
+  private charCounts: number[] = [];
+  /** 字数普查进行中标记（防重复进入） */
+  private surveying: boolean = false;
   @State pageIndex: number = 0;
   @State pageCount: number = 0;
   @State pagePercent: number = 0;
@@ -521,6 +526,8 @@ struct Reader {
   onPageHide(): void {
     this.persistProgress(true);
     this.flushSession();
+    // B1：离开阅读页 = 不再「正在读」，清标记（书架页据此判断卡片点击是否重复 push）
+    AppStorage.setOrCreate('readerOpenBook', '');
     // 回后台暂停朗读（后台/锁屏播放是期二 AVSession 的事，一期从简：停在这里）
     if (this.speakActive) {
       this.tts.pause();
@@ -551,6 +558,8 @@ struct Reader {
   private async init(): Promise<void> {
     try {
       const params = this.getUIContext().getRouter().getParams() as ReaderParams;
+      // B1：标记「正在读这本」—— 书架页据此判断卡片点击是否重复 push（同本书直接前台化）
+      AppStorage.setOrCreate('readerOpenBook', params.bookId);
       this.prefs.open(this.getUIContext().getHostContext() as Context);
       // A1：这本书的覆盖优先、全局兜底（党哥 2026-10-25 拍板「仅这一本」）
       this.theme = this.prefs.effectiveTheme(params.bookId);
@@ -573,6 +582,11 @@ struct Reader {
       this.fontPath = this.fontStore === null ? '' : this.fontStore.uriForFamily(this.fontFamily);
       this.chapters = await this.db.listChapters(book.id);
       this.chapterCount = this.chapters.length;
+      // 已量过字数的章节（下标 = 章序，未量 = 0）；全书进度按真实字数算的真值来源
+      this.charCounts = await this.db.loadCharCounts(book.id);
+      if (this.charCounts.length !== this.chapterCount) {
+        this.charCounts = [];
+      }
       if (this.chapterCount === 0) {
         this.hint = book.format === 'epub' ? '这本书的目录解析失败' : '这本书没有解析出章节';
         this.loading = false;
@@ -586,6 +600,8 @@ struct Reader {
       this.loading = false;
       if (this.areaReady) {
         this.openChapter(this.pendingChapter, this.pendingOffset);
+        // 后台补一次各章字数普查 → 全书进度按真实字数算（fire-and-forget，不挡打开）
+        this.surveyChars();
       }
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'reader init failed: %{public}s', JSON.stringify(e));
@@ -660,6 +676,109 @@ struct Reader {
   }
 
   /** 打开某章并定位到某个字符偏移（内部会按签名查缓存，命中则不重排） */
+  /**
+   * 全书进度：按**真实字数**算，而不是「第几章 ÷ 总章数」。
+   *
+   * 为什么不能按章数：那等于假设每章一样长。实测《暗恋·橘生淮南》100 章 39.3 万字，
+   * 读到第 7 章 2/3 时按章算是 8.67%，按字数真实只有 4.66% —— 虚高近一倍，
+   * 因为前面夹着「版权信息」「序章」这类几百字的短章，前段失真最厉害。
+   *
+   * 难点：EPUB 导入阶段刻意**不读正文**（否则导入 = 解压上百个 HTML），
+   * 所以导入时根本拿不到每章字数 —— chapters.start_char/end_char 对 EPUB 恒为 0，
+   * 想在建库时一次性把全书字数索引建好也无从下手。
+   *
+   * 解法：**读到哪、算到哪**。每展开一章就把它真实字数回填 chapters.char_count
+   * （此刻整章全文已在内存，白量）；没读过的章用「已确认章的平均字数」外推。
+   * 于是第一眼就有合理估值，越读越准，读过一遍后完全精确。
+   * 存量用户的书不需要重新导入 —— 重读哪一章哪一章自动补上。
+   */
+  private computeBookPercent(): number {
+    return bookPercentOf(this.charCounts, this.chapterCount, this.chapterIndex, this.pagePercent);
+  }
+
+  /**
+   * 回填本章真实字数（内存 + 落库）。
+   * 只写未知项：已量过就不动 —— 净化/简繁会改变 `text` 内容，若每次按当前文本覆盖，
+   * 用户拨一下开关进度就会跟着抖，这是不能接受的。
+   */
+  private learnChapterChars(index: number, count: number): void {
+    if (index < 0 || index >= this.chapterCount || count <= 0) {
+      return;
+    }
+    if (this.charCounts.length !== this.chapterCount) {
+      const fresh: number[] = [];
+      for (let i: number = 0; i < this.chapterCount; i++) {
+        fresh.push(0);
+      }
+      this.charCounts = fresh;
+    }
+    if (this.charCounts[index] > 0) {
+      return;
+    }
+    this.charCounts[index] = count;
+    if (this.book !== null) {
+      this.db.saveChapterCharCount(this.book.id, index, count).catch((e: Error) => {
+        hilog.warn(DOMAIN, TAG, 'saveChapterCharCount failed: %{public}s', JSON.stringify(e));
+      });
+    }
+  }
+
+  /**
+   * 后台普查：把还没量过字数的章**全部**量一遍。
+   *
+   * 为什么光靠"读到哪量到哪"不够：没读过的章只能按「已确认章的平均字数」外推，
+   * 而这本 100 章的书前 9 章平均 2093 字、全书平均 3928 字（后半章节明显更长），
+   * 外推出来是 8.75% —— 跟按章数的 8.67% 一样虚高。章节长度不均匀的书，外推救不了。
+   *
+   * 所以打开书后补一次普查：读到哪算到哪的渐进精度改成一进门就精确。
+   * 成本可控：单章就是「读一节 HTML 去标签」，且已量过的直接跳过，
+   * 第二次打开这本书时整轮只剩 100 次数组比较；每 8 章让出一帧不焊死 UI。
+   */
+  private async surveyChars(): Promise<void> {
+    if (this.surveying || this.source === null || this.book === null) {
+      return;
+    }
+    this.surveying = true;
+    try {
+      for (let i: number = 0; i < this.chapterCount; i++) {
+        if (this.charAt(i) > 0) {
+          continue;
+        }
+        try {
+          const t: string = this.source.chapterText(this.chapters[i]);
+          if (t.length > 0) {
+            this.learnChapterChars(i, t.length);
+          }
+        } catch (e) {
+          // 单章读不出来就跳过：少一章的精度不影响进度可用
+        }
+        if (i % 8 === 7) {
+          await new Promise<void>((resolve: (v: void) => void) => {
+            setTimeout(() => { resolve(); }, 0);
+          });
+          // 让出前先原地刷新一次百分比：普查是渐进的，用户能看着它收敛到真值
+          this.bookPercent = this.computeBookPercent();
+        }
+      }
+      this.bookPercent = this.computeBookPercent();
+      // 普查把全书字数总量改了 → 进度必须重新落库，否则书架/卡片还是按旧口径的数。
+      // force=true 同时穿透卡片限流（见 pushCardUpdate 注释）：这一推是"口径升级"，
+      // 被限流吞掉的话用户得等到下次翻页才看到正确百分比。
+      this.persistProgress(true);
+    } finally {
+      this.surveying = false;
+    }
+  }
+
+  /** 第 i 章已确认字数；越界或脏值（负数/NaN）一律按「没量过」处理 */
+  private charAt(i: number): number {
+    if (i < 0 || i >= this.charCounts.length) {
+      return 0;
+    }
+    const c: number = this.charCounts[i];
+    return (c > 0) ? c : 0;
+  }
+
   private openChapter(index: number, charOffset: number): void {
     if (this.source === null || index < 0 || index >= this.chapters.length) {
       return;
@@ -692,6 +811,8 @@ struct Reader {
     this.chapterIndex = index;
     this.chapterTitle = chapter.title;
     this.chapterText = text;
+    // 本章真实字数回填 → 全书进度从此按真实字数算（见 computeBookPercent）
+    this.learnChapterChars(index, text.length);
     // 渲染用的量全部**从 box 派生**（而不是在这里再查一遍档位表）——
     // 否则渲染端与测量端就是两个各算一遍的真源，任何一处表值/换算改动都会悄悄分叉
     this.fontSizeFp = box.fontSizeFp;
@@ -914,9 +1035,7 @@ struct Reader {
     const range: PageRange = this.pages[i];
     this.pageText = this.chapterText.substring(range.start, range.end);
     this.pagePercent = (i + 1) / this.pages.length;
-    this.bookPercent = this.chapterCount === 0
-      ? 0
-      : (this.chapterIndex + this.pagePercent) / this.chapterCount;
+    this.bookPercent = this.computeBookPercent();
     this.persistProgress(false);
     // 朗读中的页面切换，三种来路分流（章级朗读，2026-10-18）：
     // ① speakSyncing（定时器页同步）：纯视觉跟随，音频队列不动；
@@ -1432,6 +1551,20 @@ struct Reader {
       const snap: ProgressSnapshot = { bookId: p.bookId, percent: p.percent };
       AppStorage.setOrCreate('progressSaved', snap);
       AppStorage.setOrCreate('progressSavedAt', p.updatedAt);
+      // B1：顺带推服务卡片（内部限流 + 全兜异常，fire-and-forget 不拖慢落库链路）。
+      // force（最后一次）必须穿透限流 —— 否则被限流吞掉的那次很可能就是用户离开前
+      // 的最后进展，桌面卡片会停在旧百分比上再也补不上（详见 pushCardUpdate 注释）。
+      pushCardUpdate(this.getUIContext().getHostContext() as Context, force);
+      // B1：EPUB 的 chapters 表不存 end_char，卡片算不出「本章还剩 N 分钟」——
+      // 这里把当前章剩余字数（内存里有整章文本）写进提示，卡片读取时按书+章校验使用
+      if (this.chapterText.length > 0) {
+        const ctx: Context = this.getUIContext().getHostContext() as Context;
+        saveCardLeftHint(ctx, {
+          bookId: p.bookId,
+          chapterIndex: p.chapterIndex,
+          charsLeft: Math.max(0, this.chapterText.length - offset)
+        });
+      }
     }).catch((e: Error) => {
       hilog.error(DOMAIN, TAG, 'save progress failed: %{public}s', e.message);
     });

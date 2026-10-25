@@ -15,6 +15,22 @@
     {
       "name": "shelf_title",
       "value": "书架"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "Rock阅读"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "Rock阅读"
+    },
+    {
+      "name": "widget_display_name",
+      "value": "续读卡片"
+    },
+    {
+      "name": "widget_desc",
+      "value": "看看正在读的书，点一下回到上次的位置"
     }
   ]
 }

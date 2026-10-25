@@ -27,7 +27,15 @@ const SQL_CHAPTERS = 'CREATE TABLE IF NOT EXISTS chapters(' +
   'book_id TEXT NOT NULL, idx INTEGER NOT NULL, title TEXT, ' +
   'start_char INTEGER, end_char INTEGER, start_byte INTEGER, end_byte INTEGER, ' +
   'href TEXT, ' +
+  // 本章真实字数（净化/简繁转换**之前**的原始长度）。0 = 还没量过。
+  // EPUB 导入时只读目录不读正文（性能考虑），拿不到字数 ——
+  // 只能在 Reader 展开该章时回填（那时整章全文已在内存，零额外开销）。
+  // 用途：让全书进度按真实字数算，而不是按「第几章 ÷ 总章数」瞎估。
+  'char_count INTEGER, ' +
   'PRIMARY KEY(book_id, idx))';
+
+/** char_count 是后续新增列；老库需要补列（无发布版本，仍做一次兜底迁移） */
+const SQL_CHAPTERS_ADD_CHAR_COUNT = 'ALTER TABLE chapters ADD COLUMN char_count INTEGER';
 
 /** href 是 M4（EPUB）新增列；老库需要补列（无发布版本，仍做一次兜底迁移） */
 const SQL_CHAPTERS_ADD_HREF = 'ALTER TABLE chapters ADD COLUMN href TEXT';
@@ -88,6 +96,11 @@ export class BookDb {
     try {
       // 已存在该列时会报错，属预期（幂等迁移）
       await store.executeSql(SQL_CHAPTERS_ADD_HREF);
+    } catch (e) {
+      // 忽略：列已存在
+    }
+    try {
+      await store.executeSql(SQL_CHAPTERS_ADD_CHAR_COUNT);
     } catch (e) {
       // 忽略：列已存在
     }
@@ -204,6 +217,45 @@ export class BookDb {
       return b;
     });
     await this.ready().batchInsert('chapters', buckets);
+  }
+
+  /**
+   * 回填某章真实字数。
+   *
+   * 调用时机：Reader 展开该章之后 —— 那时整章全文已经在内存里，`text.length` 白拿，
+   * 不需要为了统计专门再去解一次压缩包。（EPUB 导入阶段刻意不读正文，就是为了
+   * 不让「导入」变成「解压 100 个 HTML」，这里是唯一低成本的量点。）
+   *
+   * 只写不读、失败无所谓：拿不到字数就退化成未确认，进度换算自动用平均值顶上。
+   */
+  async saveChapterCharCount(bookId: string, idx: number, count: number): Promise<void> {
+    try {
+      await this.ready().executeSql(
+        'UPDATE chapters SET char_count = ? WHERE book_id = ? AND idx = ?', [count, bookId, idx]);
+    } catch (e) {
+      // 忽略：统计性质的数据，丢了不影响主链路，下次展开会再写一次
+    }
+  }
+
+  /**
+   * 各章已确认字数（下标 = 章序，未量过 = 0）。
+   * 给 Reader 算「按真实字数的全书进度」用。
+   */
+  async loadCharCounts(bookId: string): Promise<number[]> {
+    try {
+      const rs = await this.ready().querySql(
+        'SELECT char_count FROM chapters WHERE book_id = ? ORDER BY idx ASC', [bookId]);
+      const out: number[] = [];
+      while (rs.goToNextRow()) {
+        const raw: number = rs.getLong(rs.getColumnIndex('char_count'));
+        // 新增列在老行上是 null / 0 → 一律当「没量过」
+        out.push(raw > 0 ? raw : 0);
+      }
+      rs.close();
+      return out;
+    } catch (e) {
+      return [];
+    }
   }
 
   async listChapters(bookId: string): Promise<ChapterRow[]> {

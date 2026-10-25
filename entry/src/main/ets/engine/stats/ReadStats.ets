@@ -199,3 +199,78 @@ export function byBook(sessions: ReadSession[]): BookTotal[] {
   out.sort((a: BookTotal, b: BookTotal) => b.ms - a.ms);
   return out;
 }
+
+/** 0~1 夹取；脏值（NaN / 负数 / 大于 1）一律收敛，不许漏进除法 */
+function clamp01(v: number): number {
+  if (Number.isNaN(v) || v < 0) {
+    return 0;
+  }
+  return v > 1 ? 1 : v;
+}
+
+/** 第 i 章已确认字数；越界或脏值（负数/NaN）按「没量过」处理 */
+function countAt(counts: number[], i: number): number {
+  if (i < 0 || i >= counts.length) {
+    return 0;
+  }
+  const c: number = counts[i];
+  return (typeof c === 'number' && c > 0) ? c : 0;
+}
+
+/**
+ * 全书进度：按**真实字数**算，而不是「第几章 ÷ 总章数」。
+ *
+ * 为什么不能按章数：那等于假设每章一样长。实测《暗恋·橘生淮南》100 章 39.3 万字，
+ * 读到「第7章」2/3 时按章算是 8.67%，按字数真实只有 4.66% —— 虚高近一倍，
+ * 因为前面夹着「版权信息」「序章」这类几百字的短章，前段失真最厉害。
+ *
+ * 难点：EPUB 导入阶段刻意**不读正文**（否则导入 = 解压上百个 HTML），所以导入时
+ * 根本拿不到每章字数，chapters.start_char/end_char 对 EPUB 恒为 0。
+ *
+ * 解法：**读到哪、算到哪**。每展开一章就把它真实字数回填 chapters.char_count
+ * （整章全文已在内存，白量）；没读过的章用「已确认章的平均字数」外推。
+ * 于是第一眼就有合理估值，越读越准，读过一遍后完全精确。
+ *
+ * @param counts 各章已确认字数（下标 = 章序，未量过 = 0）；长度可以短于 total
+ * @param total 总章数
+ * @param chapterIndex 当前章序（越界会被夹取，防止调用方传递野值算出 NaN）
+ * @param pagePercent 当前章读到几成（0~1）
+ */
+export function bookPercentOf(counts: number[], total: number, chapterIndex: number,
+  pagePercent: number): number {
+  if (total <= 0) {
+    return 0;
+  }
+  let idx: number = chapterIndex;
+  if (idx < 0) {
+    idx = 0;
+  }
+  if (idx >= total) {
+    idx = total - 1;
+  }
+  let knownTotal: number = 0;
+  let knownCount: number = 0;
+  for (let i = 0; i < total; i++) {
+    const c: number = countAt(counts, i);
+    if (c > 0) {
+      knownTotal = knownTotal + c;
+      knownCount = knownCount + 1;
+    }
+  }
+  if (knownCount === 0) {
+    // 一章都没量过（刚导入还没展开任何章）→ 退回按章口径，总比算出 0 / NaN 强
+    return (idx + clamp01(pagePercent)) / total;
+  }
+  const avg: number = knownTotal / knownCount;
+  // 已读 = 前面所有整章（未知按均值外推）+ 当前章的进度份额
+  let read: number = 0;
+  for (let i = 0; i < idx; i++) {
+    const c: number = countAt(counts, i);
+    read = read + (c > 0 ? c : avg);
+  }
+  const here: number = countAt(counts, idx);
+  read = read + (here > 0 ? here : avg) * clamp01(pagePercent);
+  const totalChars: number = knownTotal + (total - knownCount) * avg;
+  // 外推可能让「当前读到」略超总量（当前章特别长而外推偏小），收敛到 100% 内
+  return totalChars > 0 ? Math.min(read / totalChars, 1) : 0;
+}

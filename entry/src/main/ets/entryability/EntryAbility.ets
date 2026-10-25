@@ -29,6 +29,7 @@ export default class EntryAbility extends UIAbility {
     }
     hilog.info(DOMAIN, TAG, 'onCreate theme=%{public}s', theme);
     this.takeIncomingUri(want);
+    this.takeOpenBook(want);
   }
 
   /**
@@ -39,6 +40,36 @@ export default class EntryAbility extends UIAbility {
    */
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     this.takeIncomingUri(want);
+    this.takeOpenBook(want);
+  }
+
+  /**
+   * B1 服务卡片「继续读」：postCardAction('router') 带 params.bookId 拉起本 Ability
+   * （冷启动走 onCreate，热启动走 onNewWant）。同样落 AppStorage 由书架页转发 ——
+   * 键名 'pendingOpenBook' 与 Index.ets 的 @StorageLink 两边写死，改要一起改。
+   *
+   * 参数形态双保险：直接扁平放（params.bookId）与嵌一层（params.params.bookId）
+   * 都接 —— 官方示例是扁平形态，但卡片框架版本差异历史上改过形状，宁多认一种。
+   */
+  private takeOpenBook(want: Want): void {
+    const params: Record<string, Object> | undefined = want.parameters;
+    if (params === undefined) {
+      return;
+    }
+    const raw: Object | undefined = params['bookId'];
+    const nested: Object | undefined = params['params'] as Object | undefined;
+    const fromNested: Object | undefined = nested === undefined || nested === null
+      ? undefined
+      : (nested as Record<string, Object>)['bookId'];
+    const pick: Object | undefined = raw !== undefined ? raw : fromNested;
+    const bookId: string = typeof pick === 'string'
+      ? pick
+      : (typeof pick === 'number' ? String(pick) : '');
+    if (bookId.length === 0) {
+      return;
+    }
+    AppStorage.setOrCreate('pendingOpenBook', bookId);
+    hilog.info(DOMAIN, TAG, 'open book from card: %{public}s', bookId);
   }
 
   /**

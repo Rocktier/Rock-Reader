@@ -15,6 +15,22 @@
     {
       "name": "shelf_title",
       "value": "Shelf"
+    },
+    {
+      "name": "EntryFormAbility_label",
+      "value": "RockReader"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "RockReader"
+    },
+    {
+      "name": "widget_display_name",
+      "value": "Continue Reading"
+    },
+    {
+      "name": "widget_desc",
+      "value": "See your current book and resume where you left off"
     }
   ]
 }

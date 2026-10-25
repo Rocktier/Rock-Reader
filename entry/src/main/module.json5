@@ -110,6 +110,22 @@
             "resource": "$profile:backup_config"
           }
         ]
+      },
+      {
+        // B1 续读服务卡片（2026-10-25 党哥批准）：2×2 + 2×4 两规格，
+        // 数据源 CardData.ets（本地库 + 快照），点击 postCardAction('router')
+        // 带 bookId 拉起 EntryAbility。零联网、零新权限。
+        "name": "EntryFormAbility",
+        "srcEntry": "./ets/entryformability/EntryFormAbility.ets",
+        "label": "$string:EntryFormAbility_label",
+        "description": "$string:EntryFormAbility_desc",
+        "type": "form",
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
       }
     ]
   }
