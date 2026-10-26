@@ -37,11 +37,14 @@
 - **模拟器息屏与安全键盘（2026-10-26 新坑，差点误判）**：① 约 30s 自动息屏，息屏后截图整屏纯黑无状态栏 ⇒ `hdc shell "power-shell wakeup"` 点亮，`power-shell timeout -o <ms>` 覆盖息屏时间（**参数是 -o**，`-r` 恢复）；② **安全键盘是 secure 窗口，键盘弹出期间 screenCap 拍到的应用区域是纯黑，而 dumpLayout 仍读到完整 UI 树** ⇒ 极易误判成"渲染黑屏"，**判据：按 Back 关掉键盘再截图**；③ 系统设置应用 `aa start -a com.huawei.hmos.settings.MainAbility -b com.huawei.hmos.settings` 直拉且**保留上次页面**，深浅色切换在「显示和亮度 → 显示模式」的 Radio（浅 ~(349,1634) / 深 ~(907,1634)），「深色模式：全天开启」那行是定时规则不是开关。
 - hdc 不在 PATH，绝对路径 `/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`。设备绝对路径需 `MSYS_NO_PATHCONV=1`；本地路径用相对（cd `/f/AI/HarmonyOS`）；键盘弹出后输入框位移，必须重新 dumpLayout 再 inputText；DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。
 - **uitest dumpLayout 会返回旧应用实例的过期布局**（2026-10-25 实测：新 UI 装机后仍报旧 4 按钮菜单）⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；视觉模型会误读选中态，chip 选中态以黑底像素扫描为准。
+- **服务卡片（form）三条铁律**（2026-10-26 在 Rock私记 上实拍踩出来的，家族级）：
+  ① **卡片自定义参数会被系统改键名** —— 卡片写 `params:{bookId:'x'}`，系统拉起 ability 时传的是 `{"a9":"x","params":"{\"a9\":\"x\"}",…}`，**键被重命名成 a0/a1/…（按位置排）** ⇒ 只认原键名必然读不到（症状：点了卡片应用起来了但没反应）⇒ **按"值"找不按键名找**；② **form 页面禁用 @StorageLink / hilog / onAreaChange**（ArkTS 报 `11706006 can't support form application`），只能用 @LocalStorageProp，而它读到的 dimension 在 2×4 实例上是默认值 ⇒ **form 里做不了按尺寸分支的排版，统一布局通吃**；③ 卡片页不能打日志，调试只能打在 FormExtensionAbility 里。
 - 沙箱写入：hdc shell 的 `cp` 被 SELinux 拒、无 root；但 **`hdc file send` 可写**偏好/DB 文件（先停应用，删 WAL/-shm/-dwr/-compare 残件）。造测试数据可用共享 EPUB 路径 + DB 插行。
 - 存量已知问题（2026-10-25 发现，未修待拍板）：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；建议 flush 加时长上限或生命周期关会话。② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
 - 测试基线：Reader 185/185、Journal 139/139。
 - tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。
   Reader **1.0.6（code 1000007）已于 2026-10-26 提交 AGC，党哥确认已通过**——含桌面续读卡片 + 批次 A 四项；
   上架说明见 `docs/release-notes-1.0.6.md`。push 会触发 CI 建 GitHub Release，发版时机听党哥。
-  Journal **1.0.5（code 1000006）深色模式修复已通过模拟器实测（6 项全过，出包三步验收过），
-  上架说明 `RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ 下一步由党哥提 AGC**。
+  Journal **1.0.5（code 1000006）已含桌面卡片 + 深色模式修复，卡片与深色均在模拟器实测通过，
+  出包三步验收过，上架说明 `RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ 待党哥提 AGC**。
+  Reader 卡片点击定位的 bug（参数改键名）已修（commit f9e68e5），**端到端待补验**（模拟器需先给 Rock阅读 导一本书）。
