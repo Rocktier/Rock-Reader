@@ -34,11 +34,14 @@
 - **ForEach item 无确定宽度时 `width('100%')` 回退成父级全宽**（Journal 统计页柱状图 12 个月并排铺开、只有第 0 个在屏内）：item 加 `layoutWeight(1)`。
 - 图表数据顺序：左→右 = 过去→现在（newest 压轴），必须体现在单测里。
 - 模拟器：dpr=3.5、视口≈359vp；**会自动锁屏**（黑屏截图 66908 字节是特征值；解锁 `keyEvent Power` + `swipe 628 2680 628 700`，不稳定会反复锁）。排查先确认不是锁屏。shell 无 wm 命令 ⇒ 横屏断点一律抽纯函数 + 单测守（shelfColsOf / readingMarginOf / formPadOf）。
+- **模拟器息屏与安全键盘（2026-10-26 新坑，差点误判）**：① 约 30s 自动息屏，息屏后截图整屏纯黑无状态栏 ⇒ `hdc shell "power-shell wakeup"` 点亮，`power-shell timeout -o <ms>` 覆盖息屏时间（**参数是 -o**，`-r` 恢复）；② **安全键盘是 secure 窗口，键盘弹出期间 screenCap 拍到的应用区域是纯黑，而 dumpLayout 仍读到完整 UI 树** ⇒ 极易误判成"渲染黑屏"，**判据：按 Back 关掉键盘再截图**；③ 系统设置应用 `aa start -a com.huawei.hmos.settings.MainAbility -b com.huawei.hmos.settings` 直拉且**保留上次页面**，深浅色切换在「显示和亮度 → 显示模式」的 Radio（浅 ~(349,1634) / 深 ~(907,1634)），「深色模式：全天开启」那行是定时规则不是开关。
 - hdc 不在 PATH，绝对路径 `/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`。设备绝对路径需 `MSYS_NO_PATHCONV=1`；本地路径用相对（cd `/f/AI/HarmonyOS`）；键盘弹出后输入框位移，必须重新 dumpLayout 再 inputText；DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。
 - **uitest dumpLayout 会返回旧应用实例的过期布局**（2026-10-25 实测：新 UI 装机后仍报旧 4 按钮菜单）⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；视觉模型会误读选中态，chip 选中态以黑底像素扫描为准。
 - 沙箱写入：hdc shell 的 `cp` 被 SELinux 拒、无 root；但 **`hdc file send` 可写**偏好/DB 文件（先停应用，删 WAL/-shm/-dwr/-compare 残件）。造测试数据可用共享 EPUB 路径 + DB 插行。
 - 存量已知问题（2026-10-25 发现，未修待拍板）：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；建议 flush 加时长上限或生命周期关会话。② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
-- 测试基线：Reader 185/185、Journal 136/136。
+- 测试基线：Reader 185/185、Journal 139/139。
 - tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。
-  Reader **1.0.6（code 1000007）已于 2026-10-26 提交 AGC 待审核**——含桌面续读卡片 + 批次 A 四项；
+  Reader **1.0.6（code 1000007）已于 2026-10-26 提交 AGC，党哥确认已通过**——含桌面续读卡片 + 批次 A 四项；
   上架说明见 `docs/release-notes-1.0.6.md`。push 会触发 CI 建 GitHub Release，发版时机听党哥。
+  Journal **1.0.5（code 1000006）深色模式修复已通过模拟器实测（6 项全过，出包三步验收过），
+  上架说明 `RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ 下一步由党哥提 AGC**。

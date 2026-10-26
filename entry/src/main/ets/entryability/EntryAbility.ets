@@ -48,28 +48,69 @@ export default class EntryAbility extends UIAbility {
    * （冷启动走 onCreate，热启动走 onNewWant）。同样落 AppStorage 由书架页转发 ——
    * 键名 'pendingOpenBook' 与 Index.ets 的 @StorageLink 两边写死，改要一起改。
    *
-   * 参数形态双保险：直接扁平放（params.bookId）与嵌一层（params.params.bookId）
-   * 都接 —— 官方示例是扁平形态，但卡片框架版本差异历史上改过形状，宁多认一种。
+   * ⚠️⚠️ **卡片参数不能按自定义键名取**（2026-10-26 在 Rock私记 上实测抓到，
+   *    症状是"点了卡片应用起来了，但没跳到那本书"）：
+   *    卡片里写 `params: { bookId: 'xxx' }`，系统拉起 ability 时传过来的
+   *    want.parameters 长这样：
+   *      { "a9": "xxx", "formID": 123, "params": "{\"a9\":\"xxx\"}", ...系统自己的一堆... }
+   *    —— **自定义键被重命名成 a0/a1/a2…（按位置排）**，原键名彻底丢失。
+   *    ⇒ `params['bookId']` 永远读不到。
+   *    ⇒ 正确读法：解析系统塞回来的 `params` 字段（**只含卡片自定义参数**的 JSON 字符串），
+   *      取**最后一个**键的值 —— 本卡片只传一个自定义参数（bookId），末位即它。
+   *      ⚠️ 将来卡片要加第二个自定义参数时，这里必须改成"按值域特征挑"而不是末位。
    */
   private takeOpenBook(want: Want): void {
     const params: Record<string, Object> | undefined = want.parameters;
     if (params === undefined) {
       return;
     }
-    const raw: Object | undefined = params['bookId'];
-    const nested: Object | undefined = params['params'] as Object | undefined;
-    const fromNested: Object | undefined = nested === undefined || nested === null
-      ? undefined
-      : (nested as Record<string, Object>)['bookId'];
-    const pick: Object | undefined = raw !== undefined ? raw : fromNested;
-    const bookId: string = typeof pick === 'string'
-      ? pick
-      : (typeof pick === 'number' ? String(pick) : '');
+    const bookId: string = this.pickBookId(params);
     if (bookId.length === 0) {
+      hilog.info(DOMAIN, TAG, 'card params carry no bookId');
       return;
     }
     AppStorage.setOrCreate('pendingOpenBook', bookId);
     hilog.info(DOMAIN, TAG, 'open book from card: %{public}s', bookId);
+  }
+
+  /** 从卡片 want 的参数里取出 bookId（**不依赖键名**） */
+  private pickBookId(params: Record<string, Object>): string {
+    // (a) 首选：系统把卡片自定义参数原样塞在 params 字段里（JSON 字符串）
+    const nested: Object | undefined = params['params'];
+    if (typeof nested === 'string') {
+      const hit: string = this.lastValueInJson(nested);
+      if (hit.length > 0) {
+        return hit;
+      }
+    }
+    // (b) 兜底：扁平键 a0/a1/…（自定义键被系统重命名后的形态），取最后一个非空
+    let last: string = '';
+    for (let i: number = 0; i < 32; i++) {
+      const v: Object | undefined = params['a' + i];
+      if (typeof v === 'string' && v.length > 0) {
+        last = v;
+      }
+    }
+    return last;
+  }
+
+  /** JSON 字符串里取最后一个值（取不到返回空串） */
+  private lastValueInJson(json: string): string {
+    try {
+      const obj = JSON.parse(json) as Record<string, Object>;
+      const keys: string[] = Object.keys(obj);
+      let last: string = '';
+      for (const k of keys) {
+        const v: Object = obj[k];
+        if (typeof v === 'string' && v.length > 0) {
+          last = v;
+        }
+      }
+      return last;
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'parse card params failed: %{public}s', JSON.stringify(e));
+      return '';
+    }
   }
 
   /**
