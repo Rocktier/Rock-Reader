@@ -4,7 +4,13 @@
 > 状态：待党哥过目后粘贴到 AGC 后台上传页
 > 对应代码区间：`f9e68e5..HEAD`（1.0.6 上架后的全部用户可见变更）
 > 包：`build/outputs/release/RockReader-release-signed.app`（桌面已放 `Rock阅读-1.0.7-上架.app`）
-> md5：`09844eb39bf6e6e40a7f11cafc9b996e`
+> md5：`E8FA4A771F27D608E1EF0316DFF80702`（2026-10-27 22:29 重新出包，签名时间戳不同故指纹与上一版不同）
+> sha256：`495BA3672B85301A65D6ABE35CA591013399410B5C8FCE6B2D416BB7707D926D`
+>
+> ⚠️ **上传时只传桌面这一个包**。`build\outputs\release\` 下还有一个
+> `RockReader-release-unsigned.app`（**没有签名块**）—— 传它 AGC 必报 **993「Profile 文件非法」**。
+> 上传前请照桌面 `Rock阅读-1.0.7-上传前自检.txt` 走一遍 7 条自查；
+> 完整排查手册见 `docs/AGC-993-排查手册.md`。
 
 ---
 
