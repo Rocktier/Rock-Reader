@@ -9,13 +9,30 @@
 - 音色：凌飞哲 21 需下载（归允许范畴）、聆小珊 13 内置、劳拉 8 英文不面向中文书。三方云 TTS 维持否决。
 - 字体下载入口同一范畴。**新增任何系统能力前先对照此表**。
 
-## 华为签名与出包（993 事故后定稿，每次出包必读）
+## 华为签名与出包（两次 993 后定稿，每次出包必读）
 
 - 个人开发者账号全账号仅 1 张发布证书：RockReader 与 RockJournal **共用** rockreader-v2.p12/.cer，各自建发布 Profile（rockreader-v2.p7b / rockjournal-v1.p7b）。材料在 `F:\AI\HarmonyOS\keys\`，口令同目录 txt。
 - build-profile 的 storePassword/keyPassword **必须是 DevEco 加密串**（明文报 00303116/00303117），同机可跨工程复制。
 - **出包命令（两仓通用）**：`assembleApp -p product=release -p buildMode=release --no-daemon`。不能带 `--mode module`（报 00306054）；**`product` 必须是 `release`**。
+- 🚦 **上传前必须跑闸门**：`pwsh scripts/verify-upload.ps1`（两仓各一份，已接进 `build-release.ps1`，不过就 throw）。
+  它把 AGC 官方 993 的成因逐条排除 + 顺带查 996/997 坑；**通过才允许上传**。
 - **出包验收三步（缺一不可）**：① `verify-app -inFile X.app -inForm zip` 验签过；② **抠出包内 Profile 看 `type`**——必须 `release` + 本应用包名 + 无 `debug-info`/`development-certificate`（验签通过 ≠ 用的是发布 Profile！）；③ 本地 `keys/*.p7b` 先验。`-outCertChain/-outProfile` 必须是存在的本地路径（/tmp 报 11012005）。
-- 993 = Profile 文件非法，官方原因四 = 用了自动签名。`-p product=default` 的 signingConfig 是 DevEco 自动签名（调试证书+调试 Profile），buildMode 只管混淆不管签名。快速二分：先抠包内 Profile。
+- ⚠️ **`app_check_tool.jar` 已失效**（报 9132101，所有参数判 invalid）⇒ 一律用 `hap-sign-tool.jar verify-app -inFile X.app -inForm zip`（它没有 `verify-hap` 子命令）。
+
+### 993 = Profile 文件非法（家族级，已栽两次，成因不同）
+
+AGC 官方四条成因：① 包内 Profile 已被删除（AGC 后台查不到）；② 包内 release Profile 不属于该应用；③ Profile 失效（证书被删/过期）；④ 包被自动签名。官方还提醒工程侧两条：**build-profile 里配了多个签名时，products 下的 signingConfig 必须指向发布签名**；**签名写在 hvigorfile.ts 的 overrides 里是不被认可的，必须写进 build-profile.json5**。
+
+- **第 1 次（2026-10-25）= 成因④**：出包命令写了 `-p product=default` ⇒ 用 DevEco 自动签名（调试证书+调试 Profile）⇒ 包内 Profile `type=debug`。**buildMode 只管混淆，不管签名**；只写 `buildMode=release` 没用。改 `product=release` 重打即好。
+- **第 2 次（2026-10-27）= 传错文件**：产物目录里 **`RockReader-release-signed.app` 与 `RockReader-release-unsigned.app` 并排**，文件名只差三个字母；**unsigned 包根本没有签名块**（verify-app 报 "signature not found"）⇒ 传它必 993。判定：包内 Profile 是 release + 包名对 + 证书有效到 2029，**包侧全绿却仍 993 ⇒ 就查"传的是不是 signed 包"**。
+- **Journal 侧同源 bug**：`build-release.ps1` 用 `-like "*signed*"` 挑产物，**"unsigned" 里也含 "signed" 三个字母 ⇒ 会挑到 unsigned 包**。已改成 `-like "*signed.app" -and -notlike "*unsigned*"`（两仓统一）。
+- **判别口诀**：993 先抠包内 Profile（`hap-sign-tool -outProfile` 导出后正则找 `"type":"\w+"`），一次就能区分「用错签名 / 传错文件 / Profile 失效 / 包名不匹配」，不用去 AGC 猜。**Profile 侧全绿但仍 993 → 立刻怀疑传错文件。**
+
+### PowerShell 写脚本的三个坑（家族级，本次实测）
+
+- **`.ps1` 必须存 UTF-8 带 BOM**：PS 5.1 按 ANSI 读无 BOM 的 UTF-8 → 中文乱码 → 「表达式或语句中包含意外的标记 }」（实测两次）。
+- **跑 java 工具别用 `& java ... 2>&1`**：java 日志写 stderr，PS 把它转成错误记录，在 `$ErrorActionPreference="Stop"` 下直接中断脚本 ⇒ 用 `Start-Process` + `-RedirectStandardOutput/-RedirectStandardError` 分流到文件。
+- **Start-Process 两个雷**：① 参数里有空格（`E:\Program Files\...`）必须自己加引号，否则被截成 `E:\Program`；② 复制环境变量时若同时存在 `HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy`（本机四项全有）⇒ 抛「字典中的关键字重复」⇒ 临时摘掉再跑。
 
 ## 法律文件：一个链接覆盖全家族
 
