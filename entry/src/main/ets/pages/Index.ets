@@ -16,6 +16,8 @@ import { reasonText } from '../engine/importer/ImportReason';
 import {
   collectGroups,
   filterByStatus,
+  filterByQuery,
+  matchesQuery,
   GROUP_ALL,
   GROUP_UNFILED,
   filledCells,
@@ -66,6 +68,9 @@ struct Index {
   @State activeGroup: string = GROUP_ALL;
   /** 阅读状态筛选（未读 / 在读 / 已读），与分组是两个独立维度 */
   @State statusFilter: string = STATUS_ALL;
+
+  /** 书架搜索关键字（书名 + 作者子串匹配）；空串 = 不搜索 */
+  @State query: string = '';
   /** 书架网格列数（P0-5 平板断点：<600vp=3 列 / 600~839=4 列 / ≥840=6 列） */
   @State shelfCols: number = 3;
   @State resume: ShelfItem | null = null;
@@ -256,14 +261,18 @@ struct Index {
     return parts.join(' ');
   }
 
-  /** 先按分组筛，再按阅读状态筛（两个维度独立） */
+  /**
+   * 书架三道筛：先搜关键字 → 再按分组 → 最后按阅读状态（两维度互相独立）。
+   * 搜索放最外层，因为它砍掉的书最多，后面的循环就越小。
+   */
   private visibleItems(): ShelfItem[] {
+    const scoped: ShelfItem[] = filterByQuery(this.items, this.query);
     if (this.activeGroup === GROUP_ALL) {
-      return filterByStatus(this.items, this.statusFilter);
+      return filterByStatus(scoped, this.statusFilter);
     }
     const grouped: ShelfItem[] = [];
-    for (let i = 0; i < this.items.length; i++) {
-      const it: ShelfItem = this.items[i];
+    for (let i = 0; i < scoped.length; i++) {
+      const it: ShelfItem = scoped[i];
       if (normalizeGroupName(it.book.groupName) === this.activeGroup) {
         grouped.push(it);
       }
@@ -835,6 +844,43 @@ struct Index {
         .alignItems(VerticalAlign.Center)
         .padding({ top: RR_SP_XL, bottom: RR_SP_2XL })
 
+        // 搜索：书一多，「找那本书」比「筛某种状态」用得频繁得多，所以它排在两种筛件之前，
+        // 也是唯一一个直接吃掉一整行的控件。只在有书时出现 —— 空书架更要紧的是教人怎么导入。
+        if (this.items.length > 0) {
+          Row({ space: 8 }) {
+            TextInput({ placeholder: '搜书名或作者', text: this.query })
+              .layoutWeight(1)
+              .fontSize(RR_FS_BODY)
+              .fontColor(this.palette.text)
+              .placeholderColor(this.palette.text3)
+              .backgroundColor('rgba(0,0,0,0)')
+              .borderWidth(1)
+              .borderColor(this.palette.line)
+              .borderRadius(RR_RADIUS_MD)
+              .height(36)
+              .padding({ left: RR_SP_LG, right: RR_SP_LG })
+              .onChange((value: string) => {
+                this.query = value;
+              })
+            if (this.query.length > 0) {
+              Text('×')
+                .fontSize(RR_FS_LABEL)
+                .fontColor(this.palette.text3)
+                .width(30)
+                .height(30)
+                .textAlign(TextAlign.Center)
+                .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
+                .accessibilityText('清空搜索')
+                .onClick(() => {
+                  this.query = '';
+                })
+            }
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .margin({ bottom: RR_SP_LG })
+        }
+
         // 分组筛选（只有存在两个及以上分组时才出现，避免只有「未分组」时白占一行）
         if (this.groups.length > 1) {
           Scroll() {
@@ -868,14 +914,41 @@ struct Index {
         // 继续阅读只在「全部」时显示：它是快捷入口，不是列表项 ——
         // 筛「未读」时顶部还杵着一张在读的书，会让人以为状态判定错了（真机反馈 #2：
         // 用户正是因此以为那本 EPUB 同时出现在未读/在读/已读里）
-        if (this.resume !== null && this.activeGroup === GROUP_ALL && this.statusFilter === STATUS_ALL) {
+        // 搜索时同理：它指向的书必须还在搜索结果里，否则卡片与列表互相打脸。
+        //
+        // ⚠️ 判定必须**就地读 @State**，不能抽成 getter/方法：
+        // ArkUI V1 是「状态变更 → 局部刷新」，build() 不会整体重跑，
+        // 分支条件按首次求值定型；条件里藏了函数调用，插桩追不到 query 的依赖，
+        // 于是卡片该藏的时候不藏。（@Computed 只支持 @ComponentV2，本项目是 V1。）
+        if (this.resume !== null && this.activeGroup === GROUP_ALL && this.statusFilter === STATUS_ALL &&
+          (this.query.trim().length === 0 ||
+            matchesQuery(this.resume.book.title, this.resume.book.author, this.query))) {
           this.resumeCard()
           Row()
             .height(14)
         }
 
         // 书架网格
-        if (this.items.length === 0) {
+        //
+        // ⚠️ 「没搜到」的空态条件必须**就地读 @State**（this.query），不能写
+        // `if (this.searchedEmpty)` 那种 getter：ArkUI V1 局部刷新时 build() 不整体重跑，
+        // 分支条件按首次求值定型，而 getter 里的 @State 访问插桩追不到 ——
+        // 症状是「书确实被过滤掉了，但『没搜到』的空态永远不出现」。
+        if (this.query.length > 0 && this.visibleItems().length === 0) {
+          // 有书、但一个都没命中。必须单独给空态 —— 否则用户看到一片空白，
+          // 只会以为书被删了（这句话讲清楚是「没搜到」，不是「没有了」）。
+          Column({ space: 8 }) {
+            Text('没搜到这本书')
+              .fontSize(RR_FS_BODY)
+              .fontColor(this.palette.text2)
+            Text('换个书名或作者再试试')
+              .fontSize(RR_FS_META)
+              .fontColor(this.palette.text3)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
+        } else if (this.items.length === 0) {
           // 空态放 slogan：这片空白唯一的作用，就是让人记住我们是谁。
           // 不是营销文案 —— 是品牌承诺（党哥 2026-09-23 定「主句 + 副句」两句）。
           // 主句讲"本地、不上传"，副句讲"断网完整"，两句合起来才是完整的承诺。
@@ -958,6 +1031,11 @@ struct Index {
         .width('100%')
         .padding({ bottom: RR_SP_3XL, top: RR_SP_LG })
       }
+      // ⚠️ 必须给根 Column 明确高度：下面两个空态都用 layoutWeight(1) 撑开，
+      // 而 layoutWeight 分的是「父容器的剩余空间」—— 父容器高度不确定时剩余空间是 0，
+      // 空态就被压成 0 高度（看不见文案）。这是家族老坑的又一次复发。
+      .width('100%')
+      .height('100%')
       .width('100%')
       .height('100%')
       .backgroundColor(this.palette.bg)

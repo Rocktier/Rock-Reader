@@ -77,6 +77,49 @@ export function filledCells(percent: number, total: number): number {
   return Math.round(clampPercent(percent) * total);
 }
 
+/**
+ * 归一化查询串：去首尾空白、大小写折叠（英文书名 / 英文名姓隔开大小写不成问题）。
+ *
+ * 为什么不做拼音首字母 / 分词：用户找书的动作几乎全是「书名或作者里出现过的几个字」，
+ * 子串匹配就够用；拼音表要几百 KB、分词要词库，都会直接撞家族「极致小」那条铁律，
+ * 而且引入了就无法在 Node 里被真实数据测穿。够用即止。
+ */
+export function normalizeQuery(raw: string): string {
+  const text: string = (raw === undefined || raw === null) ? '' : raw.trim();
+  return text.toLowerCase();
+}
+
+/**
+ * 关键字命中判定：书名或作者任一包含即命中；空查询一律放行（语义 = 不过滤）。
+ * 脏数据（null / undefined）按空串处理 —— EPUB 的 OPF 里作者经常整个缺席。
+ */
+export function matchesQuery(title: string, author: string, query: string): boolean {
+  const q: string = normalizeQuery(query);
+  if (q.length === 0) {
+    return true;
+  }
+  const titleText: string = (title === undefined || title === null) ? '' : title;
+  const authorText: string = (author === undefined || author === null) ? '' : author;
+  return titleText.toLowerCase().indexOf(q) >= 0 || authorText.toLowerCase().indexOf(q) >= 0;
+}
+
+/**
+ * 按关键字过滤书架项。空查询原样返回同一份数组（顺序不变，省一次拷贝）。
+ * 这是书架三层筛件的最外层：搜索 → 分组 → 阅读状态。
+ */
+export function filterByQuery(items: ShelfItem[], query: string): ShelfItem[] {
+  if (normalizeQuery(query).length === 0) {
+    return items;
+  }
+  const out: ShelfItem[] = [];
+  for (let i = 0; i < items.length; i++) {
+    if (matchesQuery(items[i].book.title, items[i].book.author, query)) {
+      out.push(items[i]);
+    }
+  }
+  return out;
+}
+
 /** 百分比文案 */
 export function percentText(percent: number): string {
   return Math.round(clampPercent(percent) * 100) + '%';

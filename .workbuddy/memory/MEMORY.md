@@ -48,3 +48,18 @@
   Journal **1.0.5（code 1000006）已含桌面卡片 + 深色模式修复，卡片与深色均在模拟器实测通过，
   出包三步验收过，上架说明 `RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ 待党哥提 AGC**。
   Reader 卡片点击定位的 bug（参数改键名）已修（commit f9e68e5），**端到端待补验**（模拟器需先给 Rock阅读 导一本书）。
+
+## 1.0.7 在制品（2026-10-27 凌晨暂停，代码**未 commit 未 push**）
+
+对标静读天下的四项改进，顺序 3→2→1→4，实测 criterion：**构建已过 BUILD SUCCESSFUL、单测 202/202（188 基线 + 新增 14）、HAP 已装模拟器**，但**装机端到端全部未验**（卡在灌不进书）。
+工作区改动：`ShelfRules.ets` / `Index.ets` / `Reader.ets` / `test/all.test.ts` / `test/shelf.test.ts` + 新增 `engine/marks/MarkExport.ets`、`test/markexport.test.ts`。
+- **第3项 进度按真实字数**：根因是 `onAreaChange` 首次回调兜底分支 `openChapter()` 后漏调 `surveyChars()`，而 `init()` 里那个 `if(this.areaReady)` 首次进入恒不成立 ⇒ `char_count` 恒空。已补调用 + `.catch()`（`surveyChars` 只有 try/finally **没有 catch**）。验收靠 `probe.txt`（前 5 章 100 字 / 后 15 章 5000 字）看百分比从按章数收敛到按字数。
+- **第2项 书架搜索**：`normalizeQuery/matchesQuery/filterByQuery`（书名+作者，故意不做拼音，撞"极致小"铁律）；UI 则是在 Index 页加搜索框 + 搜索专属空态。
+- **第4项 摘录导出**：`MarkExport.ets` 纯函数（`exportDateText` 必须本地时区）+ systemShare（`ShareKit`+`utd TEXT`）零权限零联网。
+- **第1项 备份：结论反转，暂缓！** `EntryBackupAbility` 空实现**不是 bug**，官方明说就是推荐做法；`backup_config.json` 无 `includes` 也大概率是有效默认。**贸然写 includes 若路径写错反而缩小备份范围** ⇒ 只能真机克隆定性，模拟器验不了；按家族纪律，没实测就在上架说明一个字不提。
+- **卡点（明天第一件事，Task #126）**：模拟器灌不进书。`aa start -U file://` → AMS `permission_verification verify fail`；隐式 `-A viewData -t text/plain -U file://` → 「暂无可用打开方式」（module.json5 注释矩阵：带 uri 的一律不命中，纯 type 才行）；`/storage/media/**` 全不可写，只有 `/data/local/tmp` 可写。**兜底用 `hdc file send` 直写沙箱 DB/filesDir**（force-stop 后删 WAL 残件）。
+
+## 模拟器导入通道的两条铁律（家族级）
+
+- **`aa start -U <uri>` 带不动文件**：AMS 会做 URI 权限校验并在无授权时**静默剥离 want.uri** ⇒ 接收端 `want.uri` 为空。若这段判空 return 又不打日志（参见 `takeIncomingUri` 旧版），现象就是"导入跑了但没书"且日志干净 ⇒ **写这类分支必须打日志**。
+- **`toISOString()` 家族禁令再确认**：导出的日期文本也一律本地时区（`exportDateText`），否则东八区 00–08 点会写成昨天。

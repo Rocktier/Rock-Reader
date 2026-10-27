@@ -12,6 +12,9 @@ import {
   filledCells,
   filterByGroup,
   filterByStatus,
+  filterByQuery,
+  matchesQuery,
+  normalizeQuery,
   GROUP_ALL,
   GROUP_UNFILED,
   MAX_GROUP_NAME,
@@ -137,4 +140,76 @@ test('filledCells / percentText：与「继续阅读」卡片的 10 格进度一
   assert.equal(percentText(0.123), '12%');
   assert.equal(percentText(1), '100%');
   assert.equal(percentText(Number.NaN), '0%');
+});
+
+// ------------------------------------------------------------------
+// 书架搜索（1.0.7 新增）：书名 + 作者子串匹配
+// ------------------------------------------------------------------
+
+function bookWith(id: string, title: string, author: string): BookRecord {
+  return {
+    id: id,
+    title: title,
+    author: author,
+    format: 'epub',
+    path: '/tmp/' + id,
+    size: 1,
+    addedAt: 0,
+    lastReadAt: 0,
+    groupName: ''
+  };
+}
+
+test('normalizeQuery：去首尾空白 + 大小写折叠（英文书名不必敲对大写）', () => {
+  assert.equal(normalizeQuery('  三体  '), '三体');
+  assert.equal(normalizeQuery('Clean Code'), 'clean code');
+  assert.equal(normalizeQuery(''), '');
+  assert.equal(normalizeQuery(undefined as unknown as string), '');
+});
+
+test('matchesQuery：书名或作者任一命中；空查询一律放行', () => {
+  const b: BookRecord = bookWith('a', '三体', '刘慈欣');
+  assert.ok(matchesQuery(b.title, b.author, '三体'));
+  assert.ok(matchesQuery(b.title, b.author, '刘慈欣'), '作者也要能被搜到');
+  assert.ok(matchesQuery(b.title, b.author, '刘'), '子串即可，不必输全名');
+  assert.ok(!matchesQuery(b.title, b.author, '球状闪电'));
+  assert.ok(matchesQuery(b.title, b.author, ''), '空查询 = 不过滤');
+  assert.ok(matchesQuery(b.title, b.author, '   '), '纯空白同义');
+});
+
+test('matchesQuery：大小写无关（Clean Code / clean code 都能搜到）', () => {
+  const b: BookRecord = bookWith('b', 'Clean Code', 'Robert Martin');
+  assert.ok(matchesQuery(b.title, b.author, 'clean'));
+  assert.ok(matchesQuery(b.title, b.author, 'CLEAN'));
+  assert.ok(matchesQuery(b.title, b.author, 'martin'));
+});
+
+test('matchesQuery：作者缺失（OPF 里常整个缺席）不许抛异常', () => {
+  const b: BookRecord = bookWith('c', '无名书', '');
+  assert.ok(matchesQuery(b.title, b.author, '无名'));
+  assert.ok(!matchesQuery(b.title, b.author, '随便'));
+  // 脏数据更狠一点：title/author 直接是 undefined
+  assert.ok(!matchesQuery(undefined as unknown as string, undefined as unknown as string, '任何'));
+});
+
+test('filterByQuery：命中保持原有顺序；支持同时打到书名和作者', () => {
+  const books: BookRecord[] = [
+    bookWith('a', '三体', '刘慈欣'),
+    bookWith('b', '球状闪电', '刘慈欣'),
+    bookWith('c', '老人与海', '海明威')
+  ];
+  const percents: Map<string, number> = new Map<string, number>();
+  const items: ShelfItem[] = toShelfItems(books, percents);
+
+  assert.deepEqual(filterByQuery(items, '刘慈欣').map((i: ShelfItem) => i.book.id), ['a', 'b']);
+  assert.deepEqual(filterByQuery(items, '老').map((i: ShelfItem) => i.book.id), ['c']);
+  assert.equal(filterByQuery(items, '托尔金').length, 0, '一个都搜不到要是空数组，不是报错');
+});
+
+test('filterByQuery：空查询原样返回同一个数组（省一次拷贝，顺序不变）', () => {
+  const books: BookRecord[] = [bookWith('a', 'A', ''), bookWith('b', 'B', '')];
+  const items: ShelfItem[] = toShelfItems(books, new Map<string, number>());
+  const got: ShelfItem[] = filterByQuery(items, '');
+  assert.equal(got.length, 2);
+  assert.deepEqual(got.map((i: ShelfItem) => i.book.id), ['a', 'b']);
 });

@@ -12,6 +12,7 @@ import './import-reason.test.ts';
 import './mobi.test.ts';
 import './realfile.test.ts';
 import './shelf.test.ts';
+import './markexport.test.ts';
 import './purify.test.ts';
 import './convert.test.ts';
 import './stats.test.ts';

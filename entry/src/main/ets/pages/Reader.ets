@@ -15,6 +15,9 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { curves, promptAction, router } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
+import { systemShare } from '@kit.ShareKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { BookDb } from '../data/BookDb';
 import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
 import { bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
@@ -32,6 +35,7 @@ import {
   readingMarginOf,
   WEIGHT_MAX
 } from '../common/LayoutStyle';
+import { buildMarksExport } from '../engine/marks/MarkExport';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
@@ -761,6 +765,17 @@ struct Reader {
         }
       }
       this.bookPercent = this.computeBookPercent();
+      // 这条日志是「进度按真实字数」能否成立的唯一凭据 —— 它说出多少章拿到了真字数。
+      // 装机打开一本书后 measured 若恒为 0，就说明普查压根没跑，百分比会退回按章数的
+      // 虚高口径（首帧兜底路径漏调普查，就是对着这个数看出来的）。
+      let measured: number = 0;
+      for (let i: number = 0; i < this.chapterCount; i++) {
+        if (this.charAt(i) > 0) {
+          measured++;
+        }
+      }
+      hilog.info(DOMAIN, TAG, 'char survey done: %{public}d/%{public}d chapters measured',
+        measured, this.chapterCount);
       // 普查把全书字数总量改了 → 进度必须重新落库，否则书架/卡片还是按旧口径的数。
       // force=true 同时穿透卡片限流（见 pushCardUpdate 注释）：这一推是"口径升级"，
       // 被限流吞掉的话用户得等到下次翻页才看到正确百分比。
@@ -1925,6 +1940,42 @@ struct Reader {
   }
 
   /**
+   * 把这本书的书签 + 摘录交给用户（交给系统分享面板）。
+   *
+   * 为什么只走系统分享、不自己往磁盘落一个文件：自己写要申请存储/挑选权限，
+   * 而 Share Kit 是**零权限**的 —— 数据从沙箱直接进用户自己挑的目的地
+   * （微信、备忘录、云盘、另一台手机），既不用问权限，也不用替他决定存哪。
+   * 这一条同时守住家族「零权限」和「核心数据不联网」两条铁律：
+   * 分享是**用户当场主动发起的一次性动作**，不是后台偷偷同步。
+   */
+  private exportMarks(): void {
+    if (this.book === null) {
+      return;
+    }
+    const body: string = buildMarksExport(
+      this.title, this.book.author, this.highlights, this.bookmarks, new Date()
+    );
+    try {
+      const data: systemShare.SharedData = new systemShare.SharedData({
+        utd: utd.UniformDataType.TEXT,
+        content: body,
+        title: '《' + this.title + '》的笔记',
+        description: 'Rock阅读 · 本机导出'
+      });
+      const controller: systemShare.ShareController = new systemShare.ShareController(data);
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      controller.show(ctx, {
+        previewMode: systemShare.SharePreviewMode.DETAIL,
+        selectionMode: systemShare.SelectionMode.SINGLE
+      }).catch((e: Error) => {
+        hilog.error(DOMAIN, TAG, 'share marks failed: %{public}s', JSON.stringify(e));
+      });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'share marks build failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /**
    * 「标记」页签（P0-2）：书签 + 摘录两个分组。
    * 点条目跳回原位（书签按 offset、摘录按 startChar，同一套页表反查）。
    */
@@ -2050,6 +2101,28 @@ struct Reader {
         .layoutWeight(1)
         .scrollBar(BarState.Off)
         .divider({ strokeWidth: 1, color: this.palette.lineSoft })
+
+        // 导出：攒了几十条摘抄却拿不出去，等于把人锁死在这个应用里 —— 这不对。
+        // 只在真的有标记时出现：导一团空文本除了让人失望没有别的用处。
+        if (this.bookmarks.length > 0 || this.highlights.length > 0) {
+          Row() {
+            Text('导出这本书的笔记')
+              .fontSize(RR_FS_LABEL)
+              .fontColor(this.palette.text)
+          }
+          .width('100%')
+          .height(44)
+          .justifyContent(FlexAlign.Center)
+          .borderWidth(1)
+          .borderColor(this.palette.line)
+          .borderRadius(RR_RADIUS_COVER)
+          .margin({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_LG, bottom: RR_SP_2XL })
+          .stateStyles({ pressed: { opacity: 0.6 } })
+          .accessibilityText('导出这本书的书签和摘录')
+          .onClick(() => {
+            this.exportMarks();
+          })
+        }
       }
     }
     .width('100%')
@@ -2741,6 +2814,14 @@ struct Reader {
           this.laidOutHeightVp = height;
           if (this.chapterCount > 0) {
             this.openChapter(this.pendingChapter, this.pendingOffset);
+            // 首帧兜底这条路径同样要补字数普查 —— 它才是绝大多数用户真正走进来的那条。
+            // init() 里 601 行的 if (this.areaReady) 几乎恒不成立（布局晚于那条 await 链），
+            // 于是加了这行之前：书打开了，但 census 一次都没跑，chapters.char_count 全空，
+            // 进度退回「按章数」的虚高口径（实测 8.67% vs 真实 4.66%）。
+            // surveyChars 内部有 surveying 幂等守卫，两处重复调用安全。
+            this.surveyChars().catch((e: Error) => {
+              hilog.warn(DOMAIN, TAG, 'surveyChars failed: %{public}s', JSON.stringify(e));
+            });
           }
           return;
         }
