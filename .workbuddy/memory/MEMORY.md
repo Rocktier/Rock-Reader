@@ -19,6 +19,7 @@
   逐条排除 AGC 993 官方成因 + 顺带查 996/997 坑；**通过才允许上传**。
   **已实测**：喂 unsigned 包 ⇒ 3 项 FAIL + 退出码 1；喂 signed 包 ⇒ 13 项 PASS + 退出码 0。
 - **交付纪律**：桌面/文件夹里**只留一个**待传包（signed/unsigned 并排是每次出包的常态，只在产物目录里挑包 = 自找 993）。旧包移入 `桌面\Rock阅读-旧包备份\` 备查，**不删**。
+- **上传纪律（第 0 步，只能靠人）**：上传前先确认 **AGC 后台当前应用 = Rock阅读**（`com.rocktier.rockreader`）。多应用账号切栏目极易出错，**包侧全绿也发现不了**。
 - 完整排查手册：`docs/AGC-993-排查手册.md`（Reader 仓）。桌面另有《上传前自检.txt》7 条清单。
 
 ### 993 = Profile 文件非法（家族级，**已栽两次，成因不同**）
@@ -26,9 +27,19 @@
 AGC 官方四条成因：① 包内 Profile 已被删除（AGC 后台查不到）；② 包内 release Profile 不属于该应用；③ Profile 失效（证书被删/过期）；④ 包被自动签名。工程侧两条：**products[].signingConfig 必须指向发布签名**；**签名写在 hvigorfile.ts 的 overrides 里不被认可，必须写进 build-profile.json5**。
 
 - **第 1 次（10-25）= 成因④**：出包写了 `-p product=default` ⇒ DevEco 自动签名（调试证书+调试 Profile）⇒ 包内 Profile `type=debug`。改 `product=release` 重打即好。
-- **第 2 次（10-27）= 传错文件**：产物目录 `RockReader-release-signed.app`(2355889B) 与 `RockReader-release-unsigned.app`(2341232B) **并排，文件名只差三个字母**；unsigned 包**没有签名块**（verify-app 报 "signature not found"）⇒ 传它必 993。迷惑点：两包内层 `entry-default.hap` 完全相同，**签名在 .app 外层**。
-- **Journal 侧同源 bug**：`build-release.ps1` 原用 `-like "*signed*"` 挑产物，**"unsigned" 里也含 "signed"** ⇒ 会挑到 unsigned 包。已统一改成 `-like "*signed.app" -and -notlike "*unsigned*"`。
-- **判别口诀**：993 先抠包内 Profile（`hap-sign-tool -outProfile` 导出后找 `"type":"\w+"`）一次分流 —— `debug`=用错 product；`release` 但包名不匹配=拿错 Profile；过期=Profile 失效；**包侧全绿仍 993 ⇒ 立刻怀疑传错文件**。
+- **第 2 次（10-27）= 成因②「传到了错误的应用栏目下」（真凶，党哥 22:38 查明）**：
+  把 **Rock阅读** 的包传到了 AGC 的**「Rock私记」**栏目下 ⇒ AGC 拿 Profile 的 `bundle-name`
+  （`com.rocktier.rockreader`）比对当前应用（`com.rocktier.rockjournal`）⇒ 对不上 ⇒ 993。
+  **切到「Rock阅读」重传一次通过，已提交审核（10-27）。**
+  ⚠️ **期间曾误判成"传了 unsigned 包"** —— 诱因是产物目录里 signed/unsigned 并排、文件名只差三个字母，
+  但党哥传的就是验过的 signed 包（md5 一致）。**教训：结构上像的诱因 ≠ 真凶**，
+  必须拿到「换了栏目就成功」这种直接证据才能定案。
+- **闸门的能力边界（家族铁律）**：闸门只能验**包**，验不了「传到哪个应用下」⇒
+  **上传前第 0 步永远只能靠人：确认 AGC 后台当前应用 = Rock阅读（com.rocktier.rockreader）。**
+  反过来说：**包侧全绿而仍 993 ⇒ 问题一定在包之外**，先查上传目标应用，再查 Profile 是否被 AGC 删。
+- **Journal 侧同源 bug（真实存在，已修）**：`build-release.ps1` 曾用 `-like "*signed*"` 挑产物，**"unsigned" 里也含 "signed"** ⇒ 会挑到 unsigned 包。已统一改成 `-like "*signed.app" -and -notlike "*unsigned*"`。
+  闸门"文件名含 unsigned 即拒"这条规则无害，保留。
+- **判别口诀**：993 先抠包内 Profile（`hap-sign-tool -outProfile` 导出后找 `"type":"\w+"`）一次分流 —— `debug`=用错 product；`release` 但包名不匹配=拿错 Profile；过期=Profile 失效；**包侧全绿仍 993 ⇒ 先查上传目标应用**。
 
 ### 出包验收三步 + 工具坑（家族级）
 
@@ -89,11 +100,12 @@ AGC 官方四条成因：① 包内 Profile 已被删除（AGC 后台查不到�
 
 - tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（且编译失败则不执行 ⇒ CI 红了 tag 也发不出 Release）。
 - Reader **1.0.6（code 1000007）2026-10-26 已提交 AGC，党哥确认通过**（含桌面续读卡片 + 批次 A 四项），上架说明 `docs/release-notes-1.0.6.md`。
-- Journal **1.0.5（code 1000006）** 含桌面卡片 + 深色模式修复（模拟器实测通过）、出包三步验收过，`RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ **待党哥提 AGC**。
-- **Reader 1.0.7（code 1000008）**：commit `de258bb`+`3ea2cd5`（本地未 push）。
+- Journal **1.0.5（code 1000006）** 含桌面卡片 + 深色模式修复（模拟器实测通过）、出包三步验收过，`RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ ✅ **10-26 提交 AGC、10-27 审核已通过（已上架）**。
+- **Reader 1.0.7（code 1000008）**：commit `de258bb`+`3ea2cd5`+`59c4f48`（本地未 push）。
   release 包 **2026-10-27 22:29 重新出包**（签名时间戳不同 ⇒ 指纹变）：
   桌面 `Rock阅读-1.0.7-上架.app` md5 **`E8FA4A771F27D608E1EF0316DFF80702`** / sha256 `495BA367…D926D`，
-  闸门 **13 项 PASS / 退出码 0**；上架说明 `docs/release-notes-1.0.7.md` 已更新指纹 ⇒ **待党哥提 AGC**。
+  闸门 **13 项 PASS / 退出码 0**；上架说明 `docs/release-notes-1.0.7.md` 已更新指纹。
+  ✅ **10-27 22:38 已提交 AGC 审核**（首次 993 = 传到「Rock私记」栏目下，切到「Rock阅读」后一次通过）。**待审核通过。**
   卡片点击定位 bug（参数改键名，commit f9e68e5）**端到端已在 release 包本体实测通过**。
 - 1.0.7 四项对标静读天下：进度按真实字数 ✅ / 书架搜索 ✅ / 摘录导出 ✅ / **备份暂缓**（`EntryBackupAbility` 空实现**不是 bug**，官方推荐做法；`backup_config.json` 无 `includes` 大概率是有效默认 ⇒ 只能真机克隆定性，模拟器验不了 ⇒ 上架说明一个字不提）。
   进度修复根因：`onAreaChange` 首次回调兜底分支 `openChapter()` 后漏调 `surveyChars()`，`init()` 里 `if(this.areaReady)` 首次恒不成立 ⇒ `char_count` 恒空；修法 = 补调用 + `.catch()`（`surveyChars` 只有 try/finally **没有 catch**）。
