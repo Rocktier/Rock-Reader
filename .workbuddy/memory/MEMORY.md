@@ -39,9 +39,9 @@
 - **uitest dumpLayout 会返回旧应用实例的过期布局**（2026-10-25 实测：新 UI 装机后仍报旧 4 按钮菜单）⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；视觉模型会误读选中态，chip 选中态以黑底像素扫描为准。
 - **服务卡片（form）三条铁律**（2026-10-26 在 Rock私记 上实拍踩出来的，家族级）：
   ① **卡片自定义参数会被系统改键名** —— 卡片写 `params:{bookId:'x'}`，系统拉起 ability 时传的是 `{"a9":"x","params":"{\"a9\":\"x\"}",…}`，**键被重命名成 a0/a1/…（按位置排）** ⇒ 只认原键名必然读不到（症状：点了卡片应用起来了但没反应）⇒ **按"值"找不按键名找**；② **form 页面禁用 @StorageLink / hilog / onAreaChange**（ArkTS 报 `11706006 can't support form application`），只能用 @LocalStorageProp，而它读到的 dimension 在 2×4 实例上是默认值 ⇒ **form 里做不了按尺寸分支的排版，统一布局通吃**；③ 卡片页不能打日志，调试只能打在 FormExtensionAbility 里。
-- 沙箱写入：hdc shell 的 `cp` 被 SELinux 拒、无 root；但 **`hdc file send` 可写**偏好/DB 文件（先停应用，删 WAL/-shm/-dwr/-compare 残件）。造测试数据可用共享 EPUB 路径 + DB 插行。
+- 沙箱写入（2026-10-27 更正）：`hdc file send` **写不进应用沙箱**（SELinux 拒），shell `cat`/`mkdir` 也不行；**真正能写应用私有目录的是设备上的 `sqlite3` 的 `writefile()`**（权限最高）。详见「模拟器造数」一节。
 - 存量已知问题（2026-10-25 发现，未修待拍板）：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；建议 flush 加时长上限或生命周期关会话。② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
-- 测试基线：Reader 185/185、Journal 139/139。
+- 测试基线：Reader **202/202**（1.0.7 新增 14 条：书架搜索 + 摘录导出）、Journal 139/139。
 - tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。
   Reader **1.0.6（code 1000007）已于 2026-10-26 提交 AGC，党哥确认已通过**——含桌面续读卡片 + 批次 A 四项；
   上架说明见 `docs/release-notes-1.0.6.md`。push 会触发 CI 建 GitHub Release，发版时机听党哥。
@@ -49,15 +49,31 @@
   出包三步验收过，上架说明 `RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ 待党哥提 AGC**。
   Reader 卡片点击定位的 bug（参数改键名）已修（commit f9e68e5），**端到端待补验**（模拟器需先给 Rock阅读 导一本书）。
 
-## 1.0.7 在制品（2026-10-27 凌晨暂停，代码**未 commit 未 push**）
+## 1.0.7 现状（2026-10-27 晚：第 2/3/4 项**已在模拟器实测通过**，代码已 commit 未 push）
 
-对标静读天下的四项改进，顺序 3→2→1→4，实测 criterion：**构建已过 BUILD SUCCESSFUL、单测 202/202（188 基线 + 新增 14）、HAP 已装模拟器**，但**装机端到端全部未验**（卡在灌不进书）。
-工作区改动：`ShelfRules.ets` / `Index.ets` / `Reader.ets` / `test/all.test.ts` / `test/shelf.test.ts` + 新增 `engine/marks/MarkExport.ets`、`test/markexport.test.ts`。
-- **第3项 进度按真实字数**：根因是 `onAreaChange` 首次回调兜底分支 `openChapter()` 后漏调 `surveyChars()`，而 `init()` 里那个 `if(this.areaReady)` 首次进入恒不成立 ⇒ `char_count` 恒空。已补调用 + `.catch()`（`surveyChars` 只有 try/finally **没有 catch**）。验收靠 `probe.txt`（前 5 章 100 字 / 后 15 章 5000 字）看百分比从按章数收敛到按字数。
-- **第2项 书架搜索**：`normalizeQuery/matchesQuery/filterByQuery`（书名+作者，故意不做拼音，撞"极致小"铁律）；UI 则是在 Index 页加搜索框 + 搜索专属空态。
-- **第4项 摘录导出**：`MarkExport.ets` 纯函数（`exportDateText` 必须本地时区）+ systemShare（`ShareKit`+`utd TEXT`）零权限零联网。
+对标静读天下的四项改进，顺序 3→2→1→4。commit `1aa9249`（**只本地，未 push** —— push 会触发 CI 建 GitHub Release = 发版动作，听党哥）。单测 202/202。
+- **第3项 进度按真实字数 ✅**：根因是 `onAreaChange` 首次回调兜底分支 `openChapter()` 后漏调 `surveyChars()`，而 `init()` 里那个 `if(this.areaReady)` 首次进入恒不成立 ⇒ `char_count` 恒空。修法：补调用 + `.catch()`（`surveyChars` 只有 try/finally **没有 catch**）。实测 21 章不均长书：char_count 全量回填（与产品源码算的逐字一致），第 7 章处 progress=0.88%、书架显示 1%，旧按章数口径应为 29%。
+- **第2项 书架搜索 ✅**：`normalizeQuery/matchesQuery/filterByQuery`（书名+作者，故意不做拼音，撞"极致小"铁律）+ 搜索框 + 搜索专属空态 + 「继续阅读」卡片随搜索联动。
+- **第4项 摘录导出 ✅**：`MarkExport.ets` 纯函数（`exportDateText` 必须本地时区）+ systemShare（`ShareKit`+`utd TEXT`）零权限零联网；标记面板底部「导出这本书的笔记」→ 系统分享面板出《进度测试书》的笔记。
 - **第1项 备份：结论反转，暂缓！** `EntryBackupAbility` 空实现**不是 bug**，官方明说就是推荐做法；`backup_config.json` 无 `includes` 也大概率是有效默认。**贸然写 includes 若路径写错反而缩小备份范围** ⇒ 只能真机克隆定性，模拟器验不了；按家族纪律，没实测就在上架说明一个字不提。
-- **卡点（明天第一件事，Task #126）**：模拟器灌不进书。`aa start -U file://` → AMS `permission_verification verify fail`；隐式 `-A viewData -t text/plain -U file://` → 「暂无可用打开方式」（module.json5 注释矩阵：带 uri 的一律不命中，纯 type 才行）；`/storage/media/**` 全不可写，只有 `/data/local/tmp` 可写。**兜底用 `hdc file send` 直写沙箱 DB/filesDir**（force-stop 后删 WAL 残件）。
+- 模拟器造书的完整配方已固化成 `scripts/seed-sim-book.mjs`。
+
+## ⚠️ ArkUI V1 分支条件陷阱（家族级，本次最重要的发现）
+
+**症状**：数据变了但某个 `if` 分支不跟着变（本次：搜索过滤掉了书，「没搜到」的空态永远不出现）。
+**根因**：ArkUI V1 是「状态变更 → 局部刷新」，**build() 不整体重跑，`if` 的分支条件按首次求值定型**；依赖插桩只认「表达式里直接读 @State」，藏进 getter/方法体里的 @State 访问**追不到**。
+**正解**：条件里**就地读 @State**（`if (this.query.length > 0 && this.visibleItems().length === 0)`）。**@Computed 救不了**：编译报 `only be used in a 'struct' decorated with '@ComponentV2'`（本族是 V1 组件）。
+**与老坑合流判据**：「数据变了 UI 不更新」按序查 —— ① ForEach key 少带变化位；② **分支条件藏在 getter/方法里**；③ 组件高度被 layoutWeight 压成 0（根 Column 必须给确定高度，否则两个空态一直是隐形的）。
+
+## 模拟器造数（导入通道全封时的唯一出路，家族级）
+
+导入三条路在模拟器上全死：`aa start -U file://` 被 AMS `verify fail` **静默剥离 want.uri**；隐式 viewData 带 uri「暂无可用打开方式」；`/storage/media/**` SELinux 只读。**破局工具是 sqlite3 的 `writefile()`** —— 权限比 shell `cat`/`mkdir`/`hdc file send` 都高，能写进应用私有目录 `haps/entry/files`。
+- `sqlite3 <db> < file` **不生效**（只执行第一行），必须 `cat file | sqlite3 <db>`；`readfile()` 在该 build 里没编（返回 NULL），`writefile()` 可用；大 blob 走管道传 SQL 文件（452KB 一次成），走命令行传 64KB hex 会被 Windows 拒（Argument list too long）。
+- **shell 与应用是两套 mount 视图**：shell 看不到 `/data/storage/**`，应用也看不到 `/data/app/**` ⇒ books.path 必须写**应用视角**路径。
+- 写库前 `aa force-stop` + 删 `-wal/-shm/-dwr/-compare`；shell `mkdir` 一律被拒（没有 add_dir 权限）。
+- `hdc list targets` 返回 `[Empty]` 但 Emulator.exe 还在 ⇒ PowerShell 查监听端口得 `127.0.0.1:5555`，再 `hdc tconn 127.0.0.1:5555`。
+- **`hilog` 是流式的**：`hilog | tail` 永远不返回（被 timeout SIGTERM），必须 `| head -N`。
+- 切章规则**绝不手写复刻**：用 esbuild 把 `.ets` 当 TS 编译，直接跑产品自己的 `splitChapters`，偏移量与应用导入时逐字节一致。
 
 ## 模拟器导入通道的两条铁律（家族级）
 
