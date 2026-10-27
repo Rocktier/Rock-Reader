@@ -45,3 +45,7 @@ Thumbs.db
 /docs/v1-design.md
 /docs/device-test.md
 agc-app-icon.png
+
+# 本地临时产物（模拟器截图 / 造书 SQL / 验签临时副本）
+/.tmp/
+/seed-out/
