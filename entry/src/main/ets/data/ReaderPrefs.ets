@@ -9,6 +9,7 @@ import { preferences } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { clampLevel, clampWeightLevel, DEFAULT_LEVELS, LayoutLevels } from '../common/LayoutStyle';
 import { normalizeTheme, THEME_DARK, ThemeName } from '../common/Theme';
+import { normalizeScrollSpeed, SCROLL_SPEED_DEFAULT } from './AutoScroll';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -39,6 +40,9 @@ const KEY_TTS_PERSON: string = 'tts_person';
 const KEY_BOOK_PREF_PREFIX: string = 'book_pref_';
 /** 每日阅读目标（分钟）；0 = 关闭。党哥默认 20 分钟（A4） */
 const KEY_DAILY_GOAL: string = 'daily_goal_min';
+
+/** 自动滚动速度档（秒/页；2026-10-28 加） */
+const KEY_SCROLL_SPEED: string = 'scroll_speed';
 
 /** 朗读语速默认值（常速） */
 export const TTS_SPEED_DEFAULT: number = 1.0;
@@ -99,6 +103,8 @@ export class ReaderPrefs {
   private ttsPerson: number = TTS_PERSON_DEFAULT;
   /** 已下载音色（内置款永远就绪；reload 时从 store 重读） */
   private voiceReady: number[] = [TTS_PERSON_BUILTIN];
+  /** 自动滚动速度档（秒/页） */
+  private scrollSpeed: number = SCROLL_SPEED_DEFAULT;
 
   /** 幂等：重复调用直接返回 */
   open(ctx: Context): void {
@@ -115,6 +121,7 @@ export class ReaderPrefs {
       this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);
       this.ttsSpeed = this.readTtsSpeed(store);
       this.ttsPerson = this.readTtsPerson(store);
+      this.scrollSpeed = normalizeScrollSpeed(this.readInt(store, KEY_SCROLL_SPEED, SCROLL_SPEED_DEFAULT));
     } catch (e) {
       // 读不到就用默认档位（3/3/3 + 深色）—— 绝不因为偏好读取失败而读不了书
       hilog.error(DOMAIN, TAG, 'prefs open failed: %{public}s', JSON.stringify(e));
@@ -446,6 +453,17 @@ export class ReaderPrefs {
   setTtsPerson(v: number): void {
     this.ttsPerson = clampTtsPerson(v);
     this.put(KEY_TTS_PERSON, this.ttsPerson);
+    this.flush();
+  }
+
+  /** 自动滚动速度档（秒/页；脏值已归一化） */
+  getScrollSpeed(): number {
+    return this.scrollSpeed;
+  }
+
+  setScrollSpeed(v: number): void {
+    this.scrollSpeed = normalizeScrollSpeed(v);
+    this.put(KEY_SCROLL_SPEED, this.scrollSpeed);
     this.flush();
   }
 

@@ -43,6 +43,22 @@ import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import { FontEntry } from '../common/FontCatalog';
 import { TextPaginator } from '../engine/paginator/TextPaginator';
 import { TtsEngine, TtsCallbacks } from '../engine/tts/TtsEngine';
+import { AvSessionCallbacks, AvSessionService } from '../engine/tts/AvSession';
+import { MediaCommand, respondToCommand, SpeakAction, SpeakPhase, SpeakView } from '../engine/tts/AvSessionState';
+import {
+  nextScrollSpeed,
+  remainingPages,
+  remainingText,
+  ScrollAction,
+  scrollAction,
+  scrollSpeedText,
+  scrollTickAllowed,
+  scrollToggleOf,
+  SCROLL_END_HINT,
+  SCROLL_SPEED_DEFAULT,
+  ScrollState,
+  ScrollToggle
+} from '../data/AutoScroll';
 import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
@@ -339,6 +355,31 @@ struct Reader {
   /** 音色下载进度（-1 = 未知/未开始） */
   @State private voicePct: number = -1;
 
+  // ---- 朗读媒体会话（AVSession，2026-10-28 加）----
+  /**
+   * 媒体会话单例：创起来后锁屏/通知栏/耳机键能控朗读。
+   * 创不起来（模拟器 / 低端机）= 朗读照常用，这里只是没有系统卡片。
+   */
+  private avSession: AvSessionService = new AvSessionService();
+
+  // ---- 自动滚动（滚屏，2026-10-28 加）----
+  /** 状态：未启用 / 正在滚 / 已暂停 */
+  @State scrollState: ScrollState = ScrollState.OFF;
+  /** 速度档（秒/页） */
+  @State scrollSpeed: number = SCROLL_SPEED_DEFAULT;
+  /** 滚动定时器 id（-1 = 未运行） */
+  private scrollTimer: number = -1;
+  /** 换页动画进行中 —— 防止两拍之间重复翻同一页 */
+  private scrollTurning: boolean = false;
+  /** 本次翻页是自动滚动自己驱动的（区别于用户手动翻页） */
+  private scrollDriving: boolean = false;
+  /**
+   * 后台挂起：页面不可见时停表，但**状态仍是「正在滚」**。
+   * 为什么不用 PAUSED：PAUSED 的语义是「用户主动按了暂停」，
+   * 回到前台自动续上会让用户以为自己按过暂停。挂起是系统行为，恢复要无声无息。
+   */
+  private scrollSuspended: boolean = false;
+
   aboutToAppear(): void {
     // 下载的字体**每次启动都要重新注册**（registerFont 只在进程内存活，不持久化）
     const store: FontStore = new FontStore(this.getUIContext().getHostContext() as Context);
@@ -365,6 +406,7 @@ struct Reader {
         this.speakActive = true;
         this.speakProgress = this.chapterPercent(charOffset);
         this.startSpeakTimer();
+        this.publishSpeak(SpeakPhase.PLAYING);
       };
     const onAllDone: () => void = (): void => {
       // 整章读完：能翻页就翻（跨章后 openChapter → showPage 会重载新章续读，
@@ -408,6 +450,111 @@ struct Reader {
       this.ttsSupported = supported;
       hilog.info(DOMAIN, TAG, 'tts probe: supported=%{public}s', String(supported));
     });
+    this.initAvSession();
+  }
+
+  /**
+   * 媒体会话初始化：建 AVSession + 挂系统控制回调。
+   *
+   * 创不起来（模拟器没有媒体会话、低端机被别的应用占住）时**只记日志不报错** ——
+   * 朗读本身走 TTS 引擎，与 AVSession 无关，不能被它连累。
+   */
+  private initAvSession(): void {
+    const cbs: AvSessionCallbacks = new AvSessionCallbacks();
+    cbs.onPlay = (): void => {
+      this.handleMediaCommand(MediaCommand.PLAY);
+    };
+    cbs.onPause = (): void => {
+      this.handleMediaCommand(MediaCommand.PAUSE);
+    };
+    cbs.onStop = (): void => {
+      this.handleMediaCommand(MediaCommand.STOP);
+    };
+    cbs.onSpeed = (speed: number): void => {
+      this.setSpeakSpeed(speed);
+    };
+    this.avSession.setCallbacks(cbs);
+    this.avSession.start(this.getUIContext().getHostContext() as Context).then((ok: boolean): void => {
+      hilog.info(DOMAIN, TAG, 'av session ready=%{public}s', String(ok));
+    }).catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, 'av session start failed: %{public}s', e.message);
+    });
+  }
+
+  /**
+   * 系统媒体控制 → 朗读动作。
+   * **决策在纯逻辑层**（AvSessionState.respondToCommand，可单测），
+   * 这里只负责执行 —— 避免「按播放从头读」这类事故只能靠肉眼发现。
+   */
+  private handleMediaCommand(cmd: MediaCommand): void {
+    const view: SpeakView = {
+      active: this.speakActive,
+      paused: this.speakPaused,
+      preparing: this.speakPreparing
+    };
+    const action: SpeakAction = respondToCommand(view, cmd);
+    if (action === SpeakAction.NONE) {
+      return;
+    }
+    if (action === SpeakAction.START) {
+      this.startSpeak();
+      return;
+    }
+    if (action === SpeakAction.RESUME) {
+      this.resumeSpeakFromSystem();
+      return;
+    }
+    if (action === SpeakAction.PAUSE) {
+      this.pauseSpeakFromSystem();
+      return;
+    }
+    this.stopSpeak();
+  }
+
+  /** 把朗读状态同步给系统媒体中心（锁屏卡片 / 通知栏） */
+  private publishSpeak(phase: SpeakPhase): void {
+    const title: string = this.book === null ? '' : this.book.title;
+    this.avSession.publish(phase, title, this.chapterTitle);
+  }
+
+  /** 系统媒体「播放」→ 继续朗读 */
+  private resumeSpeakFromSystem(): void {
+    if (!this.speakActive) {
+      this.startSpeak();
+      return;
+    }
+    if (!this.speakPaused) {
+      return;
+    }
+    if (this.tts.state === 'paused') {
+      this.tts.resume();
+    } else {
+      this.tts.startFrom(this.pageStartOffset());
+    }
+    this.speakPaused = false;
+    this.speakPreparing = true;
+    this.speakProgress = '准备中';
+    this.startSpeakTimer();
+    this.kickSpeak();
+    this.publishSpeak(SpeakPhase.PLAYING);
+  }
+
+  /** 系统媒体「暂停」→ 暂停朗读 */
+  private pauseSpeakFromSystem(): void {
+    if (!this.speakActive || this.speakPaused) {
+      return;
+    }
+    this.tts.pause();
+    this.speakPaused = true;
+    this.publishSpeak(SpeakPhase.PAUSED);
+  }
+
+  /** 系统媒体改倍速 → 同步引擎 + 偏好（三方同源，与设置页改语速一致） */
+  private setSpeakSpeed(speed: number): void {
+    this.ttsSpeed = speed;
+    this.tts.setSpeed(speed);
+    this.prefs.setTtsSpeed(speed);
+    this.hint = `语速 ${speed.toFixed(2)} 倍`;
   }
 
   /** 把已下载字体注册进 ArkUI（渲染用）；测量端由 TextPaginator 用文件路径单独挂 */
@@ -440,6 +587,8 @@ struct Reader {
     // 从独立设置页返回：主题/档位/字体可能变了
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.prefs.reload();
+    // 自动滚动速度档（秒/页；从偏好读，脏值已在 prefs 里归一化）
+    this.scrollSpeed = this.prefs.getScrollSpeed();
     // 回前台要**重开计时会话**（审查报告 B8）：onPageHide 已把 sessionStartAt 清 0，
     // 章内翻页不经过 openChapter —— 不重开的话，锁屏/接电话回来后的阅读时长全部丢失
     if (this.sessionStartAt === 0 && this.sessionChapter >= 0) {
@@ -472,6 +621,8 @@ struct Reader {
     this.showMenu = false;
     this.showToc = false;
     this.showSettings = false;
+    // 回前台：接着滚（通勤场景 —— 锁屏看两眼回来，书应该还在自己翻）
+    this.resumeSuspendedScroll();
   }
 
   /**
@@ -532,17 +683,27 @@ struct Reader {
     this.flushSession();
     // B1：离开阅读页 = 不再「正在读」，清标记（书架页据此判断卡片点击是否重复 push）
     AppStorage.setOrCreate('readerOpenBook', '');
-    // 回后台暂停朗读（后台/锁屏播放是期二 AVSession 的事，一期从简：停在这里）
-    if (this.speakActive) {
-      this.tts.pause();
-      this.speakPaused = true;
-    }
+    // 2026-10-28（AVSession 落地）：**回后台不再停读** ——
+    // 有媒体会话后，锁屏/切后台应当继续播（module.json5 已声明 backgroundModes: audio）。
+    // 万一引擎真被系统冻结，onPageShow 里那段「回前台续听」仍然兜底。
+    // ⚠️ 自动滚动必须停表：后台翻页用户看不见，纯空跑耗电。
+    // 但**不改状态**（仍是「正在滚」）—— 通勤场景里用户锁屏看两眼就回来，
+    // 回来接着滚才是对的；改成 PAUSED 会让用户以为自己按过暂停。
+    this.suspendScroll();
   }
 
   aboutToDisappear(): void {
     this.persistProgress(true);
     this.flushSession();
     this.stopSpeakTimer();
+    // 自动滚动：彻底停（定时器不留在后台空转）
+    this.scrollState = ScrollState.OFF;
+    this.scrollSuspended = false;
+    this.stopScrollTimer();
+    // 媒体会话：释放（幂等；退出阅读页后系统卡片不应还挂着）
+    this.avSession.stop().catch((e: Error): void => {
+      hilog.warn(DOMAIN, TAG, 'av session stop failed: %{public}s', e.message);
+    });
     // 无条件 shutdown（幂等）：speakActive 时要停播；仅探测过没开读时，
     // probe 留下的引擎也必须释放（否则进程内常驻音频资源）
     this.tts.shutdown();
@@ -1113,6 +1274,13 @@ struct Reader {
     if (!this.ttsSupported) {
       return;
     }
+    // 与自动滚动**互斥**：两者都在驱动页面位置。
+    // 实测（2026-10-28 模拟器）同时开会互相打断 ——
+    // 滚屏每翻一页就 seekTo 一次朗读，音频被反复重载，听感是"跳着读"。
+    // 要"边听边翻"用手动翻页即可：朗读本来就跟手动翻页走。
+    if (this.scrollState !== ScrollState.OFF) {
+      this.stopScroll();
+    }
     const n: number = this.tts.loadChapter(this.chapterText);
     this.speakChapterIndex = this.chapterIndex;
     if (n === 0) {
@@ -1151,10 +1319,12 @@ struct Reader {
       this.speakProgress = '准备中';
       this.startSpeakTimer();
       this.kickSpeak();
+      this.publishSpeak(SpeakPhase.PLAYING);
     } else {
       this.tts.pause();
       this.speakPaused = true;
       this.kickSpeak();
+      this.publishSpeak(SpeakPhase.PAUSED);
     }
   }
 
@@ -1175,6 +1345,7 @@ struct Reader {
     this.speakProgress = '';
     this.speakChapterIndex = -1;
     this.stopSpeakTimer();
+    this.publishSpeak(SpeakPhase.IDLE);
   }
 
   /**
@@ -1260,7 +1431,192 @@ struct Reader {
   // ------------------------------------------------------------------
 
   /** 翻页：dir = +1 下一页 / -1 上一页。章内换页零计算；跨章才取新文本 */
+  // ------------------------------------------------------------------
+  // 自动滚动（滚屏）
+  //
+  // 口径（2026-10-28）：底栏「滚屏」一键开关；开启后底部浮出控制条
+  // （继续/暂停 + 速度档 + 剩余时间 + 关闭）。
+  //  - 速度 = 每页停留秒数（8/6/4/3/2），点一下循环切。
+  //  - **手动翻页或横滑 = 用户接管 ⇒ 立刻暂停**（不停止，档位保留）。
+  //  - 章末自动续下一章；全书读完自动停并给一句提示。
+  //  - 回后台 / 退出阅读页 ⇒ 暂停（后台翻页用户看不见，纯空跑耗电）。
+  // ------------------------------------------------------------------
+
+  /**
+   * 底栏「滚屏」按钮（中央菜单里）：**自动滚动三态开关**。
+   * OFF → 开跑；PAUSED → 继续；RUNNING → 停。
+   *
+   * 为什么按下就收起菜单：菜单是盖在正文上的浮层，
+   * 菜单开着时正文被遮，滚屏在背后滚用户一点都看不见 ——
+   * 「点了就滚 / 关了就停」必须立刻有视觉反馈。
+   * （细活 —— 暂停/继续、速度档、剩余时间 —— 交给菜单收起后露出来的浮条。）
+   */
+  private toggleScroll(): void {
+    const action: ScrollToggle = scrollToggleOf(this.scrollState);
+    if (action === ScrollToggle.RESUME) {
+      // 暂停态 ⇒ 按下是「继续」，不是「关掉」
+      this.resumeScroll();
+      this.showMenu = false;
+      return;
+    }
+    this.showMenu = false;
+    if (action === ScrollToggle.START) {
+      this.startScroll();
+      return;
+    }
+    this.stopScroll();
+  }
+
+  /** 开始滚 */
+  private startScroll(): void {
+    if (this.pageCount <= 0) {
+      this.hint = '这本书还没打开';
+      return;
+    }
+    // 与朗读**互斥**（理由见 startSpeak 里的说明）：开着朗读时开滚屏，
+    // 先把朗读停掉 —— 停下来的是「正在发声的东西」，比让它半途被 seekTo 干净。
+    if (this.speakActive) {
+      this.stopSpeak();
+      promptAction.showToast({ message: '已停止朗读，开始滚屏' });
+    }
+    this.scrollState = ScrollState.RUNNING;
+    this.startScrollTimer();
+  }
+
+  /** 彻底停（浮条消失） */
+  private stopScroll(): void {
+    this.scrollState = ScrollState.OFF;
+    this.scrollSuspended = false;
+    this.stopScrollTimer();
+  }
+
+  /**
+   * 挂起（页面不可见）：停表但**保持「正在滚」的状态**。
+   * 与 pauseScroll 的区别：pauseScroll 是「用户按了暂停」，
+   * 挂起是「系统把页面藏了」，回到前台要无声无息地接着滚。
+   */
+  private suspendScroll(): void {
+    if (this.scrollState === ScrollState.RUNNING) {
+      this.scrollSuspended = true;
+      this.stopScrollTimer();
+    }
+  }
+
+  /** 恢复挂起（回到前台）：只有「本来就在滚」才续 */
+  private resumeSuspendedScroll(): void {
+    if (!this.scrollSuspended) {
+      return;
+    }
+    this.scrollSuspended = false;
+    if (this.scrollState === ScrollState.RUNNING) {
+      this.startScrollTimer();
+    }
+  }
+
+  /** 暂停（浮条保留、档位保留，用户随时能继续）。**用户主动的暂停** */
+  private pauseScroll(): void {
+    if (this.scrollState === ScrollState.RUNNING) {
+      this.scrollState = ScrollState.PAUSED;
+      this.stopScrollTimer();
+    }
+  }
+
+  /** 继续 */
+  private resumeScroll(): void {
+    if (this.scrollState !== ScrollState.PAUSED) {
+      return;
+    }
+    this.scrollState = ScrollState.RUNNING;
+    this.startScrollTimer();
+  }
+
+  /** 浮条上的继续/暂停 */
+  private toggleScrollRun(): void {
+    if (this.scrollState === ScrollState.RUNNING) {
+      this.pauseScroll();
+      return;
+    }
+    if (this.scrollState === ScrollState.PAUSED) {
+      this.resumeScroll();
+    }
+  }
+
+  /** 速度档循环（运行中要重启定时器，否则新档不生效） */
+  private nextScrollSpeedLevel(): void {
+    this.scrollSpeed = nextScrollSpeed(this.scrollSpeed);
+    this.prefs.setScrollSpeed(this.scrollSpeed);
+    if (this.scrollState === ScrollState.RUNNING) {
+      this.stopScrollTimer();
+      this.startScrollTimer();
+    }
+  }
+
+  private startScrollTimer(): void {
+    if (this.scrollTimer >= 0) {
+      return;
+    }
+    this.scrollTimer = setInterval((): void => {
+      this.onScrollTick();
+    }, this.scrollSpeed * 1000);
+  }
+
+  private stopScrollTimer(): void {
+    if (this.scrollTimer >= 0) {
+      clearInterval(this.scrollTimer);
+      this.scrollTimer = -1;
+    }
+  }
+
+  /** 一拍：推进一页（页内或跨章），全书到底则停下 */
+  private onScrollTick(): void {
+    if (this.scrollState !== ScrollState.RUNNING) {
+      return;
+    }
+    // 换页动画还没跑完就再翻 ⇒ 会连翻同一页（animateTurn 的 onFinish 还没换页）
+    if (this.scrollTurning) {
+      return;
+    }
+    // ⚠️ **浮层遮着正文时这一拍直接跳过**（菜单 / 目录 / 设置 / 摘录卡）。
+    // 为什么不在「开浮层」时去暂停滚动、关浮层时再恢复：
+    // 那套做法要在 6 处 showMenu/showToc/showSettings 的赋值点同步状态，
+    // 漏一处就是「菜单关不掉还接着在背后滚」的幽灵 bug（2026-10-28 实测踩过）。
+    // 这里改成**到点才判断**：浮层开着就不翻页，浮层一关，下一拍自然继续 ——
+    // 状态只有一处（scrollState），没有第二套需要同步的影子状态。
+    if (!scrollTickAllowed(this.showMenu, this.showToc, this.showSettings, this.showHighlight)) {
+      return;
+    }
+    const action: ScrollAction = scrollAction(this.pageIndex, this.pageCount, this.chapterIndex, this.chapterCount);
+    if (action === ScrollAction.STOP) {
+      this.stopScroll();
+      // ⚠️ **不要用 this.hint** —— hint 是「本章读取失败」的错误通道：
+      // 一旦非空，正文区会被替换成错误文案（正文消失），
+      // 而且点屏幕会走「重试本章」分支被弹回章首（实测踩到）。
+      // 这里用 toast：瞬时反馈，不污染错误通道，也不遮正文。
+      promptAction.showToast({ message: SCROLL_END_HINT });
+      return;
+    }
+    this.scrollTurning = true;
+    this.scrollDriving = true;
+    this.turnPage(1);
+    this.scrollDriving = false;
+    // 动画时长（淡出 90ms + 淡入 130ms）+ 一点余量，到点解锁下一拍
+    setTimeout((): void => {
+      this.scrollTurning = false;
+    }, FADE_OUT_MS + FADE_IN_MS + 80);
+  }
+
+  /** 浮条上的剩余时间文案（按当前章页数粗估全书剩余） */
+  private scrollRemainText(): string {
+    const pages: number = remainingPages(this.pageIndex, this.pageCount, this.chapterIndex, this.chapterCount);
+    return remainingText(pages, this.scrollSpeed);
+  }
+
   private turnPage(dir: number): void {
+    // 手动翻页 = 用户接管 ⇒ 自动滚动立刻暂停（档位保留）。
+    // 自动滚动自己驱动的翻页不暂停自己（scrollDriving 标记）。
+    if (!this.scrollDriving) {
+      this.pauseScroll();
+    }
     if (this.pageCount === 0) {
       return;
     }
@@ -1328,6 +1684,8 @@ struct Reader {
 
   /** 松手结算：够了就滑出并翻页，不够就回弹。全程只动 translate / opacity，不重排版 */
   private settleDrag(dx: number, velocityX: number): void {
+    // 拖拽翻页 = 用户接管 ⇒ 自动滚动立刻暂停（与点边缘翻页同一口径）
+    this.pauseScroll();
     const dir: number = dx > 0 ? -1 : 1;
     const passed: boolean = Math.abs(dx) >= this.viewWidthVp * DRAG_TURN_RATIO
       || Math.abs(velocityX) >= DRAG_TURN_VELOCITY;
@@ -1751,6 +2109,33 @@ struct Reader {
           .onClick(() => {
             this.openSettings();
           })
+        // 自动滚动（滚屏，2026-10-28 加）：一键开关。
+        // 开着时字变强调色，底部同时浮出控制条（继续 / 速度 / 剩余 / 关闭）。
+        // ⚠️ 文字**自描述**（滚屏 / 停滚屏 / 继续滚屏）：
+        // 一个按钮要覆盖三种状态，若都写「滚屏」，
+        // 用户在「已暂停」时按下会以为是「继续」、实际却是「关掉」——
+        // 按下会发生什么，必须写在按钮上。
+        //
+        // ⚠️⚠️ **@State 必须就地读**（ArkUI V1 陷阱，2026-10-28 实测踩到）：
+        // 写成 `this.scrollMenuLabel()`（把读取藏进方法体）⇒ 依赖插桩追不到
+        // scrollState ⇒ 文案被定格在首次求值的值。
+        // 实测症状：浮条写「暂停」（运行中）、菜单按钮却写「继续滚屏」——
+        // 两个控件说两件事，用户完全不知道该信哪个。
+        // ⇒ 三元就地展开，绝不藏进方法。
+        Text(this.scrollState === ScrollState.OFF ? '滚屏' :
+          (this.scrollState === ScrollState.PAUSED ? '继续滚屏' : '停滚屏'))
+          .fontSize(RR_FS_LABEL)
+          .fontColor(this.scrollState === ScrollState.OFF ? this.palette.text : this.palette.accent)
+          .height(34)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .stateStyles({ pressed: { opacity: 0.6 } })
+          .accessibilityText(this.scrollState === ScrollState.OFF ? '开启自动滚动' :
+            (this.scrollState === ScrollState.PAUSED ? '继续自动滚动' : '停止自动滚动'))
+          .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
+          .onClick(() => {
+            this.toggleScroll();
+          })
         Text('下一章')
           .fontSize(RR_FS_LABEL)
           .fontColor(this.chapterIndex >= this.chapterCount - 1 ? this.palette.text3 : this.palette.text)
@@ -1786,6 +2171,55 @@ struct Reader {
       .animation({ duration: 180, curve: Curve.EaseOut }))
     .onClick(() => {
     })
+  }
+
+  /**
+   * 自动滚动控制条（浮在页脚上方；只在自动滚动开启或暂停时出现）。
+   *
+   * 为什么用浮条而不是占用页脚：页脚是「章名 / 页码」的常驻位，
+   * 被自动滚动占了用户就没法看进度；而朗读播放条也占页脚 ——
+   * 两个功能都要能同时在场，浮条是唯一不打架的位置。
+   */
+  @Builder
+  autoScrollBar() {
+    Row() {
+      Text(this.scrollState === ScrollState.RUNNING ? '暂停' : '继续')
+        .fontSize(RR_FS_MICRO)
+        .fontFamily('monospace')
+        .fontColor(this.palette.text)
+        .responseRegion({ x: -8, y: -8, width: 56, height: 44 })
+        .accessibilityText(this.scrollState === ScrollState.RUNNING ? '暂停自动滚动' : '继续自动滚动')
+        .onClick(() => {
+          this.toggleScrollRun();
+        })
+      Text(scrollSpeedText(this.scrollSpeed))
+        .fontSize(RR_FS_MICRO)
+        .fontFamily('monospace')
+        .fontColor(this.palette.text)
+        .responseRegion({ x: -8, y: -8, width: 76, height: 44 })
+        .accessibilityText(`自动滚动速度 ${this.scrollSpeed} 秒每页，点击切换速度`)
+        .onClick(() => {
+          this.nextScrollSpeedLevel();
+        })
+      Text(this.scrollRemainText())
+        .fontSize(RR_FS_MICRO)
+        .fontFamily('monospace')
+        .fontColor(this.palette.text3)
+        .layoutWeight(1)
+        .textAlign(TextAlign.Center)
+      Text('关闭')
+        .fontSize(RR_FS_MICRO)
+        .fontFamily('monospace')
+        .fontColor(this.palette.text)
+        .responseRegion({ x: -8, y: -8, width: 56, height: 44 })
+        .accessibilityText('关闭自动滚动')
+        .onClick(() => {
+          this.stopScroll();
+        })
+    }
+    .width('100%')
+    .padding({ left: this.marginVp, right: this.marginVp })
+    .backgroundColor(this.palette.overlay)
   }
 
   @Builder
@@ -2974,6 +3408,21 @@ struct Reader {
       .width('100%')
       .height(FOOTER_VP)
       .justifyContent(FlexAlign.End)
+
+      // ---- 自動滾動控制條（浮在頁腳上方）----
+      // ⚠️ 菜单开着时**不画**浮条：菜单的 bottomBar 就在同一位置（页脚上方），
+      // 两条叠在一起会互相盖 —— 2026-10-28 实测：菜单打开后浮条的「关闭」
+      // 点不到（落点被菜单的 bottomBar 吃了）。
+      // 菜单里改用 bottomBar 的「滚屏」按钮当总开关。
+      // 条件里**就地读 @State**（scrollState / showMenu）——
+      // 藏进 getter 的话 V1 的依赖插桩追不到，菜单开合时浮条不会跟着收起。
+      if (this.scrollState !== ScrollState.OFF && !this.showMenu) {
+        Column() {
+          this.autoScrollBar()
+        }
+        .width('100%')
+        .offset({ y: -(FOOTER_VP + RR_SP_MD) })
+      }
 
       // ---- 浮层：点屏中间才出现 ----
       if (this.showMenu) {

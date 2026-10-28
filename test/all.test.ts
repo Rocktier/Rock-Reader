@@ -18,3 +18,5 @@ import './convert.test.ts';
 import './stats.test.ts';
 import './theme.test.ts';
 import './tts.test.ts';
+import './autoscroll.test.ts';
+import './avsession.test.ts';

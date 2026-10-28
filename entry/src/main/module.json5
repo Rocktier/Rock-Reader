@@ -43,6 +43,17 @@
         "startWindowBackground": "$color:start_window_background",
         // 显式写启动模式：默认是 singleton，但写明白能避免后人误判"没配=多实例"
         "launchType": "singleton",
+        // 后台音频（2026-10-28 加，AVSession 朗读后台播放）：
+        // 声明后朗读可以在锁屏 / 切后台时继续播，系统媒体中心出现朗读卡片。
+        //
+        // ⚠️ **这是"后台模式"声明，不是权限** —— 应用的权限清单仍然是空的
+        //    （requestPermissions 一节不存在），「零权限」叙事不受影响。
+        // ⚠️ **AGC 后台要勾选对应项**：版本管理 → 权限管理 → 后台模式 → 音频，
+        //    并填用途说明（"朗读功能需要后台音频能力"）。不勾会被驳回。
+        // ⚠️ 声明后进程在后台不易被杀 ⇒ 退出阅读页时必须释放引擎
+        //    （Reader.ets 的 aboutToDisappear 已无条件 tts.shutdown()）。
+        // ⚠️ 合法值是 **audioPlayback** 不是 "audio"（schema 校验会拦，写错直接编译失败）。
+        "backgroundModes": ["audioPlayback"],
         "exported": true,
         "skills": [
           {
