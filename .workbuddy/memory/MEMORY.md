@@ -1,118 +1,111 @@
-# RockReader 项目长期记忆（2026-10-27 压缩重写版）
+# Rock 家族长期记忆（2026-10-28 精简版）
 
-> 规则：只记**可执行**知识（命令、路径、判据、禁令）。过程细节进当日日志 `YYYY-MM-DD.md`。
+> 只记**可执行**知识（命令、路径、判据、禁令）。过程细节进当日日志 `YYYY-MM-DD.md`。
+> 范围：Rock阅读（RockReader）+ Rock私记（RockJournal）**两个仓**。
+> 详细背景见 `2026-10-27.md`（993 排查全过程）与 `2026-10-28.md`（1.0.6 收口）。
 
 ## 一、产品口径：非主动联网（党哥 2026-10-18 拍板）
 
-原文：「用户可以选择自己联网下载某些字体或音色，但是我们自己不会主动联网，主要的功能也不联网。」
+「用户可以选择自己联网下载某些字体或音色，但是我们自己不会主动联网，主要的功能也不联网。」
 
-- ✅ 允许：用户主动点「下载」→ 联网拉音色/字体包 → 之后全程离线用。UI 义务：入口明示「联网下载」+ 体积、进度可见失败可重试、无网时明说、下载记录进 ReaderPrefs（含失败态）。
+- ✅ 用户主动点「下载」→ 联网拉资源 → 之后离线用。UI 义务：入口明示「联网下载」+ 体积、进度可见失败可重试、无网时明说。
 - ❌ 主要功能联网（云 TTS / 在线书城 / 账号云同步）；❌ 应用自己联网（检查更新 / 静默下载 / 遥测）。
-- 音色：凌飞哲 21 需下载、聆小珊 13 内置、劳拉 8 英文不面向中文书。三方云 TTS 维持否决。字体下载同一范畴。**新增任何系统能力前先对照此表。**
+- 音色：凌飞哲 21 需下载、聆小珊 13 内置、劳拉 8 英文不面向中文书。三方云 TTS 维持否决。
+- **新增任何系统能力前先对照此表。** 麦克风（1.0.6）不算联网 —— 本地传感器。
 
 ## 二、签名与出包（两次 993 后定稿，**每次出包必读**）
 
-- 个人开发者账号全账号仅 1 张发布证书：RockReader 与 RockJournal **共用** rockreader-v2.p12/.cer，各自建发布 Profile（rockreader-v2.p7b / rockjournal-v1.p7b）。材料在 `F:\AI\HarmonyOS\keys\`（不进 git），口令同目录 txt。
-- build-profile 的 storePassword/keyPassword **必须是 DevEco 加密串**（明文报 00303116/00303117），同机可跨工程复制。
+- 个人开发者账号全账号仅 1 张发布证书：两应用**共用** `rockreader-v2.p12/.cer`，各自建发布 Profile（`rockreader-v2.p7b` / `rockjournal-v1.p7b`）。材料在 `F:\AI\HarmonyOS\keys\`（不进 git）。
+- build-profile 的 storePassword/keyPassword **必须是 DevEco 加密串**（明文报 00303116/00303117）。
 - **出包命令（两仓通用）**：`assembleApp -p product=release -p buildMode=release --no-daemon`。不能带 `--mode module`（报 00306054）；**`product` 必须是 `release`**（buildMode 只管混淆，不管签名）。
-- 🚦 **上传前必须跑闸门**：`pwsh scripts/verify-upload.ps1`（两仓各一份，已接进 `build-release.ps1`，不过就 throw）。
-  逐条排除 AGC 993 官方成因 + 顺带查 996/997 坑；**通过才允许上传**。
-  **已实测**：喂 unsigned 包 ⇒ 3 项 FAIL + 退出码 1；喂 signed 包 ⇒ 13 项 PASS + 退出码 0。
-- **交付纪律**：桌面/文件夹里**只留一个**待传包（signed/unsigned 并排是每次出包的常态，只在产物目录里挑包 = 自找 993）。旧包移入 `桌面\Rock阅读-旧包备份\` 备查，**不删**。
-- **上传纪律（第 0 步，只能靠人）**：上传前先确认 **AGC 后台当前应用 = Rock阅读**（`com.rocktier.rockreader`）。多应用账号切栏目极易出错，**包侧全绿也发现不了**。
-- 完整排查手册：`docs/AGC-993-排查手册.md`（Reader 仓）。桌面另有《上传前自检.txt》7 条清单。
+- 🚦 **上传前必须跑闸门**：`pwsh scripts/verify-upload.ps1`（两仓各一份，已接进 `build-release.ps1`，不过就 throw）。实测：unsigned 包 ⇒ FAIL+退出码 1；signed 包 ⇒ 全 PASS+退出码 0。
+- **交付纪律**：桌面/文件夹**只留一个**待传包（signed/unsigned 并排是常态，只在产物目录里挑包 = 自找 993）。旧包移入备份文件夹，不删。
+- **上传纪律（第 0 步，只能靠人）**：先确认 **AGC 后台当前应用 = 该应用**（Reader `com.rocktier.rockreader` / Journal `com.rocktier.rockjournal`）。包侧全绿也发现不了传错栏目。
+- 排查手册：`docs/AGC-993-排查手册.md`（Reader 仓）。桌面另有《上传前自检.txt》。
 
 ### 993 = Profile 文件非法（家族级，**已栽两次，成因不同**）
 
-AGC 官方四条成因：① 包内 Profile 已被删除（AGC 后台查不到）；② 包内 release Profile 不属于该应用；③ Profile 失效（证书被删/过期）；④ 包被自动签名。工程侧两条：**products[].signingConfig 必须指向发布签名**；**签名写在 hvigorfile.ts 的 overrides 里不被认可，必须写进 build-profile.json5**。
+官方四成因：① Profile 被删；② Profile 不属于该应用；③ Profile 失效；④ 被自动签名。工程侧两条：**products[].signingConfig 必须指向发布签名**；**签名写在 hvigorfile.ts 的 overrides 里不被认可，必须写进 build-profile.json5**。
 
-- **第 1 次（10-25）= 成因④**：出包写了 `-p product=default` ⇒ DevEco 自动签名（调试证书+调试 Profile）⇒ 包内 Profile `type=debug`。改 `product=release` 重打即好。
-- **第 2 次（10-27）= 成因②「传到了错误的应用栏目下」（真凶，党哥 22:38 查明）**：
-  把 **Rock阅读** 的包传到了 AGC 的**「Rock私记」**栏目下 ⇒ AGC 拿 Profile 的 `bundle-name`
-  （`com.rocktier.rockreader`）比对当前应用（`com.rocktier.rockjournal`）⇒ 对不上 ⇒ 993。
-  **切到「Rock阅读」重传一次通过，已提交审核（10-27）。**
-  ⚠️ **期间曾误判成"传了 unsigned 包"** —— 诱因是产物目录里 signed/unsigned 并排、文件名只差三个字母，
-  但党哥传的就是验过的 signed 包（md5 一致）。**教训：结构上像的诱因 ≠ 真凶**，
-  必须拿到「换了栏目就成功」这种直接证据才能定案。
-- **闸门的能力边界（家族铁律）**：闸门只能验**包**，验不了「传到哪个应用下」⇒
-  **上传前第 0 步永远只能靠人：确认 AGC 后台当前应用 = Rock阅读（com.rocktier.rockreader）。**
-  反过来说：**包侧全绿而仍 993 ⇒ 问题一定在包之外**，先查上传目标应用，再查 Profile 是否被 AGC 删。
-- **Journal 侧同源 bug（真实存在，已修）**：`build-release.ps1` 曾用 `-like "*signed*"` 挑产物，**"unsigned" 里也含 "signed"** ⇒ 会挑到 unsigned 包。已统一改成 `-like "*signed.app" -and -notlike "*unsigned*"`。
-  闸门"文件名含 unsigned 即拒"这条规则无害，保留。
-- **判别口诀**：993 先抠包内 Profile（`hap-sign-tool -outProfile` 导出后找 `"type":"\w+"`）一次分流 —— `debug`=用错 product；`release` 但包名不匹配=拿错 Profile；过期=Profile 失效；**包侧全绿仍 993 ⇒ 先查上传目标应用**。
+- **栽 1（10-25）= ④**：出包写了 `-p product=default` ⇒ 自动签名 ⇒ Profile `type=debug`。改 `product=release` 重打即好。
+- **栽 2（10-27）= ②「传到错误的应用栏目下」（真凶）**：把 Rock阅读 的包传到 AGC「Rock私记」栏目下 ⇒ bundle-name 对不上 ⇒ 993。切到「Rock阅读」重传通过。
+  ⚠️ 期间曾误判成"传了 unsigned 包"（诱因是产物目录 signed/unsigned 并排、文件名只差三个字母）。**教训：结构上像的诱因 ≠ 真凶**。
+- **闸门的能力边界（家族铁律）**：闸门只能验**包**，验不了「传到哪个应用下」⇒ **包侧全绿而仍 993 ⇒ 问题在包之外**，先查上传目标应用。
+- **Journal 侧同源 bug（已修）**：`build-release.ps1` 曾用 `-like "*signed*"` 挑产物，**"unsigned" 里也含 "signed"** ⇒ 会挑到 unsigned 包。已改 `-like "*signed.app" -and -notlike "*unsigned*"`。
+- **判别口诀**：抠包内 Profile（`hap-sign-tool -outProfile` 找 `"type":"\w+"`）分流 —— `debug`=用错 product；`release` 但包名不匹配=拿错 Profile；过期=Profile 失效；**包侧全绿仍 993 ⇒ 先查上传目标应用**。
 
 ### 出包验收三步 + 工具坑（家族级）
 
-- **① 验签**：`app_check_tool.jar` **已失效**（报 9132101，所有参数判 invalid）⇒ 一律用
-  `hap-sign-tool.jar verify-app -inFile X.app -inForm zip -outProfile <本地路径> -outCertChain <本地路径>`
-  ⇒ 输出 `Digest verify result: true` + `verify-app success`。该工具**没有 `verify-hap`**；`-inForm` 只接受 `bin/elf/zip`。
-- **② 抠包内 Profile 看 `type`**：必须 `release` + 本应用包名 + 无 `debug-info`/`development-certificate`。
-  ⚠️ p7b 是 PKCS#7 容器，JSON 内嵌在二进制里 ⇒ **不能用 `LastIndexOf("}")`**，要从第一个 `{` 起做**带字符串感知的花括号配对**。
-- **③ 本地 p7b 先验**：包内 Profile 与 `keys/rockreader-v2.p7b` 的 **md5 逐字节一致**才算过。`-outProfile/-outCertChain` 必须是存在的本地路径（/tmp 报 11012005）。
-- **PowerShell 写脚本三坑**：① `.ps1` 必须存 **UTF-8 带 BOM**（PS 5.1 按 ANSI 读无 BOM ⇒ 中文乱码 ⇒「意外的标记 }」）；② 跑 java 工具**别用 `& java ... 2>&1`**（stderr 被转成错误记录，`$ErrorActionPreference="Stop"` 下直接中断）⇒ 用 `Start-Process` + `-RedirectStandardOutput/-RedirectStandardError`；③ `Start-Process` 两个雷：参数含空格要自己加引号（否则 `E:\Program Files\...` 被截成 `E:\Program`）；同时存在 `HTTP_PROXY/http_proxy/HTTPS_PROXY/https_proxy` 四项时抛「字典中的关键字重复」⇒ 临时摘掉再跑。
-- **release 构建偶发失败**：第一次跑可能 11 秒就 `Failed :entry:default@CompileArkTS` 且**日志里无任何 ERROR 行**（真因不明）⇒ **原样重跑一次就 BUILD SUCCESSFUL**。遇到「无信息失败」先重跑，别改代码。
+- **① 验签**：`app_check_tool.jar` **已失效**（报 9132101）⇒ 用 `hap-sign-tool.jar verify-app -inFile X.app -inForm zip -outProfile <本地路径> -outCertChain <本地路径>` ⇒ `Digest verify result: true` + `verify-app success`。无 `verify-hap`；`-inForm` 只接受 `bin/elf/zip`。
+- **② 抠包内 Profile 看 `type`**：必须 `release` + 本应用包名 + 无 `debug-info`/`development-certificate`。⚠️ p7b 是 PKCS#7 容器，JSON 内嵌二进制里 ⇒ **不能用 `LastIndexOf("}")`**，要从第一个 `{` 起做**带字符串感知的花括号配对**。
+- **③ 本地 p7b 先验**：包内 Profile 与 `keys/*.p7b` 的 **md5 逐字节一致**。`-outProfile/-outCertChain` 必须是存在的本地路径（/tmp 报 11012005）。
+- **PowerShell 三坑**：① `.ps1` 必须 **UTF-8 带 BOM**（PS 5.1 按 ANSI 读无 BOM ⇒ 中文乱码 ⇒「意外的标记 }」）；② 跑 java 工具**别用 `& java ... 2>&1`**（stderr 被转成错误记录，`Stop` 下直接中断）⇒ 用 `Start-Process` + `-RedirectStandardOutput/-RedirectStandardError`；③ `Start-Process`：参数含空格自己加引号；四项 proxy 同存抛「字典中的关键字重复」⇒ 临时摘掉。
+  ⚠️ **Git Bash 里 `pwsh xxx.ps1` 被安全策略拦** ⇒ 一律用 PowerShell 工具调用。
+- **release 构建偶发失败**：第一次跑可能 11 秒就 `Failed :entry:default@CompileArkTS` 且**日志无任何 ERROR 行**（真因不明）⇒ **原样重跑一次就 BUILD SUCCESSFUL**。遇「无信息失败」先重跑，别改代码。
 
 ## 三、法律文件：一个链接覆盖全家族
 
-- 博客 <https://www.91hym.cn/devs/756.html> 三章 + 锚点 `#privacy`/`#agreement`/`#rights`，两应用共用。唯一底稿在桌面 `Rock家族-隐私政策-用户协议-数据权利.md`。AGC 三字段 = 同一链接 + 不同锚点。新增 Rock 系应用改这一篇，不另起页。
-- 双写纪律：博客 `#privacy` 章 == 应用内「设置 → 隐私政策」逐字一致。
+- 博客 <https://www.91hym.cn/devs/756.html> 三章 + 锚点 `#privacy`/`#agreement`/`#rights`，两应用共用。**博客在党哥自己的站上，代码改不到 ⇒ 改动要给党哥「照抄文本」**。
+- 双写纪律：博客 `#privacy` 章 == 两仓应用内 `pages/Privacy.ets` == 逐字一致。
+- ⚠️ **新增权限 ⇒ 必须同步隐私政策**（1.0.6 踩到）：加麦克风后第四节原写「两款应用都不申请任何权限」⇒ **政策与实现不符 = 拒审理由**。已改两仓 `Privacy.ets`（70 段，逐字一致）；**博客侧待党哥手动同步**，文本见 `RockJournal/docs/blog-privacy-sync-1.0.6.md`。
+  **纪律：以后任何新权限/新数据形态 ⇒ 同一提交内改完应用内两仓 + 产出博客待同步文本。**
 
 ## 四、工程铁律（踩过的坑）
 
-- **release 混淆会改名 JSON 落盘字段**（Journal 1.0.2 已带混淆名写盘）：四个开关联合作用，单一白名单拦不住；根治 = 文件级 `-keep` 保护序列化真源，存量 = 读端 fallback 旧名。格式坑：`-keep` 条目不能缩进。Reader 侧无对象 JSON 落盘，不受影响。
-- **日期一律本地时区**（todayKey/dateKeyOf/exportDateText），禁用 `toISOString()`（UTC，东八区 00–08 点写成昨天）。CI 有守门单测。
-- **编译唯一可用方式**：自带 hvigorw wrapper 已损坏，必须用 DevEco 自带 node 跑 `hvigorw.js`；`DEVECO_SDK_HOME`/`JAVA_HOME` 指向 E 盘 DevEco。debug：`assembleHap --mode module -p product=default -p buildMode=debug`。
-- **safe-delete 钩子 vs 构建（2026-10-27 实测）**：钩子在**单轮删 ≥50 个文件**时拦截（`SAFE_DELETE_BULK_CONFIRM_REQUIRED count:50 threshold:50`）⇒ hvigor 的 `:entry:clean` 失败、报 **00308004 Unable to delete entry\build**。真因在 `.hvigor/outputs/build-logs/build.log` 搜 safe-delete。**正解：把 `entry/build`、`.hvigor` 改名让开（如 `build_stale_日期`）再构建，不要硬删。** 钩子只拦 **node 进程内**的 fs 删除，bash/PS 的 `rm -rf` 不受限（清理残留时可直接删）。
-- **浮层「点外部关闭」不牢靠**：面板内容超高时关闭带 layoutWeight 被挤成 0 ⇒ 必须给显式 `×`；关闭带固定高度（`SETTINGS_STRIP_VP=88`）；固定内容移进 Scroll；Scroll 用 `layoutWeight(1)` 且父链每层高度确定。`constraintSize({maxHeight})` 对 Scroll 无效。
-- **@Builder 值参数不随 @State 重跑**（家族级，本族第 4 次同型坑）：选中态变了 UI 不更新 ⇒ ForEach key 带状态后缀，或直接调用拆 if/else。同族：日历染色 / 收藏星 / 胶囊剧透 / 编辑后列表 / 筛选 chip。
-- **⚠️ ArkUI V1 分支条件陷阱（家族级，最重要的发现）**：V1 是「状态变更 → 局部刷新」，**build() 不整体重跑，`if` 的分支条件按首次求值定型**；依赖插桩只认「表达式里直接读 @State」，藏进 getter/方法体里的 @State 访问**追不到**。
-  正解：条件里**就地读 @State**（`if (this.query.length > 0 && this.visibleItems().length === 0)`）。**@Computed 救不了**（编译报 `only be used in a 'struct' decorated with '@ComponentV2'`，本族是 V1）。
-  与老坑合流判据：「数据变了 UI 不更新」按序查 —— ① ForEach key 少带变化位；② **分支条件藏在 getter/方法里**；③ 组件高度被 layoutWeight 压成 0。
-- **UIAbility 基类没有 onConfigurationUpdate**：写 `super.` 能编译但运行时抛错 ⇒ 窗口存在但内容全空（黑屏）。
-- **ForEach item 无确定宽度时 `width('100%')` 回退成父级全宽**（Journal 统计图 12 个月并排、只有第 0 个在屏内）：item 加 `layoutWeight(1)`。
-- 图表数据顺序：左→右 = 过去→现在（newest 压轴），必须体现在单测里。
-- **服务卡片（form）三条铁律**（家族级）：① **卡片自定义参数会被系统改键名**（`params:{bookId:'x'}` → `{"a9":"x",…}`，键按位置重命名）⇒ 只认原键名必然读不到 ⇒ **按"值"找不按键名找**；② **form 页面禁用 @StorageLink / hilog / onAreaChange**（报 `11706006`），只能用 @LocalStorageProp，而它读到的 dimension 是默认值 ⇒ **form 里做不了按尺寸分支的排版**；③ 卡片页不能打日志，调试只能打在 FormExtensionAbility 里。
-- 沙箱写入：`hdc file send` 写不进应用沙箱（SELinux 拒），shell `cat`/`mkdir` 也不行；**真正能写应用私有目录的是设备上 `sqlite3` 的 `writefile()`**（**只能写 `haps/entry/files/`，写不进 database 目录**）。
-- **模拟器**：dpr=3.5、视口≈359vp；**会自动锁屏**（黑屏截图 66908 字节是特征值；解锁 `keyEvent Power` + `swipe 628 2680 628 700`）。**约 30s 自动息屏** ⇒ `hdc shell "power-shell wakeup"` 点亮、`power-shell timeout -o <ms>` 覆盖（**参数是 -o**）。**安全键盘是 secure 窗口：键盘弹出期间 screenCap 拍到的应用区域纯黑，但 dumpLayout 仍读到完整 UI 树** ⇒ 极易误判成「渲染黑屏」⇒ **判据：按 Back 关掉键盘再截图**。系统设置应用 `aa start -a com.huawei.hmos.settings.MainAbility -b com.huawei.hmos.settings` 直拉且保留上次页面；深浅色切换在「显示和亮度 → 显示模式」Radio（浅 ~(349,1634) / 深 ~(907,1634)）。
-- hdc 不在 PATH，绝对路径 `/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`。设备绝对路径需 `MSYS_NO_PATHCONV=1`；本地路径用相对。键盘弹出后输入框位移，必须重新 dumpLayout 再 inputText；DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。shell 无 wm 命令 ⇒ 横屏断点一律抽纯函数 + 单测守（shelfColsOf / readingMarginOf / formPadOf）。
-- **uitest dumpLayout 会返回旧应用实例的过期布局** ⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；视觉模型会误读选中态，chip 选中态以黑底像素扫描为准。
-- **存量已知问题（2026-10-25，未修待拍板）**：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，产生超长假会话污染统计（曾 1314 分钟）；② 抽屉打开时系统返回直接退出阅读页（应先关抽屉）。
-- 测试基线：Reader **202/202**（1.0.7 新增 14 条：书架搜索 + 摘录导出）、Journal 139/139。
+完整清单（混淆 / 编译 / safe-delete / 浮层 / @Builder / ArkUI V1 分支陷阱 / form 卡片三铁律 / 沙箱写入）
+⇒ 见同目录 **`reference-arkui-pitfalls.md`**。
 
-## 五、模拟器造数（2026-10-27 大更正：外部造库已封死，应用内 picker 才是出路，家族级）
+**最要紧的 4 条（背下来）**：
+1. **release 混淆会改名 JSON 落盘字段** ⇒ 文件级 `-keep` 保护序列化真源（`-keep` 条目**不能缩进**）。
+   ⚠️ **`-keep` 还要保护「按名反射的跨模块契约」** —— 1.0.6 加了 `-keep ./src/main/ets/data/AsrService.ets`
+   （`RecognitionListener` 五个方法名由系统 SDK 按名字回调，混淆改名 ⇒ 语音功能**静默失效**：能点、能进「在听」、永远等不到文字、零报错）。
+2. **ArkUI V1 分支条件陷阱（家族级最重要发现）**：V1 是「状态变更 → 局部刷新」，**build() 不整体重跑，`if` 的分支条件按首次求值定型**；
+   依赖插桩只认「表达式里直接读 @State」，藏进 getter/方法体里的访问**追不到** ⇒ 条件里**就地读 @State**。**@Computed 救不了**（本族是 V1）。
+   「数据变了 UI 不更新」按序查：① ForEach key 少带变化位 ② 分支条件藏在 getter/方法里 ③ 组件高度被 layoutWeight 压成 0。
+3. **@Builder 值参数不随 @State 重跑**（已第 6 次同型）⇒ ForEach key 带状态后缀 / 拆 if/else / 版本号 key 强制重建。
+4. **safe-delete 钩子**：单轮删 ≥50 文件会拦（报 00308004 Unable to delete entry\build）⇒ **把 `entry/build`、`.hvigor` 改名让开再构建，不要硬删**。
 
-**外部造库走不通的原因**：RdbStore 库在加密存储里（应用视角 `/data/storage/el2/database/entry/rockreader.db`，物理侧 `/data/app/el2/100/database/`）—— shell `ls` Permission denied、`sqlite3` 打不开、`writefile()` 写不进 database 目录。`/storage/media/**` 等目录在该模拟器上不存在或 Permission denied。⇒ **books/chapters/progress 三张表外部写不了。**
+- **日期一律本地时区**，禁用 `toISOString()`（UTC，东八区 00–08 点写成昨天）。CI 有守门单测。
+- **编译唯一可用方式**：自带 hvigorw wrapper 已损坏，必须用 DevEco 自带 node 跑 `hvigorw.js`；`DEVECO_SDK_HOME`/`JAVA_HOME` 指向 E 盘 DevEco。
+- **测试基线**：Reader **202/202**；Journal **226/226**（1.0.6 新增 87 条）。
 
-**✅ 唯一出路：应用内文件选择器（picker）是通的** —— 书架右上「+」→ 系统 picker → 浏览 → 我的手机 → Download（**里面本来就有历史测试留下的 txt/epub/md**）→ 选中即导入，**books/chapters/progress 由应用自己写**。造书不需要造库，只需在 Download 放文件。路径找不到时**用 picker 界面本身当探针**（`/storage/*` 大多 Permission denied）。
+## 五、发版与版本状态
 
-**仍然有效的通用坑**
-- `sqlite3 <db> < file` **只执行第一行**，必须 `cat file | sqlite3 <db>`；`readfile()` 在该 build 没编，`writefile()` 可用；大 blob 走管道传 SQL 文件。
-- **`hdc file send` 的远端路径会被 Windows 化**（报 `read-only file system, path:./E:`）⇒ 用 `base64 -w0` 经 `hdc shell "echo '<b64>' | base64 -d > /data/local/tmp/x.sql"` 写文件。
-- **shell 与应用是两套 mount 视图** ⇒ books.path 必须写**应用视角**路径。
-- 写库前 `aa force-stop` + 删 `-wal/-shm/-dwr/-compare`；shell `mkdir` 一律被拒。
-- `hdc list targets` 返回 `[Empty]` 但 Emulator.exe 还在 ⇒ PowerShell 查端口得 `127.0.0.1:5555`，再 `hdc tconn 127.0.0.1:5555`。
-- **`hilog` 是流式的**：`hilog | tail` 永远不返回 ⇒ 必须 `| head -N`；要持续抓就跑后台任务 + `TaskStop`。
-- 切章规则**绝不手写复刻**：用 esbuild 把 `.ets` 当 TS 编译，直接跑产品自己的 `splitChapters`，偏移量与应用导入时逐字节一致。
-- **`aa start -U <uri>` 带不动文件**：AMS 做 URI 权限校验并**静默剥离 want.uri** ⇒ 接收端 `want.uri` 为空。即使指向应用自己沙箱内的文件也会被剥离 ⇒ **外部拉起导入这条路彻底死透**。写这类分支**必须打日志**。
-- **卡片参数取值验证招（不必真造书）**：`hdc shell "aa start -a EntryAbility -b <bundle> --ps a9 <bookId>"` 模拟系统改键名后的扁平形态，`--ps params '{"a9":"x"}'` 模拟嵌套 JSON 形态；应用日志应打出 `open book from card: <bookId>`（release 包本体实测过）。
+- tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（编译失败则不执行）。
+- Reader **1.0.6（code 1000007）2026-10-26 已提交 AGC，党哥确认通过**；**1.0.7（code 1000008）2026-10-27 22:38 已提交 AGC 审核**（首次 993 = 传到「Rock私记」栏目，切到「Rock阅读」后通过）。**待审核通过。**
+- Journal **1.0.5（code 1000006）** ✅ **10-26 提交 AGC、10-27 审核已通过（已上架）**。
+- **Journal 1.0.6（code 1000007）2026-10-28 20:31 出包完成**：四项新增 = 多日记本 + 每日提示 + 自定义模板 + 语音转文字（只落文字不存音频）。release 包 md5 **`D7CED482E483D2A42398FF8BB6B33FA2`** / sha256 `18D537F6…F15AC4`，326,692 字节；闸门**全 PASS**（出包脚本内 + 桌面副本复跑）；桌面 `Rock私记-1.0.6-上架.app`。上架说明 `docs/release-notes-1.0.6.md`；**博客隐私政策待党哥手动同步**（`docs/blog-privacy-sync-1.0.6.md`）。⚠️ **未提交 AGC**。
 
-## 六、发版与版本状态
+## 六、CI 现状（党哥拍板「CI 不急」）
 
-- tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（且编译失败则不执行 ⇒ CI 红了 tag 也发不出 Release）。
-- Reader **1.0.6（code 1000007）2026-10-26 已提交 AGC，党哥确认通过**（含桌面续读卡片 + 批次 A 四项），上架说明 `docs/release-notes-1.0.6.md`。
-- Journal **1.0.5（code 1000006）** 含桌面卡片 + 深色模式修复（模拟器实测通过）、出包三步验收过，`RockJournal/docs/release-notes-1.0.5.md` 已定稿 ⇒ ✅ **10-26 提交 AGC、10-27 审核已通过（已上架）**。
-- **Reader 1.0.7（code 1000008）**：commit `de258bb`+`3ea2cd5`+`59c4f48`（本地未 push）。
-  release 包 **2026-10-27 22:29 重新出包**（签名时间戳不同 ⇒ 指纹变）：
-  桌面 `Rock阅读-1.0.7-上架.app` md5 **`E8FA4A771F27D608E1EF0316DFF80702`** / sha256 `495BA367…D926D`，
-  闸门 **13 项 PASS / 退出码 0**；上架说明 `docs/release-notes-1.0.7.md` 已更新指纹。
-  ✅ **10-27 22:38 已提交 AGC 审核**（首次 993 = 传到「Rock私记」栏目下，切到「Rock阅读」后一次通过）。**待审核通过。**
-  卡片点击定位 bug（参数改键名，commit f9e68e5）**端到端已在 release 包本体实测通过**。
-- 1.0.7 四项对标静读天下：进度按真实字数 ✅ / 书架搜索 ✅ / 摘录导出 ✅ / **备份暂缓**（`EntryBackupAbility` 空实现**不是 bug**，官方推荐做法；`backup_config.json` 无 `includes` 大概率是有效默认 ⇒ 只能真机克隆定性，模拟器验不了 ⇒ 上架说明一个字不提）。
-  进度修复根因：`onAreaChange` 首次回调兜底分支 `openChapter()` 后漏调 `surveyChars()`，`init()` 里 `if(this.areaReady)` 首次恒不成立 ⇒ `char_count` 恒空；修法 = 补调用 + `.catch()`（`surveyChars` 只有 try/finally **没有 catch**）。
-- 模拟器造书配方已固化成 `scripts/seed-sim-book.mjs`（但外部造库已封死，见上节）。
+- **Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红**。根因：CI 用**公开 OpenHarmony SDK**，而 `@kit.CoreSpeechKit`、`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 报 10505001 / 10311003。后果：编译校验形同虚设，**打 tag 也不会发 GitHub Release**。
+- **已排除**：注入 hms kit（hvigor 要 `compileApiVersion>9 && isHarmonyOS() && getHmsArkDir()`，OpenHarmony 永远拿不到）；改 runtimeOS 被 00303038/00303313 卡死；工程内桩被 `arkts-no-untyped-obj-literals`（10605038）拦。
+- 党哥判断：「鸿蒙所有的应用开发都是在本机上进行」⇒ **CI 修复暂缓**。将来要修：CI 工作区把 kit 的类型声明**内联到消费文件顶部**（ArkTS 要求同文件），再改 import。
 
-## 七、CI 现状（2026-10-27 定位，党哥拍板「CI 不急」）
+## 七、产品对标与迭代方向（Rock私记 vs 标杆）
 
-- **Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红 8 次**（含 1.0.7 那次）。根因：CI 用**公开 OpenHarmony SDK**（HarmonyOS SDK 需登录华为账号才给下），而 `@kit.CoreSpeechKit`（朗读）、`@kit.ShareKit`（系统分享）是 **HarmonyOS 专有 kit** ⇒ 报 10505001 / 10311003。后果：编译校验形同虚设，**且打 tag 也不会发 GitHub Release**。
-- **已排除的路线**：改 SDK 注入 hms kit —— hvigor `getExternalApiPaths()` 要求 `compileApiVersion>9 && targetData.isHarmonyOS() && sdkInfo.getHmsArkDir()`，OpenHarmony runtimeOS 永远拿不到 hms；改 runtimeOS 会被 00303038（版本号须字符串格式）/ 00303313（compileSdkVersion 必须匹配 SDK）双重卡死。工程内桩（.ets 独立模块）会被 ArkTS `arkts-no-untyped-obj-literals`（10605038）拦（对象字面量需对应**同文件内**显式声明的 class/interface，跨模块 import 的 interface 不算）。
-- **党哥判断**：「鸿蒙所有的应用开发都是在本机上进行，所以不传远端问题也不大」⇒ **CI 修复暂缓**，不动仓库代码。将来要修：CI 工作区把 kit 的类型声明**内联到消费文件顶部**（ArkTS 要求同文件），再改 import。
+主标杆 **Day One**（Apple Design Award / 4.8 分）。完整对标表（A 类待做项 / B 类联网取舍 / C 类我们领先）
+⇒ 见同目录 **`reference-roadmap.md`**。
+
+- **A 类·本地零联网（优先做）**：① 语音转文字 ✅1.0.6 已实现 ② 位置标签 ⬜ ③ 写作提醒 ⬜ ④ Markdown 双向 ⬜ ⑤ 自定义模板 ✅1.0.6 ⑥ 多日记本 ✅1.0.6 ⑦ PDF 导出 ⬜ ⑧ 每日提示 ✅1.0.6
+- **B 类·需联网**（云同步 / 云端 AI / IFTTT）—— 与第一节口径冲突，**主动取舍，不是落后**。
+- **C 类·我们领先（卖点）**：全量本地加密（Day One 免费版只传输加密）、时间胶囊硬封存（独占）、完全离线、不绑云账号。
+- **坚决不做**：云同步 / 云端 AI。
+
+## 八、ASR（Core Speech Kit）家族知识
+
+**能力边界（官方口径）**：只有**中文普通话**、只有**离线模型**（短 ≤60s / 长 ≤8h）；**模拟器没有离线引擎 ⇒ 识别效果必须真机验**；仅中国区 Phone/Tablet。
+
+**三个必踩的坑**
+- **① `online` 名与值相反**：.d.ts 原话 _"**1**: offline"_ ⇒ **1 = 离线**（0 = 联网，未支持）。网上教程写 `online: 0` 表示离线是错的；与 TtsEngine 的 `TTS_ONLINE_MODE=1` 同口径，可交叉验证。
+- **② `StartParams.extraParams['recognizeMode']` 必须显式给 0**：0 = **引擎自己开麦**（只要 MICROPHONE 权限，不必自己 AudioCapturer 喂 PCM）；**省略会默认走 1（外部 writeAudio）⇒ 起了引擎却没声音进来**。⚠️ 键名是字符串，编译器查不出。
+- **③ 权限结果类型写不出名字**：`PermissionRequestResult` **没有导出到 `abilityAccessCtrl` 命名空间**（全 SDK .d.ts 都搜不到，只在 DevEco 提示用的 `api-version/AbilityKit.json` 里）⇒ **靠 `const res = await ...` 推断拿它**。
+
+**固定套路**：监听器 5 个方法全必填（先 `const self=this`、字面量落接口变量、方法语法）；`createEngine` 用**回调版**，成功时 **err 是 undefined 不是 null**；结果累积 = **isFinal 累加 + 非 final 取最后一条**（引擎"越修越准地重发"）—— 留纯逻辑层，真机若发现是累计全文，改 `collectFinalText` 一行即可。
+
+**没真机时的验证策略（可复用到任何"必须真机"的能力）**
+1. 纯逻辑抽出（不引 @kit）⇒ esbuild + node:test 单测；
+2. **用真 SDK 编译**（`-p product=default`，runtimeOS=HarmonyOS）验 API 签名 —— CI 的 OpenHarmony SDK 验不了；
+3. **"用不了"当一等公民**：引擎起不来 ⇒ UNREADY + 按钮**禁用但保留** + 如实文案；
+4. **按名反射的接口实现加 `-keep`**（混淆改名 ⇒ 静默失效）；
+5. 上架说明一个字不提，直到真机验过。
