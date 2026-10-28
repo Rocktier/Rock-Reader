@@ -42,6 +42,12 @@
 - **PowerShell 三坑**：① `.ps1` 必须 **UTF-8 带 BOM**（PS 5.1 按 ANSI 读无 BOM ⇒ 中文乱码 ⇒「意外的标记 }」）；② 跑 java 工具**别用 `& java ... 2>&1`**（stderr 被转成错误记录，`Stop` 下直接中断）⇒ 用 `Start-Process` + `-RedirectStandardOutput/-RedirectStandardError`；③ `Start-Process`：参数含空格自己加引号；四项 proxy 同存抛「字典中的关键字重复」⇒ 临时摘掉。
   ⚠️ **Git Bash 里 `pwsh xxx.ps1` 被安全策略拦** ⇒ 一律用 PowerShell 工具调用。
 - **release 构建偶发失败**：第一次跑可能 11 秒就 `Failed :entry:default@CompileArkTS` 且**日志无任何 ERROR 行**（真因不明）⇒ **原样重跑一次就 BUILD SUCCESSFUL**。遇「无信息失败」先重跑，别改代码。
+- ⭐ **`.app` 的 md5 每次打包都变（签名块含时间戳）⇒ 不能用 md5 判断「包有没有变」**。
+  md5 只适合当**指纹记录**（记下某一次包的 md5，便于日后核对是不是同一个）。
+  要判断两个包是否等价 ⇒ **解包逐文件比**：`unzip X.app` → 得 `entry-default.hap`/`pac.json`/`pack.info`；
+  再 `unzip entry-default.hap` → 比 `module.json` / `ets/modules.abc` / `resources/**` 的 md5。
+  2026-10-28 实测：两个 .app 的 md5 不同，但 hap 内**所有内容文件逐字节相同** ⇒ 差异只在签名块。
+  （顺带证实：`module.json5` 里的注释不进 hap ⇒ 改注释不必重新出包。）
 
 ## 三、法律文件：一个链接覆盖全家族
 
