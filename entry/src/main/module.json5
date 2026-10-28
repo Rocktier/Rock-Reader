@@ -48,8 +48,12 @@
         //
         // ⚠️ **这是"后台模式"声明，不是权限** —— 应用的权限清单仍然是空的
         //    （requestPermissions 一节不存在），「零权限」叙事不受影响。
-        // ⚠️ **AGC 后台要勾选对应项**：版本管理 → 权限管理 → 后台模式 → 音频，
-        //    并填用途说明（"朗读功能需要后台音频能力"）。不勾会被驳回。
+        // ✅ **AGC 控制台不需要为它勾选任何东西**（2026-10-28 查证）：
+        //    backgroundModes 不是 AGC 审批项，控制台没有对应的勾选框。
+        //    需要 AGC 申请的是 KEEP_BACKGROUND_RUNNING，仅当调用
+        //    backgroundTaskManager.startBackgroundRunning() 申请长时任务时才需要；
+        //    本应用走 AVSession 播控中心路线，没调长时任务 API ⇒ 不需要该权限。
+        //    （早期注释里写的"版本管理 → 权限管理 → 后台模式 → 音频要勾"是错的，那个入口不存在。）
         // ⚠️ 声明后进程在后台不易被杀 ⇒ 退出阅读页时必须释放引擎
         //    （Reader.ets 的 aboutToDisappear 已无条件 tts.shutdown()）。
         // ⚠️ 合法值是 **audioPlayback** 不是 "audio"（schema 校验会拦，写错直接编译失败）。
