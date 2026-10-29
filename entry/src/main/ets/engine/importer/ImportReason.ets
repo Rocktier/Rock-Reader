@@ -41,6 +41,10 @@ export function reasonText(reason: string): string {
       // MobiParser 抛 MOBI_UNSUPPORTED_COMPRESSION（HUFF/CDIC，新版 MOBI 常见）：
       // 说清是"格式较新"而不是"文件坏了"，也不承诺 MOBI 整体支持（见 NOT_SUPPORTED）
       return '这本 MOBI 用了较新的压缩方式，暂时打不开（旧版 MOBI 可以）';
+    case 'MOBI_ENCODING':
+      // MobiParser 抛 MOBI_UNSUPPORTED_ENCODING（未知 code page，或设备 TextDecoder
+      // 没有对应的多字节解码表）：明确说"读不出文字"，而不是含糊的"目录解析失败"
+      return '这本 MOBI 的正文编码读不出来（可尝试转成 UTF-8 的 TXT/EPUB）';
     default:
       // ⚠️ 成功时 reason 就是空串，会落到这里。这里必须是"不弹"：
       // 返回任何失败文案，都会造成"导入成功却报失败"。

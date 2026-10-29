@@ -10,7 +10,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BookDb } from '../data/BookDb';
 import { ReaderPrefs, DAILY_GOAL_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord } from '../common/Types';
-import { byBook, BookTotal, dailyMs, durationText, msOfDay, ReadSession, streakDays, totalMs } from '../engine/stats/ReadStats';
+import { achievementsOf, Achievement, byBook, BookTotal, dailyMs, durationText, finishedBookCount, msOfDay, ReadSession, streakDays, totalMs, unlockedCount } from '../engine/stats/ReadStats';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { formPadOf } from '../common/LayoutStyle';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_RADIUS_CARD } from '../theme/RrTokens';
@@ -43,6 +43,9 @@ struct Stats {
   @State weekMax: number = 0;
   @State rows: BookStatRow[] = [];
   @State sessionCount: number = 0;
+  /** P0-4：成就徽章（近 30 天口径；load 时算一次） */
+  @State achievements: Achievement[] = [];
+  @State unlocked: number = 0;
   /** A4：每日目标（分钟；0 = 关）。党哥 2026-10-25 定默认 20 分钟 */
   @State private goalMin: number = DAILY_GOAL_DEFAULT;
   @State private goalText: string = '';
@@ -79,6 +82,21 @@ struct Stats {
       this.todayText = durationText(this.todayMs);
       this.streak = streakDays(sessions, now);
       this.sessionCount = sessions.length;
+
+      // P0-4：读完本数从 progress 表聚合（读到 ≥99% 算读完）。Map.forEach 是 ArkTS
+      // 兼容写法，避免依赖迭代器展开。成就纯逻辑只收聚合值，不碰 DB。
+      const percents: Map<string, number> = await this.db.listAllProgress();
+      const percentVals: number[] = [];
+      percents.forEach((p: number) => {
+        percentVals.push(p);
+      });
+      this.achievements = achievementsOf({
+        totalMs: totalMs(sessions),
+        streak: this.streak,
+        sessionCount: sessions.length,
+        finishedBooks: finishedBookCount(percentVals)
+      });
+      this.unlocked = unlockedCount(this.achievements);
 
       const week: number[] = dailyMs(sessions, now, CHART_DAYS);
       this.week = week;
@@ -354,6 +372,69 @@ struct Stats {
               .borderColor(this.palette.line)
               .margin({ top: RR_SP_XL })
             }
+
+            // P0-4：成就徽章（8 个，覆盖时长 / 连续 / 读完三维度）。
+            // 性冷淡风格：无 emoji、无动画、无营销文案；未解锁用细进度条显进度。
+            Column() {
+              Row() {
+                Text('阅读成就')
+                  .fontSize(RR_FS_DIGIT)
+                  .fontFamily('monospace')
+                  .fontColor(this.palette.text3)
+                Blank()
+                Text(`已点亮 ${this.unlocked} / ${this.achievements.length}`)
+                  .fontSize(RR_FS_MICRO)
+                  .fontFamily('monospace')
+                  .fontColor(this.unlocked > 0 ? this.palette.accent : this.palette.text3)
+              }
+              .width('100%')
+
+              // 每个徽章一行：圆点（解锁态用强调色） + 徽章名 + 条件 + 进度条
+              ForEach(this.achievements, (a: Achievement) => {
+                Row() {
+                  Circle({ width: 8, height: 8 })
+                    .fill(a.unlocked ? this.palette.accent : this.palette.line)
+                    .margin({ right: RR_SP_MD })
+                  Column() {
+                    Text(a.title)
+                      .fontSize(RR_FS_LABEL)
+                      .fontColor(a.unlocked ? this.palette.text : this.palette.text3)
+                    Text(a.condition)
+                      .fontSize(RR_FS_MICRO)
+                      .fontFamily('monospace')
+                      .fontColor(this.palette.text3)
+                      .margin({ top: 2 })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                  // 未解锁：细进度条；已解锁：不画条（圆点已点亮，留白更干净）
+                  if (!a.unlocked && a.ratio > 0) {
+                    Row() {
+                      Row()
+                        .layoutWeight(Math.max(0.001, a.ratio))
+                        .height(4)
+                        .backgroundColor(this.palette.text3)
+                      Row()
+                        .layoutWeight(Math.max(0.001, 1 - a.ratio))
+                        .height(4)
+                        .backgroundColor(this.palette.line)
+                    }
+                    .width(56)
+                    .borderRadius(2)
+                  }
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .padding({ top: RR_SP_MD })
+              }, (a: Achievement) => a.id)
+            }
+            .width('100%')
+            .padding(14)
+            .borderRadius(RR_RADIUS_CARD)
+            .backgroundColor(this.palette.card)
+            .borderWidth(1)
+            .borderColor(this.palette.line)
+            .margin({ top: RR_SP_XL })
 
             Text('全部数据都在你的设备上，不上传、不联网')
               .fontSize(RR_FS_MICRO)

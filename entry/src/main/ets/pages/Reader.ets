@@ -20,7 +20,7 @@ import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { BookDb } from '../data/BookDb';
 import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
-import { bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
+import { bookCharsLeft, bookLeftText, bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
@@ -36,6 +36,7 @@ import {
   WEIGHT_MAX
 } from '../common/LayoutStyle';
 import { buildMarksExport } from '../engine/marks/MarkExport';
+import { COLOR_DEFAULT, colorIndices, highlightInk, normalizeColor } from '../engine/marks/HighlightPalette';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
@@ -60,7 +61,7 @@ import {
   ScrollToggle
 } from '../data/AutoScroll';
 import { surveyShouldContinue, surveyShouldYield } from '../data/Survey';
-import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme } from '../common/Theme';
+import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme, isLightTheme } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
 
@@ -278,6 +279,8 @@ struct Reader {
   @State private hasOverride: boolean = false;
   /** A3：本章剩余阅读文案（'本章还剩约 12 分钟'；空 = 不显示） */
   @State private chapterLeftText: string = '';
+  /** P0-3：全书剩余阅读文案（'全书还剩约 8 小时'；空 = 未量过任何章，不显示） */
+  @State private bookRemainText: string = '';
   private currentKey: string = '';
   /** 上一次取文本时用的加工设置：变了就必须重新取章（净化/简繁会改正文） */
   private purifyOn: boolean = true;
@@ -311,8 +314,14 @@ struct Reader {
   @State markKick: boolean = false;
   /** 摘录面板是否开着（长按正文唤起） */
   @State showHighlight: boolean = false;
+  /** P0-2：正在行内编辑备注的书签 id（-1 = 没有） */
+  @State editingBookmarkId: number = -1;
+  /** P0-2：行内编辑中的备注文本 */
+  @State editingBookmarkNote: string = '';
   /** 摘录面板里的注（用户输入） */
   @State highlightNote: string = '';
+  /** P0-1：摘录面板当前选中的高亮颜色索引 */
+  @State highlightColor: number = COLOR_DEFAULT;
   /** 摘录的原文快照（开面板时定格） */
   private highlightExcerpt: string = '';
   private highlightStart: number = 0;
@@ -1000,6 +1009,8 @@ struct Reader {
         }
       }
       this.bookPercent = this.computeBookPercent();
+      // P0-3：普查把各章真实字数回填后，全书剩余也跟着收敛到真值（与进度同源刷新）
+      this.refreshChapterLeft();
       // 这条日志是「进度按真实字数」能否成立的唯一凭据 —— 它说出多少章拿到了真字数。
       // 装机打开一本书后 measured 若恒为 0，就说明普查压根没跑，百分比会退回按章数的
       // 虚高口径（首帧兜底路径漏调普查，就是对着这个数看出来的）。
@@ -1140,6 +1151,7 @@ struct Reader {
           chapterIndex: this.chapterIndex,
           charOffset: offset,
           excerpt: line,
+          note: '', // P0-2：新建书签备注为空，之后在标记页可编辑
           createdAt: Date.now()
         });
       }
@@ -1165,6 +1177,8 @@ struct Reader {
     this.highlightStart = range.start;
     this.highlightEnd = range.end;
     this.highlightNote = '';
+    // P0-1：每次新开面板回到默认色（上次选色不残留）
+    this.highlightColor = COLOR_DEFAULT;
     this.showHighlight = true;
   }
 
@@ -1182,12 +1196,46 @@ struct Reader {
         endChar: this.highlightEnd,
         excerpt: this.highlightExcerpt,
         note: this.highlightNote.trim(),
+        color: normalizeColor(this.highlightColor), // P0-1：选中的颜色索引
         createdAt: Date.now()
       });
       this.showHighlight = false;
       await this.reloadMarks();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'save highlight failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /**
+   * P0-2：存下书签备注。
+   * 就地改数组而不 reload —— 重载会重建整个抽屉列表，正在编辑的那一项会跳一下；
+   * 只改对应元素的 note，配合 ForEach key 带 note 变化位 ⇒ 只有那一行重绘。
+   */
+  private async saveBookmarkNote(id: number): Promise<void> {
+    const text: string = this.editingBookmarkNote.trim();
+    this.editingBookmarkId = -1;
+    try {
+      await this.db.updateBookmarkNote(id, text);
+      const next: BookmarkRow[] = [];
+      for (let i: number = 0; i < this.bookmarks.length; i++) {
+        const b: BookmarkRow = this.bookmarks[i];
+        if (b.id === id) {
+          next.push({
+            id: b.id,
+            bookId: b.bookId,
+            chapterIndex: b.chapterIndex,
+            charOffset: b.charOffset,
+            excerpt: b.excerpt,
+            note: text,
+            createdAt: b.createdAt
+          });
+        } else {
+          next.push(b);
+        }
+      }
+      this.bookmarks = next;
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'save bookmark note failed: %{public}s', JSON.stringify(e));
     }
   }
 
@@ -1314,10 +1362,16 @@ struct Reader {
   private refreshChapterLeft(): void {
     if (this.pages.length === 0 || this.chapterText.length === 0) {
       this.chapterLeftText = '';
+      this.bookRemainText = '';
       return;
     }
     const left: number = this.chapterText.length - this.pages[this.pageIndex].start;
     this.chapterLeftText = chapterLeftText(left);
+    // P0-3：全书剩余，与"全书进度"同源（同一份 charCounts + chapterIndex + pagePercent）。
+    // 未量过任何章时 bookCharsLeft 返回 -1 → bookLeftText 出空串，底栏自动不显示。
+    // 翻页 / 普查回填字数都会走这里刷新，二者看到的换算口径永远一致。
+    this.bookRemainText = bookLeftText(
+      bookCharsLeft(this.charCounts, this.chapterCount, this.chapterIndex, this.pagePercent));
   }
 
   // ------------------------------------------------------------------
@@ -2118,27 +2172,42 @@ struct Reader {
   @Builder
   bottomBar() {
     Column() {
-      Row() {
-        Text(this.chapterTitle)
-          .fontSize(RR_FS_DIGIT)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        if (this.chapterLeftText.length > 0) {
-          Text(this.chapterLeftText)
-            .fontSize(RR_FS_META)
+      Column() {
+        Row() {
+          Text(this.chapterTitle)
+            .fontSize(RR_FS_DIGIT)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ right: RR_SP_MD })
+            .layoutWeight(1)
+          if (this.chapterLeftText.length > 0) {
+            Text(this.chapterLeftText)
+              .fontSize(RR_FS_META)
+              .fontFamily('monospace')
+              .fontColor(this.palette.text3)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .margin({ right: RR_SP_MD })
+          }
+          Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
+            .fontSize(RR_FS_DIGIT)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
         }
-        Text(this.pageCount > 0 ? `${this.pageIndex + 1}/${this.pageCount}` : '')
-          .fontSize(RR_FS_DIGIT)
-          .fontFamily('monospace')
-          .fontColor(this.palette.text3)
+        .width('100%')
+        // P0-3：全书剩余（与进度同源）。未量过任何章时为空串 → 这行不渲染。
+        // ⚠️ V1 分支条件必须就地读 @State（不能藏进 getter/方法），否则状态变了不刷新。
+        if (this.bookRemainText.length > 0) {
+          Text(this.bookRemainText)
+            .fontSize(RR_FS_MICRO)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text3)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .margin({ top: 4 })
+        }
       }
       .width('100%')
       .margin({ bottom: RR_SP_XL })
@@ -2543,6 +2612,44 @@ struct Reader {
                     .maxLines(2)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .width('100%')
+                  // P0-2：备注 —— 有就显示；行内编辑（不新开浮层 ⇒ 无影子状态，
+                  // 滚屏守卫只需管已有的 showToc 就够了）
+                  if (this.editingBookmarkId === b.id) {
+                    TextInput({ placeholder: '写一句备注', text: this.editingBookmarkNote })
+                      .fontSize(RR_FS_MICRO)
+                      .fontColor(this.palette.text)
+                      .placeholderColor(this.palette.text3)
+                      .caretColor(this.palette.accent)
+                      .backgroundColor(this.palette.overlay)
+                      .borderRadius(RR_RADIUS_COVER)
+                      .height(36)
+                      .margin({ top: 4 })
+                      .width('100%')
+                      .onChange((v: string) => {
+                        this.editingBookmarkNote = v;
+                      })
+                    Row({ space: RR_SP_MD }) {
+                      Text('取消')
+                        .fontSize(RR_FS_MICRO)
+                        .fontColor(this.palette.text3)
+                        .onClick(() => {
+                          this.editingBookmarkId = -1;
+                        })
+                      Text('存下')
+                        .fontSize(RR_FS_MICRO)
+                        .fontColor(this.palette.accent)
+                        .onClick(() => {
+                          this.saveBookmarkNote(b.id);
+                        })
+                    }
+                    .margin({ top: 4 })
+                  } else if (b.note.length > 0) {
+                    Text(b.note)
+                      .fontSize(RR_FS_MICRO)
+                      .fontColor(this.palette.text2)
+                      .margin({ top: 4 })
+                      .width('100%')
+                  }
                   Text(`第 ${b.chapterIndex + 1} 章`)
                     .fontSize(RR_FS_MICRO)
                     .fontFamily('monospace')
@@ -2551,6 +2658,16 @@ struct Reader {
                 }
                 .alignItems(HorizontalAlign.Start)
                 .layoutWeight(1)
+                Text(this.editingBookmarkId === b.id ? '' : '✎')
+                  .fontSize(RR_FS_LABEL)
+                  .fontColor(this.palette.text3)
+                  .width(32)
+                  .textAlign(TextAlign.Center)
+                  .accessibilityText('给这个书签加备注')
+                  .onClick(() => {
+                    this.editingBookmarkId = b.id;
+                    this.editingBookmarkNote = b.note;
+                  })
                 Text('×')
                   .fontSize(RR_FS_HEADING)
                   .fontColor(this.palette.text3)
@@ -2564,10 +2681,13 @@ struct Reader {
               .width('100%')
               .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
               .onClick(() => {
-                this.gotoChapterAndClose(b.chapterIndex, b.charOffset);
+                // 编辑中别跳章：否则点输入框外的空白就瞬移走了
+                if (this.editingBookmarkId === -1) {
+                  this.gotoChapterAndClose(b.chapterIndex, b.charOffset);
+                }
               })
             }
-          }, (b: BookmarkRow) => 'bm' + b.id)
+          }, (b: BookmarkRow) => 'bm' + b.id + '|' + b.note)
           if (this.highlights.length > 0) {
             ListItem() {
               Text('摘录')
@@ -2581,6 +2701,13 @@ struct Reader {
           ForEach(this.highlights, (h: HighlightRow) => {
             ListItem() {
               Row() {
+                // P0-1：色标 —— 每条摘录左侧一条 3px 竖线，颜色就是保存时选的那支。
+                // 老数据（无 color 列）落库时被写成默认色 0，所以竖线恒有、不会空白。
+                Column()
+                  .width(3)
+                  .height('100%')
+                  .borderRadius(1.5)
+                  .backgroundColor(highlightInk(normalizeColor(h.color), !isLightTheme(this.activeTheme)))
                 Column() {
                   Text('「' + h.excerpt + '」')
                     .fontSize(RR_FS_LABEL)
@@ -2619,7 +2746,8 @@ struct Reader {
                 this.gotoChapterAndClose(h.chapterIndex, h.startChar);
               })
             }
-          }, (h: HighlightRow) => 'hl' + h.id)
+          // key 带 color 变化位：改色后若不换 key，节点复用 ⇒ 色标停在旧颜色
+          }, (h: HighlightRow) => 'hl' + h.id + '|' + h.color)
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
@@ -2810,6 +2938,27 @@ struct Reader {
         .onChange((v: string) => {
           this.highlightNote = v;
         })
+      // P0-1：高亮颜色选择（5 色圆点，选中项加一圈描边）。
+      // 颜色随主题明暗走：夜间主题用更亮的那组，避免刺眼。
+      Text('标记颜色')
+        .fontSize(RR_FS_MICRO)
+        .fontColor(this.palette.text3)
+        .width('100%')
+        .margin({ top: RR_SP_MD })
+      Row({ space: RR_SP_MD }) {
+        ForEach(colorIndices(), (ci: number) => {
+          Circle({ width: 28, height: 28 })
+            .fill(highlightInk(ci, !isLightTheme(this.activeTheme)))
+            // 选中项：外圈用文字色描边（浅深主题都看得清）；未选中透明描边保持对齐
+            .stroke(this.highlightColor === ci ? this.palette.text : Color.Transparent)
+            .strokeWidth(this.highlightColor === ci ? 2 : 1)
+            .onClick(() => {
+              this.highlightColor = ci;
+            })
+        }, (ci: number) => 'hlc' + ci)
+      }
+      .width('100%')
+      .margin({ top: RR_SP_SM })
       Row({ space: RR_SP_MD }) {
         Button('取消', { type: ButtonType.Normal, stateEffect: true })
           .fontSize(RR_FS_LABEL)

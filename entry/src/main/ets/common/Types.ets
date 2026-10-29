@@ -73,6 +73,8 @@ export interface BookmarkRow {
   charOffset: number;
   /** 书签处的一行文本快照（列表展示；截断到 60 字） */
   excerpt: string;
+  /** P0-2（2026-10-29）：书签备注（可空）。老库补列前的行按 '' 读 */
+  note: string;
   createdAt: number;
 }
 
@@ -91,6 +93,11 @@ export interface HighlightRow {
   excerpt: string;
   /** 一句注（可空） */
   note: string;
+  /**
+   * P0-1（2026-10-29）：高亮颜色索引（0=默认黄 … 见 HighlightPalette.COLOR_KEYS）。
+   * 存索引不存色值 —— 主题切换时高亮色随主题走，老库补列前的行按 0（默认）读。
+   */
+  color: number;
   createdAt: number;
 }
 

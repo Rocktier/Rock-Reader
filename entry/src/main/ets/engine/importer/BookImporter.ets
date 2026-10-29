@@ -390,6 +390,8 @@ export class BookImporter {
     if (ext === 'txt') {
       try {
         const parsed = parseTxtSync(dstPath);
+        // P0-5：文件名切出的作者落到 BookRecord（认不出为空，书架用格式兜底）
+        book.author = parsed.author;
         await this.db.addChapters(id, parsed.chapters);
       } catch (e) {
         // 解析失败也要把书留下（能打开但没目录），不丢用户文件
@@ -444,7 +446,16 @@ export class BookImporter {
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'parse mobi failed: %{public}s', JSON.stringify(e));
         await this.db.addBook(book);
-        return { ok: false, reason: 'PARSE_FAILED', book: book };
+        // ⚠️ 别把专门错误一律吞成 PARSE_FAILED（那会让 MOBI_TOO_NEW 成死代码）：
+        // 压缩较新 / 编码读不出 → 给准话；其余才是泛化的"目录解析失败"。
+        const msg: string = e instanceof Error ? e.message : String(e);
+        let reason: string = 'PARSE_FAILED';
+        if (msg.indexOf('MOBI_UNSUPPORTED_ENCODING') >= 0) {
+          reason = 'MOBI_ENCODING';
+        } else if (msg.indexOf('MOBI_UNSUPPORTED_COMPRESSION') >= 0) {
+          reason = 'MOBI_TOO_NEW';
+        }
+        return { ok: false, reason: reason, book: book };
       }
     } else {
       // html / md / fb2：**导入时**转成纯文本并预切章落盘 —— 阅读端直接走 TxtSource，

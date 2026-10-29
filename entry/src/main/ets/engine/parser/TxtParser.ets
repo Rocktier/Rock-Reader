@@ -27,6 +27,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { detectEncoding, EncodingGuess } from '../text/Encoding';
 import { splitChapters, ChapterMeta, chapterSliceOf } from '../text/ChapterSplitter';
+import { authorFromFileName } from '../shelf/ShelfAuthor';
 import { ChapterRow } from '../../common/Types';
 
 const DOMAIN: number = 0x0000;
@@ -56,6 +57,8 @@ export interface TxtParseResult {
   encoding: string;
   charCount: number;
   chapters: ChapterRow[];
+  /** P0-5：从文件名高置信切出的作者（认不出为 ''，绝不编造） */
+  author: string;
 }
 
 /** 读整个文件到内存（同步）。导出给 EPUB 解析复用；超过上限抛 FILE_TOO_LARGE */
@@ -129,7 +132,12 @@ export function parseTxtSync(path: string): TxtParseResult {
     hilog.warn(DOMAIN, TAG, 'prewrite chapters: %{public}d/%{public}d written',
       written, rows.length);
   }
-  return { encoding: encoding, charCount: text.length, chapters: rows };
+  // P0-5：从文件名末段高置信切作者（认不出为 ''，交给书架格式兜底）。
+  // 只取文件名、不解析正文 —— 正文里的"作者："极易把台词误当作者，YAGNI 不做。
+  const nameStart: number = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  const fileNameOnly: string = nameStart >= 0 ? path.substring(nameStart + 1) : path;
+  const author: string = authorFromFileName(fileNameOnly);
+  return { encoding: encoding, charCount: text.length, chapters: rows, author: author };
 }
 
 /**

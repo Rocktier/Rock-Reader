@@ -21,6 +21,7 @@ import {
 } from '../text/Markup';
 import { firstElementText, stripTags } from '../epub/Xml';
 import { decodeBytes, readAllBytes, writeChapterFiles } from './TxtParser';
+import { authorFromFileName } from '../shelf/ShelfAuthor';
 import { ChapterRow } from '../../common/Types';
 
 export interface MarkupResult {
@@ -57,6 +58,14 @@ export function parseMarkupSync(path: string, kind: string): MarkupResult {
     const last: string = firstElementText(raw, 'last-name');
     author = (last + ' ' + first).trim();
     text = fb2ToMarkdownish(raw);
+  }
+
+  // P0-5：html/md 正文里没有结构化作者元数据 —— 与 TXT 同样从文件名高置信切一份，
+  // 认不出就留空（交给书架格式兜底），绝不编造。fb2 已从上一步拿到作者，不受影响。
+  if (author.length === 0) {
+    const nameStart: number = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    const fileNameOnly: string = nameStart >= 0 ? path.substring(nameStart + 1) : path;
+    author = authorFromFileName(fileNameOnly);
   }
 
   const metas: ChapterMeta[] = splitMarkdownChapters(text);

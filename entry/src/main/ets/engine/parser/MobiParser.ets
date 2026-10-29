@@ -15,7 +15,7 @@
  * - 目录：老 MOBI 没有 TOC 文件，靠 `<mbp:pagebreak/>` 分章；KF8 靠 `<h1>`。
  *   KF8 的 NCX(INDX) 本版不解析。
  */
-import { readAllBytes, writeChapterFiles } from './TxtParser';
+import { decodeBytes, readAllBytes, writeChapterFiles } from './TxtParser';
 import { ChapterMeta } from '../text/ChapterSplitter';
 import { htmlToMarkdownish, splitMarkdownChapters } from '../text/Markup';
 import {
@@ -28,6 +28,16 @@ import {
   stripTrailing,
   utf8Of
 } from '../text/Mobi';
+import {
+  decodeCp1252,
+  decodeUtf16Be,
+  decodeUtf16Le,
+  deviceEncodingName,
+  MOBI_ENC_CP1252,
+  MOBI_ENC_UTF16BE,
+  MOBI_ENC_UTF16LE,
+  MOBI_ENC_UTF8
+} from '../text/MobiEncoding';
 import { ChapterRow } from '../../common/Types';
 
 export interface MobiResult {
@@ -46,6 +56,41 @@ function pdbName(bytes: Uint8Array): string {
     end += 1;
   }
   return utf8Of(bytes.subarray(0, end)).trim();
+}
+
+/**
+ * 按 record0 声明的编码解码正文（P0 2026-10-29 修）。
+ *
+ * 旧实现无条件 `utf8Of(...)`，而 meta.encoding 解析出来**一次都没用过** ⇒
+ * UTF-16 / GBK 的书静默出乱码、零报错。现在：
+ *  - UTF-8 / UTF-16LE / UTF-16BE / cp1252 → 纯 TS 精确解码（见 MobiEncoding）；
+ *  - GBK / GB18030 / Big5 / Shift-JIS / EUC-KR → 设备 TextDecoder；
+ *  - 其余未知 code page，或设备解码器不支持 → **抛 MOBI_UNSUPPORTED_ENCODING**，
+ *    绝不静默兜底成 UTF-8（兜底 = 又回到乱码书）。
+ */
+function decodeMobiHtml(bytes: Uint8Array, encoding: number): string {
+  switch (encoding) {
+    case MOBI_ENC_UTF8:
+      return utf8Of(bytes);
+    case MOBI_ENC_UTF16LE:
+      return decodeUtf16Le(bytes);
+    case MOBI_ENC_UTF16BE:
+      return decodeUtf16Be(bytes);
+    case MOBI_ENC_CP1252:
+      return decodeCp1252(bytes);
+    default: {
+      const name: string = deviceEncodingName(encoding);
+      if (name.length === 0) {
+        throw new Error('MOBI_UNSUPPORTED_ENCODING');
+      }
+      try {
+        return decodeBytes(bytes, name);
+      } catch (e) {
+        // 设备 TextDecoder 没这张表 —— 明确报错，不给乱码书
+        throw new Error('MOBI_UNSUPPORTED_ENCODING');
+      }
+    }
+  }
 }
 
 export function parseMobiSync(path: string): MobiResult {
@@ -93,7 +138,8 @@ export function parseMobiSync(path: string): MobiResult {
 
   // 按声明长度截断：多出来的是重叠/填充残留（实测 MOBI 多 515 字节、AZW3 多 713 字节）
   const want: number = meta.textLength > 0 ? Math.min(wp, meta.textLength) : wp;
-  const html: string = utf8Of(out.subarray(0, want));
+  // ⚠️ 按 record0 声明的编码解码，不再无条件 UTF-8（P0 2026-10-29）
+  const html: string = decodeMobiHtml(out.subarray(0, want), meta.encoding);
 
   const text: string = htmlToMarkdownish(html);
   const metas: ChapterMeta[] = splitMarkdownChapters(text);

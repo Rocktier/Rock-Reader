@@ -177,6 +177,73 @@ export function chapterLeftText(charsLeft: number): string {
   return `本章还剩约 ${mins} 分钟`;
 }
 
+/* ---------------- P0-3：全书剩余时间（2026-10-29）---------------- */
+
+/**
+ * 全书剩余字数（与 `bookPercentOf` **同源口径**：已知章用真值，未知章按已确认章
+ * 平均字数外推；读到哪算到哪、越读越准）。
+ *
+ * @return 剩余字数；-1 = 一章都没量过（刚导入、还没展开任何章），此时无法估算，
+ *         调用方应显示空文案而不是编一个数字。
+ */
+export function bookCharsLeft(counts: number[], total: number, chapterIndex: number,
+  pagePercent: number): number {
+  if (total <= 0) {
+    return -1;
+  }
+  let idx: number = chapterIndex;
+  if (idx < 0) {
+    idx = 0;
+  }
+  if (idx >= total) {
+    idx = total - 1;
+  }
+  let knownTotal: number = 0;
+  let knownCount: number = 0;
+  for (let i = 0; i < total; i++) {
+    const c: number = countAt(counts, i);
+    if (c > 0) {
+      knownTotal = knownTotal + c;
+      knownCount = knownCount + 1;
+    }
+  }
+  if (knownCount === 0) {
+    return -1;
+  }
+  const avg: number = knownTotal / knownCount;
+  // 已读 = 前面所有整章（未知按均值）+ 当前章的进度份额
+  let read: number = 0;
+  for (let i = 0; i < idx; i++) {
+    const c: number = countAt(counts, i);
+    read = read + (c > 0 ? c : avg);
+  }
+  const here: number = countAt(counts, idx);
+  read = read + (here > 0 ? here : avg) * clamp01(pagePercent);
+  const totalChars: number = knownTotal + (total - knownCount) * avg;
+  const left: number = totalChars - read;
+  return left > 0 ? Math.round(left) : 0;
+}
+
+/**
+ * 全书剩余文案：按固定估算速度 EST_WPM 折算；不足 1 小时用分钟，≥1 小时用「X 小时 Y 分」。
+ *  -1（无法估算）/ 0（已读完）/ 负数 / NaN → ''（不显示）。
+ */
+export function bookLeftText(charsLeft: number): string {
+  if (!Number.isFinite(charsLeft) || charsLeft <= 0) {
+    return '';
+  }
+  if (charsLeft < EST_WPM) {
+    return '全书还剩不到 1 分钟';
+  }
+  const mins: number = Math.round(charsLeft / EST_WPM);
+  if (mins < 60) {
+    return `全书还剩约 ${mins} 分钟`;
+  }
+  const hours: number = Math.floor(mins / 60);
+  const rest: number = mins % 60;
+  return rest === 0 ? `全书还剩约 ${hours} 小时` : `全书还剩约 ${hours} 小时 ${rest} 分`;
+}
+
 export function byBook(sessions: ReadSession[]): BookTotal[] {
   const ids: string[] = [];
   const sums: number[] = [];
@@ -273,4 +340,116 @@ export function bookPercentOf(counts: number[], total: number, chapterIndex: num
   const totalChars: number = knownTotal + (total - knownCount) * avg;
   // 外推可能让「当前读到」略超总量（当前章特别长而外推偏小），收敛到 100% 内
   return totalChars > 0 ? Math.min(read / totalChars, 1) : 0;
+}
+
+/* ---------------- P0-4：阅读成就 / 里程碑（2026-10-29）---------------- */
+
+/**
+ * 成就输入（由 Stats 页从本机 DB 聚合后传入；纯逻辑只做阈值判定，不碰 DB）。
+ * 口径诚实：totalMs / sessionCount 基于「近 30 天」会话（统计页主口径），
+ * streak 是「当前连续天数」，finishedBooks 基于 progress 表（读到 ≥99% 算读完）。
+ */
+export interface AchievementInput {
+  totalMs: number;
+  streak: number;
+  sessionCount: number;
+  finishedBooks: number;
+}
+
+export interface Achievement {
+  id: string;
+  /** 徽章名 */
+  title: string;
+  /** 达成条件文案（给用户看） */
+  condition: string;
+  unlocked: boolean;
+  /** 0~1 进度（未解锁时进度条用；已解锁恒为 1） */
+  ratio: number;
+}
+
+interface AchievementDef {
+  id: string;
+  title: string;
+  condition: string;
+  /** 取哪个指标：'minutes' | 'streak' | 'sessions' | 'books' */
+  metric: string;
+  target: number;
+}
+
+/**
+ * 徽章表。刻意克制（8 个，覆盖时长 / 连续 / 读完三个维度），不做花哨动画与营销文案 ——
+ * 与统计页「黑底白字、等宽数码」的性冷淡风格一致。
+ * 时长阈值用「分钟」存（totalMs/60000），会话数/天数/本数用原始计数。
+ */
+const ACHIEVEMENT_DEFS: AchievementDef[] = [
+  { id: 'first_read', title: '开卷有益', condition: '累计阅读满 10 分钟', metric: 'minutes', target: 10 },
+  { id: 'streak_3', title: '三日成习', condition: '连续阅读 3 天', metric: 'streak', target: 3 },
+  { id: 'streak_7', title: '七日之约', condition: '连续阅读 7 天', metric: 'streak', target: 7 },
+  { id: 'streak_14', title: '两周不辍', condition: '连续阅读 14 天', metric: 'streak', target: 14 },
+  { id: 'hours_10', title: '十时沉浸', condition: '累计阅读满 10 小时', metric: 'minutes', target: 600 },
+  { id: 'hours_50', title: '五十时', condition: '累计阅读满 50 小时', metric: 'minutes', target: 3000 },
+  { id: 'books_1', title: '初读一本', condition: '读完 1 本书', metric: 'books', target: 1 },
+  { id: 'books_5', title: '学富五车', condition: '读完 5 本书', metric: 'books', target: 5 }
+];
+
+function metricValue(metric: string, input: AchievementInput): number {
+  if (metric === 'minutes') {
+    return input.totalMs / 60000;
+  }
+  if (metric === 'streak') {
+    return input.streak;
+  }
+  if (metric === 'sessions') {
+    return input.sessionCount;
+  }
+  if (metric === 'books') {
+    return input.finishedBooks;
+  }
+  return 0;
+}
+
+/** 按输入算出全部徽章的解锁状态与进度（脏输入按 0 处理，绝不让 NaN 漏到 UI） */
+export function achievementsOf(input: AchievementInput): Achievement[] {
+  const out: Achievement[] = [];
+  for (let i = 0; i < ACHIEVEMENT_DEFS.length; i++) {
+    const def: AchievementDef = ACHIEVEMENT_DEFS[i];
+    const raw: number = metricValue(def.metric, input);
+    const value: number = Number.isFinite(raw) && raw > 0 ? raw : 0;
+    const unlocked: boolean = def.target > 0 && value >= def.target;
+    const ratio: number = unlocked ? 1 : (def.target > 0 ? Math.max(0, Math.min(1, value / def.target)) : 0);
+    out.push({
+      id: def.id,
+      title: def.title,
+      condition: def.condition,
+      unlocked: unlocked,
+      ratio: ratio
+    });
+  }
+  return out;
+}
+
+/** 已解锁徽章数（UI 显示「已点亮 N / 8」） */
+export function unlockedCount(list: Achievement[]): number {
+  let n: number = 0;
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].unlocked) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/**
+ * 从各书进度里数「读完」的本数（percent 合法域 0~1，≥0.99 算读完；
+ * 脏值 NaN / 负数 / 越界 >1 一律忽略，避免脏库把成就刷满）。
+ */
+export function finishedBookCount(percents: number[]): number {
+  let n: number = 0;
+  for (let i = 0; i < percents.length; i++) {
+    const p: number = percents[i];
+    if (Number.isFinite(p) && p >= 0.99 && p <= 1) {
+      n++;
+    }
+  }
+  return n;
 }

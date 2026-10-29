@@ -29,6 +29,7 @@ import {
   STATUS_READING,
   STATUS_UNREAD
 } from '../engine/shelf/ShelfRules';
+import { shelfSubtitle } from '../engine/shelf/ShelfAuthor';
 import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
 import { shelfColsOf } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
@@ -507,10 +508,14 @@ struct Index {
             .fontColor(this.palette.text)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.resume.book.format.toUpperCase())
+          // P0-5：有作者显作者，没作者用格式大写兜底（永不空白、不编造）。
+          // 就地调用纯函数，实参直接读 @State 的 resume.book —— V1 插桩追得到。
+          Text(shelfSubtitle(this.resume.book.author, this.resume.book.format).text)
             .fontSize(RR_FS_DIGIT)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
           this.cellBar(this.resume.percent, 2)
           Text(percentText(this.resume.percent))
             .fontSize(RR_FS_MICRO)
@@ -978,13 +983,17 @@ struct Index {
                       // 原生化：与阅读页顶部书名的**共享元素转场**（官方 sharedTransition）。
                       // 只给网格卡片加 —— 「继续阅读」卡片也有书名，同 id 会冲突。
                       .sharedTransition('rr-title-' + item.book.id, { duration: 300 })
+                    // P0-5：书架副标题 —— EPUB/MOBI 提取到的作者终于可见；TXT/MD 认不出
+                    // 作者时用格式大写兜底。总是显示一行（不用 if），规避 V1 分支条件陷阱。
+                    // 就地调纯函数、实参直接读 item.book —— 与 title 同一套刷新语义。
+                    Text(shelfSubtitle(item.book.author, item.book.format).text)
+                      .fontSize(RR_FS_MICRO)
+                      .fontColor(this.palette.text3)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .width('100%')
                     this.cellBar(item.percent, 2)
                     Row() {
-                      Text(item.book.format.toUpperCase())
-                        .fontSize(RR_FS_MICRO)
-                        .fontFamily('monospace')
-                        .fontColor(this.palette.text3)
-                      Blank()
                       Text(percentText(item.percent))
                         .fontSize(RR_FS_MICRO)
                         .fontFamily('monospace')
@@ -1000,9 +1009,9 @@ struct Index {
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
                 }
-              // 键必须含 percent：返回书架 load() 后进度变了但键没变 → 节点复用，
-              // 格子进度条与百分比停在旧值（审查报告 B26，与审核驳回第 3 条同病灶）
-              }, (item: ShelfItem) => item.book.id + '|' + item.percent)
+              // 键必须含 percent 与 author：返回书架 load() 后这些字段变了但键没变 → 节点复用，
+              // 格子进度/副标题停在旧值（审查报告 B26，与审核驳回第 3 条同病灶；author 是 P0-5 新增变化位）
+              }, (item: ShelfItem) => item.book.id + '|' + item.percent + '|' + item.book.author)
             }
             .columnsTemplate(this.colsTemplateOf(this.shelfCols))
             .columnsGap(14)

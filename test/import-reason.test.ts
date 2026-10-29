@@ -25,7 +25,7 @@ test('用户取消不打扰', () => {
 
 test('真失败必须有文案（不许静默失败）', () => {
   const reasons: string[] = ['EMPTY', 'TOO_LARGE', 'COPY_FAILED', 'PARSE_FAILED', 'NOT_SUPPORTED',
-    'PARSE_CRASHED', 'MOBI_TOO_NEW'];
+    'PARSE_CRASHED', 'MOBI_TOO_NEW', 'MOBI_ENCODING'];
   for (let i: number = 0; i < reasons.length; i++) {
     assert.ok(reasonText(reasons[i]).length > 0, reasons[i] + ' 必须有文案');
   }
@@ -51,4 +51,11 @@ test('PARSE_CRASHED 与 MOBI_TOO_NEW 的文案不能说"已导入"', () => {
   assert.ok(a.indexOf('已导入') < 0, '书没进书架，不能说"已导入"');
   assert.ok(b.indexOf('已导入') < 0, '书没进书架，不能说"已导入"');
   assert.ok(b.indexOf('MOBI') >= 0, '要点名是 MOBI 的问题，而不是让用户怀疑文件损坏');
+});
+
+test('MOBI_ENCODING：点名"编码读不出来"并给出可行动建议（转成 UTF-8）', () => {
+  const t: string = reasonText('MOBI_ENCODING');
+  assert.ok(t.length > 0, '编码失败必须有文案，不能静默');
+  assert.ok(t.indexOf('编码') >= 0, '要说清是编码问题，不是文件损坏');
+  assert.ok(t.indexOf('UTF-8') >= 0, '要给用户一条能自己走通的路');
 });

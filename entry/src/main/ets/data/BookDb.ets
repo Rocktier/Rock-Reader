@@ -13,6 +13,7 @@
 import { relationalStore } from '@kit.ArkData';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ReadingProgress } from '../common/Types';
 import { ReadSession } from '../engine/stats/ReadStats';
+import { normalizeColor } from '../engine/marks/HighlightPalette';
 
 const DB_NAME = 'rockreader.db';
 
@@ -51,13 +52,18 @@ const SQL_SESSIONS = 'CREATE TABLE IF NOT EXISTS read_sessions(' +
 const SQL_BOOKMARKS = 'CREATE TABLE IF NOT EXISTS bookmarks(' +
   'id INTEGER PRIMARY KEY AUTOINCREMENT, book_id TEXT NOT NULL, ' +
   'chapter_index INTEGER NOT NULL, char_offset INTEGER NOT NULL, ' +
-  'excerpt TEXT, created_at INTEGER)';
+  'excerpt TEXT, note TEXT, created_at INTEGER)';
 
 /** 摘录/金句（2026-10-22 P0-2 三件套） */
 const SQL_HIGHLIGHTS = 'CREATE TABLE IF NOT EXISTS highlights(' +
   'id INTEGER PRIMARY KEY AUTOINCREMENT, book_id TEXT NOT NULL, ' +
   'chapter_index INTEGER NOT NULL, start_char INTEGER NOT NULL, end_char INTEGER NOT NULL, ' +
-  'excerpt TEXT NOT NULL, note TEXT, created_at INTEGER)';
+  'excerpt TEXT NOT NULL, note TEXT, color INTEGER, created_at INTEGER)';
+
+/** note 是 P0-2 新增列；老库需要补列（幂等迁移，已存在会报错，见 open 里的 try/catch） */
+const SQL_BOOKMARKS_ADD_NOTE = 'ALTER TABLE bookmarks ADD COLUMN note TEXT';
+/** color 是 P0-1 新增列；老库需要补列（同上） */
+const SQL_HIGHLIGHTS_ADD_COLOR = 'ALTER TABLE highlights ADD COLUMN color INTEGER';
 
 /** 结果集 → BookRecord（分组列可能为 null：老库补列前的行） */
 function rowToBook(rs: relationalStore.ResultSet): BookRecord {
@@ -106,6 +112,18 @@ export class BookDb {
     }
     try {
       await store.executeSql(SQL_BOOKS_ADD_GROUP);
+    } catch (e) {
+      // 忽略：列已存在
+    }
+    try {
+      // P0-1：高亮颜色列（老库补列；新库建表已含该列，会报错 → 忽略）
+      await store.executeSql(SQL_HIGHLIGHTS_ADD_COLOR);
+    } catch (e) {
+      // 忽略：列已存在
+    }
+    try {
+      // P0-2：书签备注列（同上）
+      await store.executeSql(SQL_BOOKMARKS_ADD_NOTE);
     } catch (e) {
       // 忽略：列已存在
     }
@@ -365,6 +383,8 @@ export class BookDb {
       'chapter_index': b.chapterIndex,
       'char_offset': b.charOffset,
       'excerpt': b.excerpt,
+      // P0-2：备注（脏值按空串，绝不让 undefined 漏进 DB）
+      'note': b.note === null || b.note === undefined ? '' : b.note,
       'created_at': b.createdAt
     };
     const id: number = await this.ready().insert('bookmarks', bucket);
@@ -373,17 +393,19 @@ export class BookDb {
 
   async listBookmarks(bookId: string): Promise<BookmarkRow[]> {
     const rs = await this.ready().querySql(
-      'SELECT id, chapter_index, char_offset, excerpt, created_at FROM bookmarks ' +
+      'SELECT id, chapter_index, char_offset, excerpt, note, created_at FROM bookmarks ' +
       'WHERE book_id = ? ORDER BY chapter_index ASC, char_offset ASC', [bookId]);
     const out: BookmarkRow[] = [];
     while (rs.goToNextRow()) {
       const ex: string = rs.getString(rs.getColumnIndex('excerpt'));
+      const nt: string = rs.getString(rs.getColumnIndex('note'));
       out.push({
         id: rs.getLong(rs.getColumnIndex('id')),
         bookId: bookId,
         chapterIndex: rs.getLong(rs.getColumnIndex('chapter_index')),
         charOffset: rs.getLong(rs.getColumnIndex('char_offset')),
         excerpt: ex === null ? '' : ex,
+        note: nt === null ? '' : nt,
         createdAt: rs.getLong(rs.getColumnIndex('created_at'))
       });
     }
@@ -395,6 +417,12 @@ export class BookDb {
     await this.ready().executeSql('DELETE FROM bookmarks WHERE id = ?', [id]);
   }
 
+  /** P0-2：更新书签备注（脏值按空串；只改 note 一列，不动定位与快照） */
+  async updateBookmarkNote(id: number, note: string): Promise<void> {
+    const v: string = note === null || note === undefined ? '' : note;
+    await this.ready().executeSql('UPDATE bookmarks SET note = ? WHERE id = ?', [v, id]);
+  }
+
   async addHighlight(h: HighlightRow): Promise<number> {
     const bucket: relationalStore.ValuesBucket = {
       'book_id': h.bookId,
@@ -403,6 +431,8 @@ export class BookDb {
       'end_char': h.endChar,
       'excerpt': h.excerpt,
       'note': h.note,
+      // P0-1：存索引不存色值；脏索引归一化成默认色
+      'color': normalizeColor(h.color),
       'created_at': h.createdAt
     };
     const id: number = await this.ready().insert('highlights', bucket);
@@ -411,12 +441,14 @@ export class BookDb {
 
   async listHighlights(bookId: string): Promise<HighlightRow[]> {
     const rs = await this.ready().querySql(
-      'SELECT id, chapter_index, start_char, end_char, excerpt, note, created_at FROM highlights ' +
+      'SELECT id, chapter_index, start_char, end_char, excerpt, note, color, created_at FROM highlights ' +
       'WHERE book_id = ? ORDER BY chapter_index ASC, start_char ASC', [bookId]);
     const out: HighlightRow[] = [];
     while (rs.goToNextRow()) {
       const ex: string = rs.getString(rs.getColumnIndex('excerpt'));
       const nt: string = rs.getString(rs.getColumnIndex('note'));
+      // 老库补列前的行 color 为 null → getLong 返回 0，再经 normalizeColor 兜一道更稳
+      const col: number = rs.getLong(rs.getColumnIndex('color'));
       out.push({
         id: rs.getLong(rs.getColumnIndex('id')),
         bookId: bookId,
@@ -425,6 +457,7 @@ export class BookDb {
         endChar: rs.getLong(rs.getColumnIndex('end_char')),
         excerpt: ex === null ? '' : ex,
         note: nt === null ? '' : nt,
+        color: normalizeColor(col),
         createdAt: rs.getLong(rs.getColumnIndex('created_at'))
       });
     }
