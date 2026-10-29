@@ -322,8 +322,13 @@ struct Reader {
   @State highlightNote: string = '';
   /** P0-1：摘录面板当前选中的高亮颜色索引 */
   @State highlightColor: number = COLOR_DEFAULT;
-  /** 摘录的原文快照（开面板时定格） */
-  private highlightExcerpt: string = '';
+  /**
+   * 摘录的原文快照（开面板时定格）。
+   * ⚠️ 必须是 @State：面板里它是**可编辑**的（TextArea），用户手动裁剪成自己
+   *    要的那句 —— 因为 SDK 限制拿不到划词选区（见正文 SelectionContainer 注释），
+   *    这是「想摘录正文里某一句」的唯一可达路径。
+   */
+  @State highlightExcerpt: string = '';
   private highlightStart: number = 0;
   private highlightEnd: number = 0;
   /** 全文搜索词与命中 */
@@ -1194,7 +1199,7 @@ struct Reader {
         chapterIndex: this.chapterIndex,
         startChar: this.highlightStart,
         endChar: this.highlightEnd,
-        excerpt: this.highlightExcerpt,
+        excerpt: this.highlightExcerpt.trim(),
         note: this.highlightNote.trim(),
         color: normalizeColor(this.highlightColor), // P0-1：选中的颜色索引
         createdAt: Date.now()
@@ -2703,10 +2708,15 @@ struct Reader {
               Row() {
                 // P0-1：色标 —— 每条摘录左侧一条 3px 竖线，颜色就是保存时选的那支。
                 // 老数据（无 color 列）落库时被写成默认色 0，所以竖线恒有、不会空白。
+                // ⚠️ 高度必须固定、不能用 '100%'：那会吃满整行（含下方「第 N 章」与
+                //    行 padding），竖线拖到 70+vp 长，看着像分隔线而不像色标。
+                //    20vp ≈ 摘录正文一行的高度，够指色又不抢戏。
                 Column()
                   .width(3)
-                  .height('100%')
+                  .height(20)
                   .borderRadius(1.5)
+                  .alignSelf(ItemAlign.Start)
+                  .margin({ top: 2 })
                   .backgroundColor(highlightInk(normalizeColor(h.color), !isLightTheme(this.activeTheme)))
                 Column() {
                   Text('「' + h.excerpt + '」')
@@ -2915,16 +2925,22 @@ struct Reader {
         .fontSize(RR_FS_HEADING)
         .fontColor(this.palette.text)
         .width('100%')
-      Text('「' + this.highlightExcerpt + '」')
+      // 快照**可编辑**：长按只能定格整页，想要「正文里那一句」就在这儿删到只剩它。
+      //（拿不到划词选区的替代方案 —— 见正文 SelectionContainer 注释）
+      TextArea({ placeholder: '摘录原文', text: this.highlightExcerpt })
         .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text2)
-        .maxLines(4)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .placeholderColor(this.palette.text3)
+        .caretColor(this.palette.accent)
         .width('100%')
+        .height(110)
         .margin({ top: RR_SP_MD })
         .padding(RR_SP_MD)
         .backgroundColor(this.palette.overlay)
         .borderRadius(8)
+        .onChange((v: string) => {
+          this.highlightExcerpt = v;
+        })
       TextInput({ placeholder: '写一句注（可空）', text: this.highlightNote })
         .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text)
@@ -3446,6 +3462,15 @@ struct Reader {
           .width('100%')
           .margin({ top: RR_SP_TOP })
         } else {
+          // **划词选中**（2026-10-30）：copyOption 打开 Text 自带的长按选词能力
+          // （拖手柄选字 + 系统菜单「复制/全选」）。
+          // ⚠️ 本想用 SelectionContainer 跨组件选，但它在 compileSdk 20 下
+          //    **编译不过**（ArkTS: Cannot find name 'SelectionContainer'，ERROR 10505001）。
+          //    不需要它 —— 单段 Text 自己带 copyOption 就能选。
+          // ⚠️ 拿不到选区：onTextSelectionChange（取选中文本）与 editMenuOptions
+          //    （往系统菜单塞自定义「摘录」项）都是 **API 26 起**，本工程 20 ⇒ 用不了。
+          //    ⇒ 摘录仍是「长按 ⇒ 定格整页快照」，但快照在面板里**可手动裁剪**
+          //      （见 highlightEditor）：想要正文里某一句，就在那儿删到只剩它。
           Text(this.pageText)
             .fontSize(this.fontSizeFp)
             .lineHeight(this.lineHeightVp)
@@ -3454,6 +3479,7 @@ struct Reader {
             .fontColor(this.palette.text)
             .width('100%')
             .textAlign(TextAlign.Start)
+            .copyOption(CopyOptions.LocalDevice)
             // 长按正文 ⇒ 摘录当前页（P0-2 三件套）。与单击（翻页/唤菜单）、
             // 横滑（翻页）不冲突：LongPressGesture 有独立的时长门槛（默认 500ms）
             .gesture(LongPressGesture({ repeat: false }).onAction(() => {
