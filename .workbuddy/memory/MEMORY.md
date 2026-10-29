@@ -58,6 +58,11 @@
 
 ## 四、工程铁律（踩过的坑）
 
+- ⭐ **记忆台账要进版本库（2026-10-29 统一两仓）**：Reader 仓 `.workbuddy/memory/` 全部被追踪；
+  **Journal 仓原先 `.gitignore` 写了 `.workbuddy/`（整目录排除）⇒ 它的日志一直是「只在本机」，换机器会丢**
+  —— 10-29 已改成 `.workbuddy/*` + `!.workbuddy/memory/` 并把 5 个历史日志纳入版本库。
+  ⇒ **两仓行为已统一；改 .gitignore 后记得 `git add -A` 确认日志真的进去了**（`git ls-files .workbuddy` 可验）。
+
 完整清单（混淆 / 编译 / safe-delete / 浮层 / @Builder / ArkUI V1 分支陷阱 / form 卡片三铁律 / 沙箱写入）
 ⇒ 见同目录 **`reference-arkui-pitfalls.md`**。
 
