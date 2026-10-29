@@ -59,6 +59,7 @@ import {
   ScrollState,
   ScrollToggle
 } from '../data/AutoScroll';
+import { surveyShouldContinue, surveyShouldYield } from '../data/Survey';
 import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
@@ -209,6 +210,14 @@ struct Reader {
   private charCounts: number[] = [];
   /** 字数普查进行中标记（防重复进入） */
   private surveying: boolean = false;
+  /**
+   * 字数普查的取消标志（2026-10-29，AGC 点击时延整改）。
+   *
+   * 普查是 O(整本) 的活（每章一次解压+去标签）。原先它**没有取消机制**：
+   * 离开阅读页后仍在主线程上跑，下一次开书时上一轮还在抢 UI 线程。
+   * aboutToDisappear 置位它，普查循环每章检查一次、见位即退。
+   */
+  private surveyCancel: boolean = false;
   @State pageIndex: number = 0;
   @State pageCount: number = 0;
   @State pagePercent: number = 0;
@@ -668,13 +677,21 @@ struct Reader {
       return;
     }
     // 档位 / 字体 / 视口任一变化都要重排；位置按字符偏移复原（切档位不跳页）
-    const next: string = this.boxOf(this.prefs.getLevels()).signature;
+    // ⚠️ 必须用 **effectiveLevels(bookId)**（每书覆盖优先），不能用 getLevels()（全局）：
+    //   抽屉里显示的、用户改的都是每书覆盖口径；这里却拿全局档位去算签名，
+    //   两者不一致 ⇒ **"没改任何东西"也会判定成"变了"**，白白触发一次整章重排。
+    //   重排 = 整章 layoutSync，是秒级点击卡顿的主要来源之一（AGC 点击时延整改）。
+    const next: string = this.boxOf(this.prefs.effectiveLevels(bookId)).signature;
     // 净化 / 简繁变化会改正文内容 → 不能只重排，必须重新取一次章文本
     const textChanged: boolean =
       this.prefs.isPurifyOn() !== this.purifyOn || this.prefs.getConvertMode() !== this.convertMode;
     if (next !== this.currentKey || textChanged) {
       const keep: number = this.pages.length > 0 ? this.pages[this.pageIndex].start : 0;
-      this.openChapter(this.chapterIndex, keep);
+      // 重排是整章级的重活，**让出一帧**再做：否则点击回调本身就把主线程占死，
+      // 用户看到的是"按了没反应"（AGC「应用内点击操作完成快」测的正是这段）。
+      this.deferHeavyWork(() => {
+        this.openChapter(this.chapterIndex, keep);
+      });
     }
   }
 
@@ -714,6 +731,10 @@ struct Reader {
       this.source.release();
     }
     this.cache.clear();
+    // ⚠️ 字数普查必须能停（2026-10-29，AGC 点击时延整改）：
+    //   普查是 O(整本) 的活，离开阅读页后它还在主线程上跑 —— 白烧 CPU，
+    //   而且**下一次开书时上一轮普查还在抢 UI 线程**，直接拖慢新书的首屏。
+    this.surveyCancel = true;
   }
 
   // ------------------------------------------------------------------
@@ -764,15 +785,49 @@ struct Reader {
       await this.reloadMarks();
       this.loading = false;
       if (this.areaReady) {
-        this.openChapter(this.pendingChapter, this.pendingOffset);
-        // 后台补一次各章字数普查 → 全书进度按真实字数算（fire-and-forget，不挡打开）
-        this.surveyChars();
+        // ⭐ **先让出一帧，再干重活**（2026-10-29，AGC 点击时延整改）：
+        //   原来 `loading=false` 与 `openChapter()` 在**同一个 JS task** 里，
+        //   而 openChapter 会做「整章排版（layoutSync）+ 整章读链」。
+        //   ArkUI 只在 task 结束后才出帧 ⇒ `LoadingProgress` 根本没机会被画出来，
+        //   用户看到的是「点开书 → 白屏卡住」，AGC 的转场 lane 结束时间被整段推后。
+        //
+        //   让出一帧之后：转场先落地、菊花先转起来，重活在**看得见的加载态**里跑。
+        //   这不减少总耗时，但把「卡死」变成「有进度的等待」——
+        //   而 AGC 测的正是「界面何时发生变化」。
+        this.deferHeavyWork(() => {
+          this.openChapter(this.pendingChapter, this.pendingOffset);
+          // 后台补一次各章字数普查 → 全书进度按真实字数算（fire-and-forget，不挡打开）
+          this.surveyChars();
+        });
       }
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'reader init failed: %{public}s', JSON.stringify(e));
       this.hint = '打开失败';
       this.loading = false;
     }
+  }
+
+  /**
+   * **让出一帧再干重活**（2026-10-29，AGC「应用内点击操作完成快」整改）
+   *
+   * 为什么需要它：ArkUI 只在一个 JS task 跑完之后才出帧。
+   * 原来开书是「loading=false → openChapter()（整章 layoutSync 排版 + 整章读链）
+   * → surveyChars()（连读 8 章）」**一气呵成在同一个 task 里**：
+   *   ① LoadingProgress 根本没机会被画出来（用户看到白屏卡住）；
+   *   ② AGC 测的「手指离手 → 页面转场 lane 结束」被整段重活推后。
+   *
+   * setTimeout(0) 把重活推到**下一个 task**，中间 ArkUI 有机会出帧：
+   * 转场先落地、菊花先转起来，重活在看得见的加载态里跑。
+   * 总耗时不变，但「界面何时发生变化」提前了 —— 这正是检测项要的东西。
+   *
+   * ⚠️ 为什么用 setTimeout 而不是 Promise.resolve()：
+   *   微任务（microtask）在本轮 task 结束前就会被清空，**不会让出到渲染管线**；
+   *   必须用宏任务（setTimeout / setInterval）才能真正换一帧。
+   */
+  private deferHeavyWork(work: () => void): void {
+    setTimeout(() => {
+      work();
+    }, 0);
   }
 
   /** 由档位 + 视口算出这一套排版参数（**唯一真源**：测量端与渲染端都从这里取数） */
@@ -897,15 +952,33 @@ struct Reader {
    *
    * 所以打开书后补一次普查：读到哪算到哪的渐进精度改成一进门就精确。
    * 成本可控：单章就是「读一节 HTML 去标签」，且已量过的直接跳过，
-   * 第二次打开这本书时整轮只剩 100 次数组比较；每 8 章让出一帧不焊死 UI。
+   * 第二次打开这本书时整轮只剩 100 次数组比较。
+   *
+   * ⚠️ **每章让一帧，不每 8 章**（2026-10-29，AGC 点击时延整改）：
+   *   原来 `i % 8 === 7` 才让一帧 ⇒ 一次连续读 8 章（EPUB 就是 8 次解压+解析）
+   *   焊在主线程上，中间没有任何一帧可以交还给渲染管线。
+   *   AGC「应用内点击操作完成快」测的正是「手指离手 → 页面转场 lane 结束」，
+   *   这 8 章的连读会把转场的结束时间整段推后 —— 实测超标值（2666ms）的主要来源。
+   *   改成每章让一帧后，单次冻结从「8 章」降到「1 章」，
+   *   用户在首屏也就能看到界面活着。
+   *
+   * ⚠️ 取消语义见 data/Survey.ets（纯逻辑，有单测守门）：
+   *   aboutToDisappear 置位取消标志 → 循环每章查一次、见位即退。
    */
   private async surveyChars(): Promise<void> {
     if (this.surveying || this.source === null || this.book === null) {
       return;
     }
     this.surveying = true;
+    // 新一轮普查开始 ⇒ 清掉上一轮的取消标志（否则开新书后普查立刻自杀）
+    this.surveyCancel = false;
     try {
       for (let i: number = 0; i < this.chapterCount; i++) {
+        // 取消检查：离开阅读页就别再普查了（白烧 CPU + 抢下一本书的 UI 线程）
+        if (!surveyShouldContinue(this.surveyCancel)) {
+          hilog.info(DOMAIN, TAG, 'char survey cancelled at chapter %{public}d', i);
+          return;
+        }
         if (this.charAt(i) > 0) {
           continue;
         }
@@ -917,7 +990,8 @@ struct Reader {
         } catch (e) {
           // 单章读不出来就跳过：少一章的精度不影响进度可用
         }
-        if (i % 8 === 7) {
+        // 每章让一帧：普查是「有余力时做的精度优化」，绝不能盖过用户的交互
+        if (surveyShouldYield(i)) {
           await new Promise<void>((resolve: (v: void) => void) => {
             setTimeout(() => { resolve(); }, 0);
           });
@@ -1743,6 +1817,25 @@ struct Reader {
     this.showPage(0);
   }
 
+  /**
+   * **关抽屉 + 跳到某章**（目录 / 书签 / 摘录 / 搜索结果四处的共同动作）
+   *
+   * 为什么单独抽出来（2026-10-29，AGC 点击时延整改）：
+   *   这四个入口的 onClick 都是「关抽屉 → openChapter(整章)」，
+   *   而 openChapter 里的**整章 layoutSync 排版**是秒级点击卡顿的直接来源。
+   *   统一在这里让出一帧：先关抽屉（界面立刻响应，用户看到抽屉收起来），
+   *   再在下一帧做重排（正文随后换章）。
+   *
+   * ⚠️ 顺序不能反：若先跳章后关抽屉，重排的同步块会把"关抽屉"也堵住，
+   *    用户看到的就是点了没反应。
+   */
+  private gotoChapterAndClose(index: number, charOffset: number): void {
+    this.showToc = false;
+    this.deferHeavyWork(() => {
+      this.openChapter(index, charOffset);
+    });
+  }
+
   // ------------------------------------------------------------------
   // 目录
   // ------------------------------------------------------------------
@@ -2471,8 +2564,7 @@ struct Reader {
               .width('100%')
               .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
               .onClick(() => {
-                this.showToc = false;
-                this.openChapter(b.chapterIndex, b.charOffset);
+                this.gotoChapterAndClose(b.chapterIndex, b.charOffset);
               })
             }
           }, (b: BookmarkRow) => 'bm' + b.id)
@@ -2524,8 +2616,7 @@ struct Reader {
               .width('100%')
               .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
               .onClick(() => {
-                this.showToc = false;
-                this.openChapter(h.chapterIndex, h.startChar);
+                this.gotoChapterAndClose(h.chapterIndex, h.startChar);
               })
             }
           }, (h: HighlightRow) => 'hl' + h.id)
@@ -2670,8 +2761,7 @@ struct Reader {
               .width('100%')
               .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_MD, bottom: RR_SP_MD })
               .onClick(() => {
-                this.showToc = false;
-                this.openChapter(hit.chapterIndex, hit.charOffset);
+                this.gotoChapterAndClose(hit.chapterIndex, hit.charOffset);
               })
             }
           }, (hit: SearchHitRow) => 'sh' + hit.chapterIndex + ':' + hit.charOffset)
@@ -3247,14 +3337,21 @@ struct Reader {
           this.laidOutWidthVp = width;
           this.laidOutHeightVp = height;
           if (this.chapterCount > 0) {
-            this.openChapter(this.pendingChapter, this.pendingOffset);
             // 首帧兜底这条路径同样要补字数普查 —— 它才是绝大多数用户真正走进来的那条。
             // init() 里 601 行的 if (this.areaReady) 几乎恒不成立（布局晚于那条 await 链），
             // 于是加了这行之前：书打开了，但 census 一次都没跑，chapters.char_count 全空，
             // 进度退回「按章数」的虚高口径（实测 8.67% vs 真实 4.66%）。
             // surveyChars 内部有 surveying 幂等守卫，两处重复调用安全。
-            this.surveyChars().catch((e: Error) => {
-              hilog.warn(DOMAIN, TAG, 'surveyChars failed: %{public}s', JSON.stringify(e));
+            //
+            // ⚠️ 同样要**先让出一帧**（2026-10-29，AGC 点击时延整改）：
+            //   onAreaChange 是布局回调，此刻正在渲染管线里；
+            //   在这里直接跑整章 layoutSync，等于把渲染管线本身卡住，
+            //   转场 lane 根本走不到终点。让一帧后转场先落地。
+            this.deferHeavyWork(() => {
+              this.openChapter(this.pendingChapter, this.pendingOffset);
+              this.surveyChars().catch((e: Error) => {
+                hilog.warn(DOMAIN, TAG, 'surveyChars failed: %{public}s', JSON.stringify(e));
+              });
             });
           }
           return;

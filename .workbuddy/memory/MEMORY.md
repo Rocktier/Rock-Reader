@@ -97,7 +97,36 @@
 
 - **日期一律本地时区**，禁用 `toISOString()`（UTC，东八区 00–08 点写成昨天）。CI 有守门单测。
 - **编译唯一可用方式**：自带 hvigorw wrapper 已损坏，必须用 DevEco 自带 node 跑 `hvigorw.js`；`DEVECO_SDK_HOME`/`JAVA_HOME` 指向 E 盘 DevEco。
-- **测试基线**：Reader **229/229**（2026-10-28 夜：自动滚动 13 + AVSession 12 + 其余 204）；Journal **226/226**（1.0.6 新增 87 条）。
+- **测试基线**：Reader **236/236**（2026-10-29：自动滚动 13 + AVSession 12 + Survey 6 + 其余 205）；Journal **232/232**（1.0.6 新增 87 条 + KDF 参数守门 6 条）。
+- ⚠️ **发版纪律：版本号两处一起改** —— `AppScope/app.json5` 与 `entry/src/main/ets/common/AppMeta.ets`。
+  1.0.6 发版漏改 AppMeta ⇒ smoke 测试一直红着（10-29 才顺手修）。
+
+## 四·五、⭐ 性能铁律：AGC「点击操作完成快」（2026-10-29 家族级）
+
+**检测项口径（官方文档 `performance-delay` 架构文档时延章，已查证）**
+- 全名「应用或元服务内**点击操作完成快**」；与「点击操作**响应**快」（≤100ms）是**两项不同的检测**。
+- 测的是**墙钟**：手指抬起（ACTION_UP）→ **页面转场 lane 结束**（ABILITY_OR_PAGE_SWITCH 等）。
+  ⇒ **转场画不出来 = lane 结束被推后**；「点击后主线程被同步重活堵住」= 直接超标。
+- 标准值：鸿蒙应用 ≤900ms（AGC 云测目标线 2400ms）。
+
+**六条家族铁律**
+1. **任何重活不能与「状态变更」挤在同一个 JS task** —— ArkUI 只在 task 结束后才出帧。
+   症状：`LoadingProgress` 写好了却**永远画不出来**，用户看到白屏卡住。
+2. **让帧必须用宏任务（`setTimeout(0)`），不能用微任务** —— 微任务在本轮 task 结束前就被清空，
+   **不会让出到渲染管线**。这就是 Reader 的 `deferHeavyWork()`。
+3. **点击后先给反馈，再干重活** —— 按钮换文案 + 禁用（busy 态）。界面一变，lane 就结束。
+4. **后台 O(N) 活必须可取消** —— Reader 的 `surveyChars()` 原先没有取消机制，
+   离开阅读页仍在跑、**下一轮开书还在抢 UI 线程**（这是"改一处慢两处"的典型）。
+5. **同步 SDK 调用是秒级嫌疑** —— `cryptoFramework` 的 `generateSecretSync` 官方注释明写
+   「block the main thread … advised to invoke synchronous API within a child thread」。
+   同族同步 API 都要警惕：`layoutSync`、zip 同步解压、整章正则。
+   ⇒ 对照表：私记 `Kdf.generateSecret(spec): Promise`（d.ts:6212）**与同步版共用同一 spec ⇒ 派生结果一致**。
+6. **口径不一致 = 白干一次重活** —— Reader 的 `applyPrefsToLayout` 拿全局 `getLevels()` 算签名，
+   而 UI 显示的是每书 `effectiveLevels(bookId)` ⇒ 「没改任何东西」也判定成「变了」⇒ 白白整章重排。
+
+**安全参数的纪律**：PBKDF2 迭代次数是**安全参数，不是性能旋钮**。
+性能整改动的是「在哪个线程跑」，不是「算多少次」；真要调低迭代数需安全侧签字 + 老库迁移方案。
+⇒ 参数唯一真源放纯逻辑文件（`security/KdfParams.ets`）+ 单测锁死（漂移 = 老用户打不开日记）。
 
 ## 五、发版与版本状态
 

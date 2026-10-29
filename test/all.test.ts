@@ -20,3 +20,4 @@ import './theme.test.ts';
 import './tts.test.ts';
 import './autoscroll.test.ts';
 import './avsession.test.ts';
+import './survey.test.ts';
