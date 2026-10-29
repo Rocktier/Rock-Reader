@@ -21,7 +21,17 @@ $env:JAVA_HOME = "$ide\jbr"
 $env:PATH = "$ide\tools\node;$ide\tools\ohpm\bin;$ide\jbr\bin;$env:PATH"
 
 Push-Location $root
-node "$ide\tools\hvigor\bin\hvigorw.js" assembleApp --mode project -p product=release -p buildMode=release --no-daemon
+# ⚠️ 必须经 cmd /c 包一层（2026-10-30 踩到）：
+#   本脚本开头是 $ErrorActionPreference = "Stop"，而 hvigor 会把 **WARN 也写到 stderr**。
+#   直接 `node ... 2>&1` 时 PowerShell 把原生命令的 stderr 转成 ErrorRecord，
+#   Stop 下**当场中断** —— 表现为"6 秒就 Failed :entry:default@CompileArkTS"，
+#   看起来像编译失败，其实构建根本没跑完就被引爆，产物目录还是旧的。
+#   经 cmd 重定向后，PowerShell 只看到普通字符串 ⇒ 只看退出码判成败。
+cmd /c "node ""$ide\tools\hvigor\bin\hvigorw.js"" assembleApp --mode project -p product=release -p buildMode=release --no-daemon 2>&1"
+if ($LASTEXITCODE -ne 0) {
+  Pop-Location
+  throw "hvigor 构建失败（退出码 $LASTEXITCODE）—— 不要上传任何产物"
+}
 Pop-Location
 
 # ⚠️ 必须精确挑 signed 包：目录里同时存在 *-unsigned.app，
