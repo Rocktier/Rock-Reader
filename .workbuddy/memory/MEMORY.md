@@ -96,23 +96,32 @@
 
 ## 五、发版与版本状态
 
-- tag：Reader v1.0.1~v1.0.5、Journal v1.0.0/v1.0.2/v1.0.4（**本地未 push**）。push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（编译失败则不执行）。
+- tag：**2026-10-29 全部补齐并 push** —— Reader `v1.0.1~v1.0.8`（+`v0.1.0-alpha.1`/`fonts-v1`）、Journal `v1.0.0`/`v1.0.2~v1.0.6`（**本来就没有 1.0.1 这一版**）。
+  push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（编译失败则不执行）⇒ **CI 未修前 tag 推了也只有版本标记、没有 GitHub Release**。
+  ⚠️ Reader 的 `fonts-v1` 本地与远端指向不同 commit（本地 0a3f3e5 / 远端 ed8e0c8）⇒ `git push --tags` 会被拒，**这是正常的**（字体包 tag 与版本发布无关，别动它）。
 - Reader **1.0.6（code 1000007）2026-10-26 已提交 AGC，党哥确认通过**；**1.0.7（code 1000008）2026-10-27 22:38 已提交 AGC，10-28 审核已通过 ✅（已上架）**。
 - **Reader 1.0.8（code 1000009）2026-10-28 23:27 出包完成**：两项新增 = ① 自动滚动（滚屏）② AVSession 媒体会话（回后台朗读不再即停）。
   release 包 md5 **`01257D024A494A5D9D638653B1B5C441`** / sha256 `2FB65553…15E821`，2,366,245 字节；闸门**全 PASS（13 项）**；桌面 `Rock阅读-1.0.8-上架.app` + `Rock阅读-1.0.8-上传前自检.txt`；上架说明 `docs/release-notes-1.0.8.md`。
-  ⚠️ **未提交 AGC**。
+  ✅ **已提交 AGC，2026-10-29 审核通过 ✅（已上架）**。
   ⚠️ `module.json5` 的 `backgroundModes` 合法值是 **`audioPlayback`**（写 `audio` 报 00303038）；它是后台模式声明**不是权限** ⇒ 零权限叙事不受影响，**隐私政策本次无需改动**。
   ✅ **AGC 上不需要为 backgroundModes 勾任何东西**（2026-10-28 查证更正，党哥找不到是因为**那个入口根本不存在**）：
   `backgroundModes` 不是 AGC 审批项；需 AGC 申请的是 `KEEP_BACKGROUND_RUNNING`，仅当调 `backgroundTaskManager.startBackgroundRunning()` 时才需要（本应用没调，保持零权限）；
   本应用走 AVSession 播控中心路线，release 包实测回后台朗读继续。**传完包去「应用上架 → 软件包管理」看该包的「上架自检」报告** —— 那才是权威待填清单。
+  🎯 **1.0.8 已过审 = 上述结论的实证**（声明 `backgroundModes` 不勾任何东西、隐私政策一字未改，直接过审）⇒
+  「新增权限 ⇒ 必须同步隐私政策」那条铁律**不适用于后台模式声明**（它不是权限、不采集数据）。
 - Journal **1.0.5（code 1000006）** ✅ **10-26 提交 AGC、10-27 审核已通过（已上架）**。
-- **Journal 1.0.6（code 1000007）2026-10-28 20:31 出包完成**：四项新增 = 多日记本 + 每日提示 + 自定义模板 + 语音转文字（只落文字不存音频）。release 包 md5 **`D7CED482E483D2A42398FF8BB6B33FA2`** / sha256 `18D537F6…F15AC4`，326,692 字节；闸门**全 PASS**（出包脚本内 + 桌面副本复跑）；桌面 `Rock私记-1.0.6-上架.app`。上架说明 `docs/release-notes-1.0.6.md`；**博客隐私政策待党哥手动同步**（`docs/blog-privacy-sync-1.0.6.md`）。⚠️ **未提交 AGC**。
+- **Journal 1.0.6（code 1000007）** ✅ **2026-10-28 20:31 出包完成 → 10-29 审核通过（已上架）**：四项新增 = 多日记本 + 每日提示 + 自定义模板 + 语音转文字（只落文字不存音频）。release 包 md5 **`D7CED482E483D2A42398FF8BB6B33FA2`** / sha256 `18D537F6…F15AC4`，326,692 字节；闸门**全 PASS**（出包脚本内 + 桌面副本复跑）。上架说明 `docs/release-notes-1.0.6.md`；**博客隐私政策待党哥手动同步**（`docs/blog-privacy-sync-1.0.6.md`）。
 
 ## 六、CI 现状（党哥拍板「CI 不急」）
 
 - **Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红**。根因：CI 用**公开 OpenHarmony SDK**，而 `@kit.CoreSpeechKit`、`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 报 10505001 / 10311003。后果：编译校验形同虚设，**打 tag 也不会发 GitHub Release**。
 - **已排除**：注入 hms kit（hvigor 要 `compileApiVersion>9 && isHarmonyOS() && getHmsArkDir()`，OpenHarmony 永远拿不到）；改 runtimeOS 被 00303038/00303313 卡死；工程内桩被 `arkts-no-untyped-obj-literals`（10605038）拦。
 - 党哥判断：「鸿蒙所有的应用开发都是在本机上进行」⇒ **CI 修复暂缓**。将来要修：CI 工作区把 kit 的类型声明**内联到消费文件顶部**（ArkTS 要求同文件），再改 import。
+- ⭐ **发 Release 不盯（党哥 2026-10-29 定）**：push tag 之后**只推不监控** —— 不去等 CI 跑完、不去查 Release 有没有生成。
+  **隔一段时间、等下一个任务开始时，再回头看那批 CI run 成功没有即可**（`gh run list`）。
+  ⇒ 我做完「推 tag」这件事就可以收工汇报，**不要为了确认 CI 状态而空转等待**。
+  10-29 推了 8 个 tag（Reader v1.0.1~v1.0.8 补 7 个 + Journal v1.0.3~v1.0.6 补 4 个），
+  按此规则**不检查**，留到下个任务开头再看。
 
 ## 七、产品对标与迭代方向（Rock私记 vs 标杆）
 
