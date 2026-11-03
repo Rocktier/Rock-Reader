@@ -113,6 +113,13 @@
 
 ## 八、产品对标与迭代方向
 
+⭐ **家族第 9 个应用：`all2md`（2026-11-03 立项，独立目录 `F:\AI\HarmonyOS\all2md`，尚未建工程）**
+定位 **AI first —— 把手机上的杂乱文件转成 AI 读得懂的 Markdown + 对标 Typora 的阅读器**。
+参照 `microsoft/markitdown`（MIT）。文档：`all2md/docs/整体规划-2026-11-03.md`、`docs/ui-mockup-v1.html`。
+三条硬结论：① **PDF 文本抽取要 API 23** ⇒ 新工程 compileSdk ≥ 23；
+② **DOCX/XLSX/PPTX 与 Markdown 渲染鸿蒙都没有官方能力** ⇒ 自研，占 80% 工作量；
+③ **Pandoc 是 GPL-2.0，一行代码都不能碰**（只对标格式矩阵）。细节 ⇒ 当日日志第 6 节。
+
 主标杆 **Day One**（Journal）/ **Apple Books·Kindle·静读天下**（Reader）。完整对账表 ⇒ `reference-roadmap.md`。
 文档：`RockReader/docs/生态融入与对标改进方案-2026-10-25.md`（第七节 = 当前真实差距，已按 10-29 实测修订）。
 
