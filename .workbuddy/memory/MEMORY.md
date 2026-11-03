@@ -143,9 +143,16 @@
 - 领域铁律（测试逼出来的）：**页码判断要排在列表判断之前**（`- 12 -` 会被当列表项）；
   **列表项遇句末标点即结束**（否则吞掉后面整段正文）；**中文单空格不能无脑删**（`第二条 结算周期`）；
   **只含图片的段落不能产出空段落块**（否则 A7 假警报盖住「图片没 alt」这个真问题）。
-- ⬜ **签名阻塞（唯一卡点）**：AGC「添加公钥指纹」= 还没传证书；调试签名要登录华为账号 ⇒ 装机验证得先在 DevEco 里跑一次。
-  ⚠️ **DevEco 菜单路径我不知道，别凭记忆给党哥指**（用户级记忆第五节有教训）——让他截图。
-细节 ⇒ 当日日志第 6、7、8 节。
+- ✅ **调试签名已打通（2026-11-03 22:15）**：DevEco 自动签名生成
+  `~/.ohos/config/default_all2md__*.{p12,cer,csr,p7b}`，已装模拟器跑通。
+  ⭐ **华为调试证书所有应用共用一张**（`0D:AA:8A:96:…:71:80`），按 profile 里的 bundleName 区分
+  ⇒ Reader / Journal / all2md 三个仓的调试证书指纹**完全一样**（别指望靠指纹区分应用）。
+- ⭐ **`signingConfigs` 写了 ≠ 生效**：DevEco 自动签名**只写数组、不在 product 里引用** ⇒
+  只报一行 `WARN: No signingConfig found for product default`，**BUILD SUCCESSFUL 照样绿**，
+  产物是 `*-unsigned.hap`。⇒ `app.products[0]` 必须写 `"signingConfig": "default"`。
+  **判据：看产物文件名有没有 `-signed`；`SignHap` 跑过 ≈2.3 s，没跑是 2 ms。**
+- ⬜ 仍欠**正式上架证书**（`.p12`/`.cer`/`.p7b` 三件套，AGC 里建），出正式包时再弄。
+细节 ⇒ 当日日志第 6、7、8、9 节。
 
 主标杆 **Day One**（Journal）/ **Apple Books·Kindle·静读天下**（Reader）。完整对账表 ⇒ `reference-roadmap.md`。
 文档：`RockReader/docs/生态融入与对标改进方案-2026-10-25.md`（第七节 = 当前真实差距，已按 10-29 实测修订）。
