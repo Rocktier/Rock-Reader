@@ -21,6 +21,10 @@ import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { BookDb } from '../data/BookDb';
 import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
 import { bookCharsLeft, bookLeftText, bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
+import {
+  BRIGHTNESS_SYSTEM, brightnessLabelOf, restoreWindowSettings
+} from '../engine/reader/ScreenSettings';
+import { ScreenService } from '../engine/reader/ScreenService';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
@@ -37,6 +41,9 @@ import {
 } from '../common/LayoutStyle';
 import { buildMarksExport } from '../engine/marks/MarkExport';
 import { COLOR_DEFAULT, colorIndices, highlightInk, normalizeColor } from '../engine/marks/HighlightPalette';
+import {
+  ChapterRange, excerptOfSelection, selectionIsEmpty, selectionWorthKeeping, toChapterRange
+} from '../engine/marks/SelectionRange';
 import { PageRange, PageTable, pageOfChar } from '../engine/paginator/PageTableBuilder';
 import { LayoutBox, PageCache, Paginator } from '../engine/paginator/Paginator';
 import { FontStore } from '../data/FontStore';
@@ -155,6 +162,15 @@ struct ChapterItem {
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
+
+/**
+ * 划词菜单里「加入摘录」的自定义菜单项 id（2026-11-03）。
+ *
+ * ⚠️ 用 `TextMenuItemId.of(...)` 建自定义 id；点击时靠 `menuItem.id.equals(...)` 认回来。
+ * ⚠️ **模块级常量**而不是每次回调里 new：TextMenuItemId 是 class，
+ *    每次 new 一个新实例虽然 equals 能比上，但白建对象。
+ */
+const SELECTION_MENU_EXCERPT_ID: TextMenuItemId = TextMenuItemId.of('rock_excerpt');
 
 /** 页脚高度（vp）：正文可用高度要扣掉 */
 const FOOTER_VP: number = 30;
@@ -325,12 +341,55 @@ struct Reader {
   /**
    * 摘录的原文快照（开面板时定格）。
    * ⚠️ 必须是 @State：面板里它是**可编辑**的（TextArea），用户手动裁剪成自己
-   *    要的那句 —— 因为 SDK 限制拿不到划词选区（见正文 SelectionContainer 注释），
-   *    这是「想摘录正文里某一句」的唯一可达路径。
+   *    要的那句 —— 这是长按整页路径的兜底（划词路径见下方 selStart/selEnd）。
    */
   @State highlightExcerpt: string = '';
+  /**
+   * 摘录面板标题（两条入口不同）：
+   *   - 划词进来 = 「存这段摘录」（预填精确选中的那句）
+   *   - 中央菜单「摘录」进来 = 「存一段摘录」（整页快照）
+   * ⚠️ 必须是 @State：ArkUI V1 里 build() 不整体重跑，
+   *    面板开着时改这个值不刷新 ⇒ 标题会停在旧值。
+   */
+  @State highlightTitle: string = '存一段摘录';
+  /**
+   * 本次划词的选区偏短（系统中文长按默认只选 1 个字）⇒ 面板上给一句提示。
+   * ⚠️ @State：面板里要按它显示/隐藏提示行，条件里必须**就地读**（ArkUI V1 铁律）。
+   */
+  @State shortSelection: boolean = false;
+  /**
+   * 正文是否处于「可选中」状态（划词总开关）。
+   *
+   * ⚠️ 2026-11-03 实测（这是划词功能最后一块拼图）：
+   *   选区一旦建立，**蓝色手柄会一直挂在正文上**，而且**点手柄会重新弹出系统菜单**。
+   *   我们的摘录面板是应用内的浮层，压不住系统菜单（那是系统窗口）⇒
+   *   用户点完「存下」后，屏幕上还杵着一个「加入摘录」的小浮层，点它还会弹菜单。
+   *   ⚠️ 本工程 compileSdk 20 的 UIContext **没有** clearFocus（API 26 才有）⇒
+   *   只能靠「把可选中状态关掉」来撤选区（组件重配 ⇒ 选区与手柄一起消失）。
+   */
+  @State selectionEnabled: boolean = true;
+  /**
+   * 正文 Text 的控制器（用来撤选区、关菜单）。
+   *
+   * ⚠️ 绑法：`Text(content, { controller })`（controller 走**构造第二个参数**，
+   *    TextAttribute 上没有 controller 方法 —— SDK 里只有 TextOptions 有这个字段）。
+   * ⚠️ 撤选区要用 `setTextSelection(0, 0)`（起 >= 止 ⇒ 不选任何内容），
+   *    只切 `textSelectable` **撤不掉已建立的选区**（2026-11-03 实测：手柄纹丝不动）。
+   */
+  private bodyTextController: TextController = new TextController();
   private highlightStart: number = 0;
   private highlightEnd: number = 0;
+  /**
+   * 当前划词选区（**页内下标**，不是章内偏移）。
+   *
+   * ⚠️ `onTextSelectionChange` 回调给的是「当前 Text 内容里的下标」，
+   *    而那个 Text 的内容是当页文本 ⇒ 这是**页内**坐标。
+   *    换算成章内偏移在纯逻辑层做（`engine/marks/SelectionRange.ets` 的 toChapterRange）。
+   * ⚠️ 兜底用：`onMenuItemClick` 的 `range` 正常会给范围，但万一它给的是 undefined，
+   *    就用这两个兜底。
+   */
+  private selStart: number = 0;
+  private selEnd: number = 0;
   /** 全文搜索词与命中 */
   @State searchQuery: string = '';
   @State searchHits: SearchHitRow[] = [];
@@ -392,6 +451,16 @@ struct Reader {
   @State scrollSpeed: number = SCROLL_SPEED_DEFAULT;
   /** 滚动定时器 id（-1 = 未运行） */
   private scrollTimer: number = -1;
+
+  // ---- 屏幕：亮度 + 常亮（2026-11-03 加）----
+  /**
+   * 亮度档位索引（0 = 跟随系统）。
+   *
+   * ⚠️ 与 prefs 双向同源：prefs 是真源，这里是 UI 侧的当前值。
+   */
+  @State brightnessIndex: number = 0;
+  /** 是否保持屏幕常亮 */
+  @State keepScreenOn: boolean = false;
   /** 换页动画进行中 —— 防止两拍之间重复翻同一页 */
   private scrollTurning: boolean = false;
   /** 本次翻页是自动滚动自己驱动的（区别于用户手动翻页） */
@@ -410,6 +479,48 @@ struct Reader {
     this.registerLocalFonts(store);
     this.initTts();
     this.init();
+    // 屏幕亮度 + 常亮（2026-11-03）：进阅读页就施加。
+    // ⚠️ 施加是**异步**的（要拿窗口句柄），不能 await（页面初始化路径不能有 await，
+    //    见 ReaderPrefs 头注「阅读页初始化路径上不能有 await」）⇒ 火并忘。
+    this.applyScreenSettings();
+  }
+
+  /**
+   * 施加屏幕亮度 + 常亮（读 prefs 的当前值）。
+   *
+   * ⚠️ 这是**唯一**的施加入口：进页面、切档位、回前台都走它，
+   *    避免三处各写一遍而漏掉某处。
+   */
+  private applyScreenSettings(): void {
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      ScreenService.apply(ctx, this.prefs.getBrightnessValue(), this.prefs.getKeepScreenOn());
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'applyScreenSettings failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /** 切到下一个亮度档位（循环）并立即生效 */
+  private cycleBrightness(): void {
+    this.brightnessIndex = this.prefs.cycleBrightness();
+    this.applyScreenSettings();
+  }
+
+  /**
+   * 当前亮度档位的显示文案。
+   *
+   * ⚠️ 2026-11-03 删除：原来这里读 prefs（真源），看起来更保险，
+   *    但**读 prefs 的方法不能进 build()** —— ArkUI V1 依赖插桩追不到，
+   *    切档位时界面不刷新（实测：日志 brightness=0.15，界面仍写「跟随系统」）。
+   *    ⇒ 界面一律用纯函数 `brightnessLabelOf(this.brightnessIndex)`（@State 就地读），
+   *      本仓的 @State 与 prefs 在 cycleBrightness / onPageShow 两处同步。
+   */
+
+  /** 切换「保持屏幕常亮」并立即生效 */
+  private toggleKeepScreenOn(): void {
+    this.keepScreenOn = !this.keepScreenOn;
+    this.prefs.setKeepScreenOn(this.keepScreenOn);
+    this.applyScreenSettings();
   }
 
   /** 朗读初始化：挂回调 + 探测能力。探测失败（模拟器/低端机）= 入口不出现，零感知 */
@@ -612,6 +723,12 @@ struct Reader {
     this.prefs.reload();
     // 自动滚动速度档（秒/页；从偏好读，脏值已在 prefs 里归一化）
     this.scrollSpeed = this.prefs.getScrollSpeed();
+    // 屏幕亮度 + 常亮（2026-11-03）：
+    // ⚠️ onPageHide 已还原（亮度回系统、常亮关）⇒ 回前台必须**重新施加**，
+    //    否则从设置页/别的应用回来，亮度是系统的、常亮是关的 —— 用户刚设的值丢了。
+    this.brightnessIndex = this.prefs.getBrightnessIndex();
+    this.keepScreenOn = this.prefs.getKeepScreenOn();
+    this.applyScreenSettings();
     // 回前台要**重开计时会话**（审查报告 B8）：onPageHide 已把 sessionStartAt 清 0，
     // 章内翻页不经过 openChapter —— 不重开的话，锁屏/接电话回来后的阅读时长全部丢失
     if (this.sessionStartAt === 0 && this.sessionChapter >= 0) {
@@ -721,12 +838,29 @@ struct Reader {
     // 但**不改状态**（仍是「正在滚」）—— 通勤场景里用户锁屏看两眼就回来，
     // 回来接着滚才是对的；改成 PAUSED 会让用户以为自己按过暂停。
     this.suspendScroll();
+    // 屏幕亮度 + 常亮**必须还原**（2026-11-03）：
+    // ⚠️ `setWindowBrightness` 只在窗口前台生效，但 `setKeepScreenOn` 是窗口级的 ——
+    //    不还原的话，用户退到书架/切到别的应用，手机屏幕还是常亮不灭（白耗电）。
+    //    亮度那条虽然切后台自动失效，但回到前台仍是暗的 ⇒ 一并还原。
+    this.restoreScreenSettings();
+  }
+
+  /** 还原窗口亮度与常亮（离开阅读页时必调；幂等） */
+  private restoreScreenSettings(): void {
+    try {
+      const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      ScreenService.restore(ctx);
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'restoreScreenSettings failed: %{public}s', JSON.stringify(e));
+    }
   }
 
   aboutToDisappear(): void {
     this.persistProgress(true);
     this.flushSession();
     this.stopSpeakTimer();
+    // 屏幕亮度 + 常亮：最终还原（onPageHide 已还原过一次，这里是兜底 —— 幂等）
+    this.restoreScreenSettings();
     // 自动滚动：彻底停（定时器不留在后台空转）
     this.scrollState = ScrollState.OFF;
     this.scrollSuspended = false;
@@ -1171,6 +1305,136 @@ struct Reader {
     }
   }
 
+  /**
+   * 划词选区变化（`onTextSelectionChange`，@since 11）。
+   *
+   * ⚠️ **坐标系换算**：回调给的是**当页文本内**的下标，
+   *    而摘录存的是**章内偏移** ⇒ 换算在纯逻辑层做（`engine/marks/SelectionRange.ets`）。
+   * ⚠️ 这里**只记位置，不做重活**：回调在渲染管线上跑，
+   *    这里如果去查库/排版会把主线程占死。
+   */
+  private onTextSelectionChange(selectionStart: number, selectionEnd: number): void {
+    this.selStart = selectionStart;
+    this.selEnd = selectionEnd;
+  }
+
+  /**
+   * 往系统选择菜单里加自定义项（`editMenuOptions.onCreateMenu`，@since 12）。
+   *
+   * ⚠️ 系统默认项（复制/全选/分享…）**必须原样保留** ——
+   *    只加不减，用户才有完整的系统能力。
+   * ⚠️ 菜单项 id 用 `TextMenuItemId.of('rock_excerpt')` 自定义；
+   *    点击时靠 `menuItem.id.equals(...)` 认回来。
+   */
+  private buildSelectionMenu(menuItems: TextMenuItem[]): TextMenuItem[] {
+    const out: TextMenuItem[] = menuItems;
+    // ⚠️ 已经有同 id 的项就别重复加（onCreateMenu 可能被调多次）
+    for (const item of out) {
+      if (item.id.equals(SELECTION_MENU_EXCERPT_ID)) {
+        return out;
+      }
+    }
+    out.push({
+      content: '加入摘录',
+      id: SELECTION_MENU_EXCERPT_ID
+    });
+    hilog.info(DOMAIN, TAG, 'selection menu created, items=%{public}d', out.length);
+    return out;
+  }
+
+  /**
+   * 自定义菜单项被点击（`editMenuOptions.onMenuItemClick`，@since 12）。
+   *
+   * ⚠️ 返回 true = 拦截系统默认逻辑（只走我们的逻辑）；false = 先 ours 后 default。
+   *    对「加入摘录」这种**系统根本不认识**的项，必须返回 true。
+   * @param range 选区（TextRange）—— 直接给了，省得自己维护 selectionStart/End
+   */
+  private onSelectionMenuClick(menuItem: TextMenuItem, range: TextRange): boolean {
+    hilog.info(DOMAIN, TAG, 'selection menu clicked, content=%{public}s', JSON.stringify(menuItem.content));
+    if (!menuItem.id.equals(SELECTION_MENU_EXCERPT_ID)) {
+      hilog.info(DOMAIN, TAG, 'selection menu click ignored (not ours)');
+      return false;
+    }
+    const start: number = range.start !== undefined ? range.start : this.selStart;
+    const end: number = range.end !== undefined ? range.end : this.selEnd;
+    hilog.info(DOMAIN, TAG, 'selection range %{public}d-%{public}d', start, end);
+    this.addHighlightFromSelection(start, end);
+    // ⚠️ 2026-11-03 实测：返回 true（完全拦截系统默认逻辑）会让**系统浮动菜单留在屏幕上**，
+    //    浮在我们自己的摘录面板上面 —— 点完「存下」后它还挡着屏。
+    //    ⇒ 返回 false：我们的逻辑先跑，系统默认逻辑照跑（默认逻辑里含「收起菜单」）。
+    //    ⚠️ 本工程 compileSdk 20 的 UIContext **没有** clearFocus（API 26 才有）⇒ 撤不掉选区手柄。
+    return false;
+  }
+
+  /**
+   * 把「选中的这段文字」存成摘录。
+   *
+   * ⚠️ 与「整页快照」是**两条独立路径**：
+   *    这条走的是精确选区，坐标换算 + 快照截取都在纯逻辑层。
+   *
+   * ⚠️ 2026-11-03 设计修正：**不直接落库，而是唤起摘录面板并预填选中的那句**。
+   *    理由：面板上有「标记颜色」（P0-1 五色）与「写一句注」两个能力，
+   *    直接落库等于把这两个能力从划词路径上砍掉；而且面板是**唯一**的摘录编辑界面，
+   *    两条路径共用一个面板 ⇒ 用户在哪条路上进来，看到的都是同一套表单。
+   *    预填的是精确选中的文本（比整页快照准得多），用户想裁还能在面板里删。
+   */
+  private addHighlightFromSelection(selStart: number, selEnd: number): void {
+    const book: BookRecord | null = this.book;
+    if (book === null || this.pages.length === 0 || this.failed) {
+      hilog.info(DOMAIN, TAG, 'selection skipped: no book/pages');
+      return;
+    }
+    if (selectionIsEmpty(selStart, selEnd)) {
+      // 空选区（用户随手一点）⇒ 什么都不做，**不打扰用户**
+      hilog.info(DOMAIN, TAG, 'selection skipped: empty');
+      return;
+    }
+    const range: PageRange = this.pages[this.pageIndex];
+    const chapter: ChapterRange | null = toChapterRange(range.start, this.pageText.length, selStart, selEnd);
+    if (chapter === null) {
+      hilog.info(DOMAIN, TAG, 'selection skipped: bad chapter range');
+      return;
+    }
+    const excerpt: string = excerptOfSelection(this.pageText, selStart, selEnd);
+    if (excerpt.length === 0) {
+      hilog.info(DOMAIN, TAG, 'selection skipped: empty excerpt');
+      return;
+    }
+    hilog.info(DOMAIN, TAG, 'selection panel opening, chapter %{public}d-%{public}d',
+      chapter.start, chapter.end);
+    this.highlightStart = chapter.start;
+    this.highlightEnd = chapter.end;
+    this.highlightExcerpt = excerpt;
+    this.highlightNote = '';
+    this.highlightColor = COLOR_DEFAULT;
+    this.highlightTitle = '存这段摘录';
+    // 选区偏短（系统中文长按默认只选 1 个字）⇒ 面板上给一句提示，
+    // 免得用户看着「转」一个字不知道下一步该干嘛。
+    this.shortSelection = !selectionWorthKeeping(selStart, selEnd);
+    // 关掉中央菜单（划词可能是在菜单开着时发起的）⇒ 面板是唯一在场的东西
+    this.showMenu = false;
+    // ⚠️ 关掉「可选中」= 撤掉选区手柄（系统菜单收起后手柄还杵在字上，
+    //    点它会重新弹菜单）。关面板时由 closeHighlightPanel() 恢复。
+    this.selectionEnabled = false;
+    // ⚠️ 关键：**必须显式清选区**。只把 textSelectable 关掉撤不掉已建立的选区
+    //    （实测手柄纹丝不动），而残留手柄会正好压在抽屉的页签上（正文左上角），
+    //    点页签会变成「点手柄」⇒ 系统菜单重新弹出 ⇒ 页签点不动。
+    this.bodyTextController.setTextSelection(0, 0);
+    this.bodyTextController.closeSelectionMenu();
+    this.showHighlight = true;
+  }
+
+  /**
+   * 关闭摘录面板（统一入口）。
+   *
+   * ⚠️ 必须把 `selectionEnabled` 一起恢复：划词路径进来时把它置 false（撤选区），
+   *    关面板时若忘了恢复，用户就没法再划词了（功能静默失效，最难查的一类）。
+   */
+  private closeHighlightPanel(): void {
+    this.showHighlight = false;
+    this.selectionEnabled = true;
+  }
+
   /** 长按正文 ⇒ 摘录面板（存当前页快照 + 注） */
   private openHighlightPanel(): void {
     if (this.failed || this.pageText.length === 0) {
@@ -1184,6 +1448,11 @@ struct Reader {
     this.highlightNote = '';
     // P0-1：每次新开面板回到默认色（上次选色不残留）
     this.highlightColor = COLOR_DEFAULT;
+    this.highlightTitle = '存一段摘录';
+    this.shortSelection = false;
+    this.showMenu = false;
+    // 同划词路径：面板开着时撤掉选区（关面板时统一恢复）
+    this.selectionEnabled = false;
     this.showHighlight = true;
   }
 
@@ -1204,7 +1473,7 @@ struct Reader {
         color: normalizeColor(this.highlightColor), // P0-1：选中的颜色索引
         createdAt: Date.now()
       });
-      this.showHighlight = false;
+      this.closeHighlightPanel();
       await this.reloadMarks();
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'save highlight failed: %{public}s', JSON.stringify(e));
@@ -2125,6 +2394,16 @@ struct Reader {
         .fontSize(RR_FS_MICRO)
         .fontFamily('monospace')
         .fontColor(this.palette.text3)
+      // 摘录兜底入口（2026-11-03）：长按正文已让给系统做划词，
+      // 「存整页快照」的老能力挪到这里 —— 中央菜单里的常驻按钮，比长按更好找。
+      Text('摘录')
+        .fontSize(RR_FS_MICRO)
+        .fontColor(this.palette.text)
+        .responseRegion({ x: -8, y: -8, width: 64, height: 44 })
+        .accessibilityText('把当前页存为摘录')
+        .onClick(() => {
+          this.openHighlightPanel();
+        })
       // 朗读入口：仅设备支持 TTS 时渲染（探测失败的设备完全看不到）。
       // 放标题行而不是底部四等分按钮行 —— 不破坏「上一章/目录/Aa/下一章」的构图。
       // 图标而非文字（党哥 2026-10-18 要求）：三态 = 待机无声波 / 暂停单弧压暗 /
@@ -2917,16 +3196,16 @@ struct Reader {
     })
   }
 
-  /** 长按正文唤起的摘录面板（P0-2）：快照 + 一句注 */
+  /** 摘录面板（划词进来 / 中央菜单「摘录」进来）：原文 + 注 + 颜色 */
   @Builder
   highlightEditor() {
     Column() {
-      Text('存一段摘录')
+      Text(this.highlightTitle)
         .fontSize(RR_FS_HEADING)
         .fontColor(this.palette.text)
         .width('100%')
-      // 快照**可编辑**：长按只能定格整页，想要「正文里那一句」就在这儿删到只剩它。
-      //（拿不到划词选区的替代方案 —— 见正文 SelectionContainer 注释）
+      // 原文**可编辑**：划词进来已预填选中那句；整页快照进来是整页 200 字，
+      // 用户可在这里删到只剩自己要的（面板是两条路径共用的唯一编辑界面）。
       TextArea({ placeholder: '摘录原文', text: this.highlightExcerpt })
         .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text2)
@@ -2941,6 +3220,16 @@ struct Reader {
         .onChange((v: string) => {
           this.highlightExcerpt = v;
         })
+      // ⚠️ 选区偏短的提示（2026-11-03 实测加）：
+      //   系统中文长按默认只选中 1 个字，用户看到「转」一个字会懵。
+      //   说清两条出路：取消后可拖正文里的手柄扩选，或直接在这里改成要的那句。
+      if (this.shortSelection) {
+        Text('选区太短：取消后可拖正文里的手柄扩大选区，或直接在这里改成你要的那句')
+          .fontSize(RR_FS_MICRO)
+          .fontColor(this.palette.text3)
+          .width('100%')
+          .margin({ top: RR_SP_SM })
+      }
       TextInput({ placeholder: '写一句注（可空）', text: this.highlightNote })
         .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text)
@@ -2983,7 +3272,7 @@ struct Reader {
           .borderRadius(RR_RADIUS_COVER)
           .layoutWeight(1)
           .onClick(() => {
-            this.showHighlight = false;
+            this.closeHighlightPanel();
           })
         Button('存下', { type: ButtonType.Normal, stateEffect: true })
           .fontSize(RR_FS_LABEL)
@@ -3241,6 +3530,63 @@ struct Reader {
           this.settingsRow('页边距', LEVEL_MAX, 'margin')
           this.settingsRow('字重', WEIGHT_MAX, 'weight')
 
+          /**
+           * 屏幕：亮度 + 常亮（2026-11-03）
+           *
+           * 对标 Apple Books / Kindle / 静读天下（都有这两项）。
+           * ⚠️ 为什么不用滑杆：家族铁律「设置页一律不许出现滑块」⇒ 与排版一致走**档位**，
+           *    点一下切一档，循环。
+           * ⚠️ 亮度与排版不同源：**亮度是全局的**（不进每本书的覆盖）——
+           *    屏幕亮度是设备属性，不该跟着书走。
+           */
+          Text('屏幕')
+            .fontSize(RR_FS_META)
+            .fontFamily('monospace')
+            .fontColor(this.palette.text2)
+            .width('100%')
+            .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_XL, bottom: RR_SP_SM })
+          Row() {
+            Text('亮度')
+              .fontSize(RR_FS_META)
+              .fontColor(this.palette.text3)
+              .width(60)
+            // ⚠️⚠️ **必须就地读 @State**（ArkUI V1 家族铁律，第 7 次同型）：
+            //   写成 `Text(this.brightnessLabel())`（标签在方法体里算、还去读 prefs）
+            //   ⇒ 依赖插桩追不到 brightnessIndex ⇒ **切了档位但界面不变**
+            //   （2026-11-03 模拟器实测：日志显示 brightness=0.15，界面还写「跟随系统」）。
+            //   正解：@State 就地读，转换用**纯函数**（brightnessLabelOf 不碰任何 @State）。
+            Text(brightnessLabelOf(this.brightnessIndex))
+              .fontSize(RR_FS_META)
+              .fontFamily('monospace')
+              .fontColor(this.palette.text)
+              .layoutWeight(1)
+              .accessibilityText('屏幕亮度，当前 ' + brightnessLabelOf(this.brightnessIndex))
+              .onClick(() => {
+                this.cycleBrightness();
+              })
+          }
+          .width('100%')
+          .height(44)
+          .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
+          Row() {
+            Text('常亮')
+              .fontSize(RR_FS_META)
+              .fontColor(this.palette.text3)
+              .width(60)
+            Text(this.keepScreenOn ? '开' : '关')
+              .fontSize(RR_FS_META)
+              .fontFamily('monospace')
+              .fontColor(this.keepScreenOn ? this.palette.accent : this.palette.text)
+              .layoutWeight(1)
+              .accessibilityText(this.keepScreenOn ? '阅读时保持屏幕常亮，已开启' : '阅读时保持屏幕常亮，已关闭')
+              .onClick(() => {
+                this.toggleKeepScreenOn();
+              })
+          }
+          .width('100%')
+          .height(44)
+          .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
+
       // A1：明示「排版只对这本书生效」+ 恢复全局出路（党哥拍板默认仅这一本）
       Row() {
         Text(this.book === null ? '排版跟随全局设置' : `排版仅对《${this.title}》生效`)
@@ -3462,16 +3808,20 @@ struct Reader {
           .width('100%')
           .margin({ top: RR_SP_TOP })
         } else {
-          // **划词选中**（2026-10-30）：copyOption 打开 Text 自带的长按选词能力
-          // （拖手柄选字 + 系统菜单「复制/全选」）。
-          // ⚠️ 本想用 SelectionContainer 跨组件选，但它在 compileSdk 20 下
-          //    **编译不过**（ArkTS: Cannot find name 'SelectionContainer'，ERROR 10505001）。
-          //    不需要它 —— 单段 Text 自己带 copyOption 就能选。
-          // ⚠️ 拿不到选区：onTextSelectionChange（取选中文本）与 editMenuOptions
-          //    （往系统菜单塞自定义「摘录」项）都是 **API 26 起**，本工程 20 ⇒ 用不了。
-          //    ⇒ 摘录仍是「长按 ⇒ 定格整页快照」，但快照在面板里**可手动裁剪**
-          //      （见 highlightEditor）：想要正文里某一句，就在那儿删到只剩它。
-          Text(this.pageText)
+          // **划词选中**（2026-10-30 → 2026-11-03 升级）：
+          //   copyOption 打开 Text 自带的长按选词能力（拖手柄选字 + 系统菜单）。
+          // ⚠️ 2026-11-03 重大修正：昨天记的「onTextSelectionChange / editMenuOptions
+          //    都是 API 26 起，本工程 20 用不了」**是错的** ——
+          //    查 SDK 26 的 `component/text.d.ts` 实测：
+          //      onTextSelectionChange  @since 11
+          //      textSelectable         @since 12
+          //      editMenuOptions        @since 12
+          //    只有 `SelectionContainer` **组件本身**是 @since 26.0.0，
+          //    而我们**不需要它** —— Text 自带这套就够了，**不用升 compileSdk**。
+          //    ⇒ 现在可以做「长按选词 → 系统菜单里点『加入摘录』」，
+          //      这是 Apple Books / Kindle / 静读天下的核心交互，
+          //      也干掉了 1.0.9 的「手动裁剪快照」土办法。
+          Text(this.pageText, { controller: this.bodyTextController })
             .fontSize(this.fontSizeFp)
             .lineHeight(this.lineHeightVp)
             .fontFamily(this.fontFamily)      // '' = 系统默认；必须与 TextPaginator 测量时一致
@@ -3480,11 +3830,32 @@ struct Reader {
             .width('100%')
             .textAlign(TextAlign.Start)
             .copyOption(CopyOptions.LocalDevice)
-            // 长按正文 ⇒ 摘录当前页（P0-2 三件套）。与单击（翻页/唤菜单）、
-            // 横滑（翻页）不冲突：LongPressGesture 有独立的时长门槛（默认 500ms）
-            .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-              this.openHighlightPanel();
-            }))
+            // 划词：开启可选文本 + 拿选区位置（@since 11/12，本工程 compileSdk 20 可用）
+            // ⚠️ 枚举成员是 SELECTABLE_FOCUSABLE / SELECTABLE_UNFOCUSABLE（**没有** SELECTABLE）。
+            //    选 FOCUSABLE：可聚焦才收得到 onTextSelectionChange 回调。
+            // ⚠️ 用 `selectionEnabled` 当开关：关掉它 = 撤掉选区与手柄（见该字段注释）。
+            .textSelectable(this.selectionEnabled
+              ? TextSelectableMode.SELECTABLE_FOCUSABLE : TextSelectableMode.UNSELECTABLE)
+            .onTextSelectionChange((selectionStart: number, selectionEnd: number): void => {
+              this.onTextSelectionChange(selectionStart, selectionEnd);
+            })
+            // 往系统选择菜单里塞自定义项「加入摘录」
+            .editMenuOptions({
+              onCreateMenu: (menuItems: TextMenuItem[]): TextMenuItem[] => {
+                return this.buildSelectionMenu(menuItems);
+              },
+              onMenuItemClick: (menuItem: TextMenuItem, range: TextRange): boolean => {
+                return this.onSelectionMenuClick(menuItem, range);
+              }
+            })
+            // ⚠️ 2026-11-03 实测修正：**这里不能挂 LongPressGesture**。
+            //   之前用 `.gesture(LongPressGesture(...))` 唤起摘录面板，实测（模拟器长按正文）：
+            //   系统选区**完全不出现** —— 没有选区手柄、没有系统浮动菜单、UI 树里 0 个 TextMenu 节点。
+            //   原因：挂在 Text 上的自定义长按手势**抢赢了 Text 自带的长按选词**
+            //   （ArkUI 手势竞争，自定义 .gesture() 优先于组件内部手势）。
+            //   ⇒ 长按必须**完整让给系统**：Text 自带选区 + 系统菜单，
+            //     我们只在系统菜单里加一项「加入摘录」（见上）。
+            //   整页快照的老路径降级为中央菜单里的「摘录」按钮（见 topBar）。
         }
       }
       .width('100%')
@@ -3772,19 +4143,19 @@ struct Reader {
             .width('100%')
             .layoutWeight(1)
             .onClick(() => {
-              this.showHighlight = false;
+              this.closeHighlightPanel();
             })
           Column() {
             Column()
               .layoutWeight(1)
               .onClick(() => {
-                this.showHighlight = false;
+                this.closeHighlightPanel();
               })
             this.highlightEditor()
             Column()
               .layoutWeight(1)
               .onClick(() => {
-                this.showHighlight = false;
+                this.closeHighlightPanel();
               })
           }
           .width('100%')

@@ -49,3 +49,9 @@ agc-app-icon.png
 # 本地临时产物（模拟器截图 / 造书 SQL / 验签临时副本）
 /.tmp/
 /seed-out/
+# 本地调试残留（模拟器截图 tmp-*.png、UI 树 tmp-layout*.json、构建日志 tmp-build-*.txt）
+/tmp-*.png
+/tmp-*.json
+/tmp-build-*.txt
+/tmp-build-*.out
+/tmp-build-*.err

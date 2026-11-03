@@ -10,6 +10,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { clampLevel, clampWeightLevel, DEFAULT_LEVELS, LayoutLevels } from '../common/LayoutStyle';
 import { normalizeTheme, THEME_DARK, ThemeName } from '../common/Theme';
 import { normalizeScrollSpeed, SCROLL_SPEED_DEFAULT } from './AutoScroll';
+import { BRIGHTNESS_DEFAULT_INDEX, brightnessLabelOf, brightnessValueOf, nextBrightnessIndex } from '../engine/reader/ScreenSettings';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -43,6 +44,14 @@ const KEY_DAILY_GOAL: string = 'daily_goal_min';
 
 /** 自动滚动速度档（秒/页；2026-10-28 加） */
 const KEY_SCROLL_SPEED: string = 'scroll_speed';
+
+/**
+ * 阅读页亮度档位索引（2026-11-03 加）。
+ * 0 = 跟随系统；1~5 = 绝对亮度档（见 `engine/reader/ScreenSettings.ets`）。
+ */
+const KEY_BRIGHTNESS: string = 'screen_brightness';
+/** 阅读时保持屏幕常亮（2026-11-03 加）；通勤场景刚需，默认关（不改变用户原有习惯） */
+const KEY_KEEP_SCREEN_ON: string = 'screen_keep_on';
 
 /** 朗读语速默认值（常速） */
 export const TTS_SPEED_DEFAULT: number = 1.0;
@@ -105,6 +114,10 @@ export class ReaderPrefs {
   private voiceReady: number[] = [TTS_PERSON_BUILTIN];
   /** 自动滚动速度档（秒/页） */
   private scrollSpeed: number = SCROLL_SPEED_DEFAULT;
+  /** 阅读页亮度档位索引（0 = 跟随系统） */
+  private brightnessIndex: number = BRIGHTNESS_DEFAULT_INDEX;
+  /** 阅读时保持屏幕常亮 */
+  private keepScreenOn: boolean = false;
 
   /** 幂等：重复调用直接返回 */
   open(ctx: Context): void {
@@ -122,6 +135,9 @@ export class ReaderPrefs {
       this.ttsSpeed = this.readTtsSpeed(store);
       this.ttsPerson = this.readTtsPerson(store);
       this.scrollSpeed = normalizeScrollSpeed(this.readInt(store, KEY_SCROLL_SPEED, SCROLL_SPEED_DEFAULT));
+      // 亮度档位与常亮（2026-11-03）：脏值由 brightnessValueOf 内部 clamp 回落
+      this.brightnessIndex = this.readInt(store, KEY_BRIGHTNESS, BRIGHTNESS_DEFAULT_INDEX);
+      this.keepScreenOn = this.readBool(store, KEY_KEEP_SCREEN_ON, false);
     } catch (e) {
       // 读不到就用默认档位（3/3/3 + 深色）—— 绝不因为偏好读取失败而读不了书
       hilog.error(DOMAIN, TAG, 'prefs open failed: %{public}s', JSON.stringify(e));
@@ -464,6 +480,43 @@ export class ReaderPrefs {
   setScrollSpeed(v: number): void {
     this.scrollSpeed = normalizeScrollSpeed(v);
     this.put(KEY_SCROLL_SPEED, this.scrollSpeed);
+    this.flush();
+  }
+
+  /* ---------------- 屏幕：亮度 + 常亮（2026-11-03） ---------------- */
+
+  /** 当前亮度档位索引（0 = 跟随系统） */
+  getBrightnessIndex(): number {
+    return this.brightnessIndex;
+  }
+
+  /** 当前亮度档位索引对应的窗口亮度值（-1 = 跟随系统） */
+  getBrightnessValue(): number {
+    return brightnessValueOf(this.brightnessIndex);
+  }
+
+  /** 当前亮度档位文案（显示用） */
+  getBrightnessLabel(): string {
+    return brightnessLabelOf(this.brightnessIndex);
+  }
+
+  /** 切到下一个亮度档位（循环）；返回新的档位索引 */
+  cycleBrightness(): number {
+    this.brightnessIndex = nextBrightnessIndex(this.brightnessIndex);
+    this.put(KEY_BRIGHTNESS, this.brightnessIndex);
+    this.flush();
+    return this.brightnessIndex;
+  }
+
+  /** 是否保持屏幕常亮 */
+  getKeepScreenOn(): boolean {
+    return this.keepScreenOn;
+  }
+
+  /** 设置保持屏幕常亮 */
+  setKeepScreenOn(on: boolean): void {
+    this.keepScreenOn = on;
+    this.put(KEY_KEEP_SCREEN_ON, this.keepScreenOn);
     this.flush();
   }
 

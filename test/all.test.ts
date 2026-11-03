@@ -26,3 +26,5 @@ import './bookremain.test.ts';
 import './achievements.test.ts';
 import './shelfauthor.test.ts';
 import './highlightpalette.test.ts';
+import './screensettings.test.ts';
+import './selectionrange.test.ts';
