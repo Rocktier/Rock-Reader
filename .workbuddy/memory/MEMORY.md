@@ -57,6 +57,10 @@
   ② `onMenuItemClick` **返回 false**（返回 true = 完全拦截 ⇒ 系统浮动菜单留在屏幕上不收）；
   ③ 撤选区用 `Text(content,{controller})` + `TextController.setTextSelection(0,0)`（compileSdk 20 **无** `clearFocus`，切 `textSelectable` 也撤不掉）。
   ⚠️ **系统长按中文默认只选 1 个字** ⇒ 「少于 N 字就丢弃」的门槛会把用户点击变成**死路**（门槛只能用来提示，不能用来拦显式操作）。
+  ⚠️ **划词不需要升 compileSdk**（2026-11-03 推翻 1.0.9 release notes 里的误判）：
+  `onTextSelectionChange` @since 11、`textSelectable`/`editMenuOptions` @since 12，compileSdk 20 全都能用；
+  只有 `SelectionContainer` 组件 @since 26，而划词根本不需要它。
+  ⇒ **别再为了划词去升 compileSdk**（当年就是没回查 SDK 声明才写错的）。
   详细清单 ⇒ `reference-arkui-pitfalls.md` 第五节。
 - ⭐ **模拟器点击坐标只能取自 `uitest dumpLayout` 的 bounds**（截图目测会偏 30px ⇒ 点空被 Column 的空 onClick 吞掉，表现为「点了没反应」）。
 - ⚠️ **构建时 `DEVECO_SDK_HOME` 要指向 `...\DevEco Studio\sdk`（根目录）** ⇒ 指到 `sdk\default` 报 00303312「找不到对应 SDK 版本」。
@@ -74,19 +78,27 @@
 
 ## 六、发版与版本状态
 
-- **Reader 1.0.9（code 1000010）** —— P0 五项（高亮多色 / 书签备注 / 全书剩余时间 / 成就徽章 / 书架显示作者）+ MOBI 编码修复。
-  包 `C:\Users\Dang\Desktop\Rock阅读-1.0.9-上架.app`，2,378,489 字节，
-  md5 `501DB7B5A03B81DF9A453022C92D5BF9`，sha256 `67312DFA2A63D864BDC1171C33E4BFBF126475D24BB6AFF37A9F97C09611F361`；
-  闸门 13 项全 PASS；commit `0af1fb3`，tag `v1.0.9` 已 push。
-  模拟器实测：启动无崩溃（幂等 ALTER 迁移 OK）、EPUB 显示作者「八月长安」、底栏显示「全书还剩约 19 小时 35 分」。
-  ⚠️ 桌面同时有 `Rock私记-1.0.7-上架.app`（另一个应用）—— **别拿错**。
-  ⚠️ **1.0.9 有 7 项未在真机实测**（摘录颜色选择器 / 书签备注编辑 / 正文划词手感 / 成就徽章 / 真实 UTF-16·GBK MOBI 等）。
-- **Journal 1.0.7（code 1000008）** —— 性能修复版（PBKDF2 改异步派生 + 解锁加 busy 态）。
-  包 `C:\Users\Dang\Desktop\Rock私记-1.0.7-上架.app`，md5 `AFDDB74C6A8718D437DA4B8CB26ED042`，326,692 字节；闸门 9 项 PASS；tag `v1.0.7`。
-  ⚠️ 1.0.7 未在真机实测 ⇒ 装新包需回归 4 件事：老库主密码解锁 / legacy 兼容 / 首次建库 / 生物解锁。
+- **Reader 1.0.10（code 1000011）** —— 划词「加入摘录」全链路 + 阅读页屏幕亮度 6 档/常亮。
+  包 `C:\Users\Dang\Desktop\Rock阅读-1.0.10-上架.app`，2,385,809 字节，
+  md5 `49268A7881C9C6431300ECCDCD48125E`，sha256 `9D473446B7826084D2DA0ACB8176940C235AADA846C6C22BBAD9FD6C7EDC10E5`；
+  闸门 13 项全 PASS（桌面包 + 产物目录各跑一次）；commit `af56528`，tag `v1.0.10` 已 push。
+  模拟器实测：长按→系统选区→系统菜单「加入摘录」→面板预填选中句→落库→标记页签可见「转」；
+  亮度从 0.15 起循环、UI 标签同步刷新、重启后持久；常亮被系统 WMS 确认、离页还原 ×2。
+  ⚠️ 桌面同时有 `Rock私记-1.0.8-上架.app`（331,461 字节，另一个应用）—— **别拿错**。
+  ⚠️ **1.0.10 有 2 项未在真机实测**（真机划词手感 / 真机深色环境亮度观感）。
+- **Journal 1.0.8（code 1000009）** —— 删单篇日记入口 + 后台即锁。
+  包 `C:\Users\Dang\Desktop\Rock私记-1.0.8-上架.app`，331,461 字节，
+  md5 `4A80C127972228C45A7717D25BD47708`，sha256 `764B92FB1ED99AF6A064290F844982151C55498E195098E198A7B84475F45726`；
+  闸门全 PASS；commit `1e952db`，tag `v1.0.8` 已 push。
+  模拟器实测：删后时间轴「共 0 篇 / 还没有日记」；后台即锁时序 `onBackground → 15ms 内 save ok=true → 2s 后 locked`；
+  回前台落解锁页，重新解锁后 `LockTest…` 一字未丢。
+  ⚠️ 1.0.8 未在真机实测 ⇒ 装新包需回归 4 件事：老库主密码解锁 / legacy 兼容 / 首次建库 / 生物解锁。
+- **旧版存档**：Reader 1.0.9（code 1000010，md5 `501DB7B…`）、Journal 1.0.7（code 1000008，md5 `AFDDB74C…`）
+  —— 已被 1.0.10 / 1.0.8 取代，桌面已无旧包。
 - **测试基线**：Reader **297/297**；Journal **240/240**（含 KDF 参数守门 6 条）。
-- **2026-11-03 在研（未出包）**：Reader 划词「加入摘录」+ 屏幕亮度/常亮（commit `e4f42f4`）；
-  Journal 删单篇日记入口（commit `767900c`）⇒ 均为 **1.0.10 / 1.0.8** 的内容，**两仓都未推送**。
+- **2026-11-03 两仓同日出包**：1.0.10 与 1.0.8 均已 push main + tag。
+  出包命令 `assembleApp -p product=release -p buildMode=release`；
+  闸门**要跑在桌面待传包上**（不是产物目录那份）。
 - **tag 规则**：push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（编译失败则不执行）。
 - ⚠️ Reader 的 `fonts-v1` 本地与远端指向不同 commit ⇒ `git push --tags` 会被拒，**这是正常的**（字体包 tag 与版本发布无关，别动它）。
 
