@@ -113,12 +113,24 @@
 
 ## 八、产品对标与迭代方向
 
-⭐ **家族第 9 个应用：`all2md`（2026-11-03 立项，独立目录 `F:\AI\HarmonyOS\all2md`，尚未建工程）**
+⭐ **家族第 9 个应用：`all2md`（2026-11-03 立项 + 当日搭工程并完成内核）**
 定位 **AI first —— 把手机上的杂乱文件转成 AI 读得懂的 Markdown + 对标 Typora 的阅读器**。
-参照 `microsoft/markitdown`（MIT）。文档：`all2md/docs/整体规划-2026-11-03.md`、`docs/ui-mockup-v1.html`。
-三条硬结论：① **PDF 文本抽取要 API 23** ⇒ 新工程 compileSdk ≥ 23；
-② **DOCX/XLSX/PPTX 与 Markdown 渲染鸿蒙都没有官方能力** ⇒ 自研，占 80% 工作量；
-③ **Pandoc 是 GPL-2.0，一行代码都不能碰**（只对标格式矩阵）。细节 ⇒ 当日日志第 6 节。
+参照 `microsoft/markitdown`（MIT）。文档：`all2md/docs/整体规划-2026-11-03.md`、`docs/ui-mockup-v1.html`、
+`docs/AGC-应用信息-2026-11-03.md`（**配置真源**）。
+- ⚠️ **包名 `rock.all.2.md`**、APP ID `6917620824955651111` —— 与家族 `com.rocktier.*` **不是同一体系，
+  别顺手统一**（AGC 建了改不了）。支持设备 phone/tablet/2in1，**零权限**。
+- `compatibleSdkVersion "6.1.0(23)"`（PDF 文本抽取 `getTextContent()` 是 API 23 才有）/ `targetSdkVersion "26.0.0"`。
+- ⚠️ **build-profile 版本字段两坑**：① `runtimeOS: HarmonyOS` 下必须写**字符串**（写数字报 00303038）；
+  ② `"26.0.0(26)"` 报 **00308018** —— 26 代 API 号本身是三段式，正确写法是**不带括号的 `"26.0.0"`**。
+  版本名↔API 映射表在 `DevEco/tools/hvigor/.../hos-sdkmanager-common/build/res/hos-config.json`。
+- 内核已完成（`core/` 下零 `@kit.*`）：AST / MarkdownWriter / 体检 A1–A7 / 段落重排 / TXT / CSV，
+  **单测 167/167**，ArkTS 编译通过。⚠️ 仓库**只在本地**（`git init` 无 remote，党哥要求「代码先全放本地」）。
+- 三条硬结论：① **PDF 文本抽取要 API 23**；② **DOCX/XLSX/PPTX 与 Markdown 渲染鸿蒙都没有官方能力** ⇒ 自研，占 80% 工作量；
+  ③ **Pandoc 是 GPL-2.0，一行代码都不能碰**（只对标格式矩阵）。
+- 领域铁律（测试逼出来的）：**页码判断要排在列表判断之前**（`- 12 -` 会被当列表项）；
+  **列表项遇句末标点即结束**（否则吞掉后面整段正文）；**中文单空格不能无脑删**（`第二条 结算周期`）。
+- ⬜ **签名阻塞**：AGC「添加公钥指纹」= 还没传证书；调试签名要登录华为账号 ⇒ 装机验证得先在 DevEco 里跑一次。
+细节 ⇒ 当日日志第 6、7 节。
 
 主标杆 **Day One**（Journal）/ **Apple Books·Kindle·静读天下**（Reader）。完整对账表 ⇒ `reference-roadmap.md`。
 文档：`RockReader/docs/生态融入与对标改进方案-2026-10-25.md`（第七节 = 当前真实差距，已按 10-29 实测修订）。
