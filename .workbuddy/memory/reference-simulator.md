@@ -15,5 +15,18 @@
 - **`aa start -U <uri>` 带不动文件**：AMS 校验 URI 权限并**静默剥离 want.uri** ⇒ 外部拉起导入这条路彻底死透。写这类分支**必须打日志**。
 - **卡片参数取值验证招（不必真造书）**：`hdc shell "aa start -a EntryAbility -b <bundle> --ps a9 <bookId>"` 模拟系统改键名后的扁平形态。
 - **存量已知问题（2026-10-25，未修待拍板）**：① 幽灵阅读会话——应用后台/被杀不关会话，下次打开补 end_at，污染统计；② 抽屉打开时系统返回直接退出阅读页。
-- 测试基线：Reader **202/202**；Journal **226/226**（1.0.6 新增 87 条：ASR 19 / 日记本 / 提示 / 模板）。
+- **构建命令（2026-11-03 复核，可用）**：
+  `DEVECO_SDK_HOME="E:\Program Files\Huawei\DevEco Studio\sdk"`（**根目录，不是 sdk\default**）+
+  `JAVA_HOME="...\jbr"` + DevEco 自带 node 跑 `hvigorw.js --mode module -p product=default -p buildMode=debug assembleHap --no-daemon`。
+  ⚠️ 指到 `sdk\default` 会报 **00303312「找不到对应 SDK 版本」**（本机只装 API 26 一套 SDK，靠 compileSdkVersion 回落）。
+  Start-Process 的参数含空格要自己加引号；四项 proxy 同存抛「字典中的关键字重复」⇒ 临时摘掉。
+- **点击坐标必须取自 dumpLayout（2026-11-03）**：缩放截图上目测坐标会**偏 30px** ⇒ 点在按钮上方的空隙里
+  ⇒ 被 Column 的空 onClick 吞掉，表现为「点了没反应」（日志里 ClickRecognizer 命中链只有 Column、没有 Text）。
+  ⇒ `uitest dumpLayout` → 读节点 `bounds` → 点中心。
+- **`hdc install -r` 保留数据**（换签名才报 9568332 ⇒ 先 `uninstall`）⇒ 改代码重装机不用重走导入/建库流程。
+- **模拟器造数（picker）**：`浏览 → 下载与接收 → 下载管理器` 有 **12 个历史测试书**
+  （`minibook.txt` 是中文测试书，含 前言/第1章 開篇/第2章 中段/第3章 結尾）；
+  单击文件即导入并自动关闭 picker。⚠️ 搜索框 `uitest uiInput inputText` 不生效（secure 键盘）。
+- 测试基线：Reader **297/297**；Journal **240/240**（2026-11-03）。
+
 

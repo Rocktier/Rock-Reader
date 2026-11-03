@@ -21,3 +21,25 @@
   ③ **`uitest uiInput inputText` 必须三参数** `<x> <y> <text>`，两参数版报「The number of parameters is incorrect」。
 - **模拟器上 Rock私记 的主密码是 `123456`**（2026-10-27 设）。
 
+## 五、划词 / 文本选区（2026-11-03 新增，Reader 1.0.10）
+
+- **API 版本真相**（查 SDK 26 `component/text_common.d.ts` 实测）：
+  `Text.onTextSelectionChange` **@since 11**、`textSelectable` **@since 12**、`editMenuOptions` **@since 12**；
+  只有 **`SelectionContainer` 组件本身** @since 26 ⇒ **做划词不需要升 compileSdk**。
+  ⚠️ 「划词必须升 SDK 26」是**误判**，别再照着改工程配置。
+- **手势竞争（家族级）**：Text 上挂 `.gesture(LongPressGesture())` 会**抢赢** Text 自带的长按选词
+  ⇒ 系统选区**完全不出现**（无手柄、无菜单、UI 树 0 个 TextMenu）。
+  ⇒ 要划词就**把长按完整让给系统**，自定义手势挂到别处。
+- **`editMenuOptions.onMenuItemClick` 返回值语义**：
+  返回 `true` = **完全拦截**系统默认逻辑 ⇒ **系统浮动菜单留在屏幕上**（浮在我们自己的面板上方）。
+  返回 `false` = 我们的逻辑先跑、系统默认逻辑照跑（默认逻辑含「收起菜单」）⇒ **要返回 false**。
+- **追加的菜单项会落进 ⌄ 溢出菜单**（系统默认项有 4 个：复制/全选/翻译/搜索）⇒ 属正常，别以为没生效。
+- **撤选区**：compileSdk 20 的 `UIContext` **没有** `clearFocus`（API 26 才有）；
+  切 `textSelectable` **撤不掉已建立的选区**。正解：
+  `Text(content, { controller: this.ctrl })`（controller 走**构造第二个参数**，TextAttribute 上没有该方法）
+  + `this.ctrl.setTextSelection(0, 0)`（起 ≥ 止 ⇒ 不选任何内容）+ `this.ctrl.closeSelectionMenu()`。
+  ⚠️ 残留手柄会**压在抽屉页签上**（正文左上角）⇒ 点页签会重新弹系统菜单 ⇒ 页签点不动。
+- **系统长按中文默认只选中 1 个字** ⇒ 任何「少于 N 字就丢弃」的门槛都会把用户点击变成**死路**。
+  门槛只能用来「提示用户选区偏短」，**不能用来拦用户的显式操作**。
+
+

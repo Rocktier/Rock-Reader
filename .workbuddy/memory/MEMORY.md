@@ -52,6 +52,15 @@
 - **日期一律本地时区**，禁用 `toISOString()`（UTC，东八区 00–08 点写成昨天）。CI 有守门单测。
 - ⚠️ **发版纪律：版本号两处一起改** —— `AppScope/app.json5` 与 `entry/src/main/ets/common/AppMeta.ets`（1.0.6 漏改 AppMeta ⇒ smoke 测试红着）。
 - ⚠️ **列表里的装饰性竖条不能用 `height('100%')`** ⇒ 吃满整个 ListItem 变成分隔线（1.0.9 摘录色标踩到）⇒ 固定 20vp + alignSelf(Start)。
+- ⭐ **划词三条铁律（2026-11-03 实测）**：
+  ① **Text 上挂自定义长按手势会抢赢系统选词** ⇒ 要划词就把长按**完整让给系统**（自定义摘录入口挂菜单项，不挂手势）；
+  ② `onMenuItemClick` **返回 false**（返回 true = 完全拦截 ⇒ 系统浮动菜单留在屏幕上不收）；
+  ③ 撤选区用 `Text(content,{controller})` + `TextController.setTextSelection(0,0)`（compileSdk 20 **无** `clearFocus`，切 `textSelectable` 也撤不掉）。
+  ⚠️ **系统长按中文默认只选 1 个字** ⇒ 「少于 N 字就丢弃」的门槛会把用户点击变成**死路**（门槛只能用来提示，不能用来拦显式操作）。
+  详细清单 ⇒ `reference-arkui-pitfalls.md` 第五节。
+- ⭐ **模拟器点击坐标只能取自 `uitest dumpLayout` 的 bounds**（截图目测会偏 30px ⇒ 点空被 Column 的空 onClick 吞掉，表现为「点了没反应」）。
+- ⚠️ **构建时 `DEVECO_SDK_HOME` 要指向 `...\DevEco Studio\sdk`（根目录）** ⇒ 指到 `sdk\default` 报 00303312「找不到对应 SDK 版本」。
+
 
 ## 五、性能与验证层
 
@@ -70,7 +79,9 @@
 - **Journal 1.0.7（code 1000008）** —— 性能修复版（PBKDF2 改异步派生 + 解锁加 busy 态）。
   包 `C:\Users\Dang\Desktop\Rock私记-1.0.7-上架.app`，md5 `AFDDB74C6A8718D437DA4B8CB26ED042`，326,692 字节；闸门 9 项 PASS；tag `v1.0.7`。
   ⚠️ 1.0.7 未在真机实测 ⇒ 装新包需回归 4 件事：老库主密码解锁 / legacy 兼容 / 首次建库 / 生物解锁。
-- **测试基线**：Reader **268/268**；Journal **232/232**（含 KDF 参数守门 6 条）。
+- **测试基线**：Reader **297/297**；Journal **240/240**（含 KDF 参数守门 6 条）。
+- **2026-11-03 在研（未出包）**：Reader 划词「加入摘录」+ 屏幕亮度/常亮（commit `e4f42f4`）；
+  Journal 删单篇日记入口（commit `767900c`）⇒ 均为 **1.0.10 / 1.0.8** 的内容，**两仓都未推送**。
 - **tag 规则**：push main 只跑编译校验+单测；**push tag v\* 才触发 `gh release create`**（编译失败则不执行）。
 - ⚠️ Reader 的 `fonts-v1` 本地与远端指向不同 commit ⇒ `git push --tags` 会被拒，**这是正常的**（字体包 tag 与版本发布无关，别动它）。
 
