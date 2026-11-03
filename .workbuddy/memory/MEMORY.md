@@ -60,6 +60,11 @@
   详细清单 ⇒ `reference-arkui-pitfalls.md` 第五节。
 - ⭐ **模拟器点击坐标只能取自 `uitest dumpLayout` 的 bounds**（截图目测会偏 30px ⇒ 点空被 Column 的空 onClick 吞掉，表现为「点了没反应」）。
 - ⚠️ **构建时 `DEVECO_SDK_HOME` 要指向 `...\DevEco Studio\sdk`（根目录）** ⇒ 指到 `sdk\default` 报 00303312「找不到对应 SDK 版本」。
+- ⭐ **锁库三铁律（Journal 后台即锁，2026-11-03）**：
+  ① **先落盘再锁** —— 密钥一清 `encrypt()` 返 null ⇒ 防抖窗口内没落盘的内容**永远存不下来**
+  ⇒ 页面 `onPageHide` 立刻落盘 + 锁库延迟 **> 自动保存防抖**；
+  ② **只清密钥不够** —— 还要清内存里的**内容预览**（否则回前台屏幕上一屏摘要 = 锁了没锁住）；
+  ③ 送回解锁页必须 **router.clear() 再 replaceUrl**（只 replaceUrl 会让返回键翻回已解密页面）。
 
 
 ## 五、性能与验证层
