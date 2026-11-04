@@ -120,9 +120,21 @@
 
 **边界**：只有中文普通话、只有离线模型（短 ≤60s / 长 ≤8h）；**模拟器无离线引擎 ⇒ 效果必须真机验**；仅中国区 Phone/Tablet。
 
-**三个坑**：① `online` 名与值相反（**.d.ts 原话「1: offline」⇒ 1 = 离线**，教程写 `online: 0` 是错的）；
-② `StartParams.extraParams['recognizeMode']` 必须显式给 **0**（0 = 引擎自己开麦；省略默认 1 = 外部 writeAudio ⇒ 起了引擎没声音，键名是字符串编译器查不出）；
+**四个坑**（②是 2026-11-04 才查出来的真凶，前三版一直带着）：
+① `online` 名与值相反（**.d.ts 原话「1: offline」⇒ 1 = 离线**，教程写 `online: 0` 是错的）；
+② ⭐⭐ **`StartParams.extraParams` 的键是 `recognitionMode`（re-cogni-**tion**-Mode），不是 `recognizeMode`**。
+   值为 **0** = 引擎自己开麦；**不传/键名错 ⇒ 默认 1 = 外部 `writeAudio` 喂流** ⇒ 我们从没喂过
+   ⇒ **引擎起了、权限有了、界面显示"正在聆听"、但永远没声音没结果，且没有任何错误码**。
+   我们写成 `recognizeMode` 整整带了 4 个版本（1.0.6～1.0.9），AGC 自检报「语音转文字不生效」才炸出来。
+   ⚠️ 同一个 createEngine 里还有个 **`recognizerMode`**（'short'/'long'，选模型），是**另一个字段**，别混。
+   官方示例的 createEngine 也一直带 `extraParams: { locate:'CN', recognizerMode:'short' }`，我们原来完全没给。
+   ⇒ 现在键名收在 `AsrText.asrEngineExtra()/asrStartExtra()` 纯函数里，由单测盯拼写（字符串键只能这么守）。
 ③ `PermissionRequestResult` 没导出到 `abilityAccessCtrl` ⇒ **靠 `const res = await ...` 推断**。
+④ `vadEnd` 短语音默认 **800ms** ⇒ 长句说到换气处就被判"说完了"，后半句丢；我们设 3000ms。
+
+**判据：云测/自检的「语音不生效」不能直接当结论** —— 自动化机器人不会对着麦克风说话，
+语音类功能在云测里被判"不生效"有结构性成分。**但也不能反过来当噪音忽略**（这次就是真 bug）。
+分辨法：看 HiLog 有没有 `asr: onResult` —— 有回调没文本 = 音频进来了但识别不出；**一个回调都没有 = 音频压根没进来**（就是坑②的样子）。
 
 **固定套路**：监听器 5 方法全必填（先 `const self=this`、字面量落接口变量、方法语法）；`createEngine` 用回调版，成功时 **err 是 undefined 不是 null**；
 结果累积 = isFinal 累加 + 非 final 取最后一条。
