@@ -100,64 +100,15 @@
 - **C 类·我们领先**：全量本地加密、时间胶囊硬封存、完全离线、不绑云账号。
 - **坚决不做**：云同步 / 云端 AI。
 
-## 九、all2md（家族第 9 个应用，2026-11-03 立项，仓库 `F:\AI\HarmonyOS\all2md`）
+## 九、all2md → ⚠️ 台账已迁出，本文件不再记细节
 
-定位：**把万物（文档类）转成 Markdown 的转换应用 + 阅读应用**；AI first 是「为什么值得做」，不是产品品类。
-身份顺序 **转换 → 阅读 → 体检**，体检是验证层、不是身份（见 `reference-ui-v2.md` §〇）。参照 `microsoft/markitdown`（MIT）。
+**真源：`F:\AI\HarmonyOS\apps\all2md\` 三本台账**（`task_plan.md` / `findings.md` / `progress.md`）。
+党哥 2026-11-04 定：**台账按「阶段 / 主题」组织，不按日期记流水**。
 
-- ⚠️ **包名 `rock.all.2.md`**、APP ID `6917620824955651111` —— 与家族 `com.rocktier.*` **不是同一体系，别顺手统一**（AGC 建了改不了）。
-  设备 phone/tablet/2in1，**零权限**。配置真源：`docs/AGC-应用信息-2026-11-03.md`。
-- `compatibleSdkVersion "6.1.0(23)"`（PDF `getTextContent()` 要 API 23）/ `targetSdkVersion "26.0.0"`。
-- ⚠️ **build-profile 版本字段两坑**：① `runtimeOS: HarmonyOS` 下必须**字符串**（数字报 00303038）；
-  ② `"26.0.0(26)"` 报 **00308018** —— 26 代 API 号本身三段式，写**不带括号的 `"26.0.0"`**。
-  映射表：`DevEco/tools/hvigor/.../hos-sdkmanager-common/build/res/hos-config.json`。
-- 三条硬结论：① PDF 文本抽取要 API 23；② **DOCX/XLSX/PPTX 与 Markdown 渲染鸿蒙无官方能力** ⇒ 自研占 80% 工作量；
-  ③ **Pandoc 是 GPL-2.0，一行不能碰**（只对标格式矩阵）。
-- 内核已完成（`core/` 零 `@kit.*`，故能 node 单测）：AST / MarkdownWriter / MarkdownParser / 体检 A1–A7 / 段落重排 /
-  TXT / CSV / XML 解析器 / DOCX 读入器 / **PDF 版式恢复** / 转换分派层 ⇒ **279/279**，ArkTS 真编译通过。
-  入口现为 `pages/Home.ets`（格式带 + 最近列表）→ `Reader`（读/校）→ `Report`（七条全展开）；
-  `pages/Convert.ets` 已删，`pages/Index.ets` 保留为内核对账台。
-- ⭐ **DOCX 与 PDF 的根本差别 = `structureInferred`**：DOCX 标题来自 `w:pStyle`/`w:outlineLvl`（作者声明，false）；
-  PDF 只能猜（true）。**必须一路传到体检报告**，否则用户分不清「这个 `##` 是真的还是猜的」。
-- ⭐ **合并单元格只能降级不能补全**：GFM 无合并语法 ⇒ `gridSpan` 展宽补空、`vMerge` 延续格留空（行列数与视觉网格一致）。
-  「按视觉补全内容」更糟 —— AI 会读到重复信息。
-- 领域铁律（测试逼出来的）：**页码判断排在列表判断之前**（`- 12 -` 会被当列表项）；**列表项遇句末标点即结束**；
-  **中文单空格不能无脑删**（`第二条 结算周期`）；**只含图片的段落不能产空块**（否则 A7 假警报盖住「图片没 alt」）。
-- ⭐ **`signingConfigs` 写了 ≠ 生效**：DevEco 自动签名只写数组、不在 product 引用 ⇒ 只一行
-  `WARN: No signingConfig found for product default`，**BUILD SUCCESSFUL 照样绿**，产物是 `*-unsigned.hap`。
-  ⇒ `app.products[0]` 必须写 `"signingConfig": "default"`。**判据：产物名有无 `-signed`；`SignHap` 2.3 s = 跑了，2 ms = 没跑。**
-- 华为**调试**证书全应用共用一张（`0D:AA:8A:96:…:71:80`），按 profile 里的 bundleName 区分 ⇒ 三仓指纹一样，别指望靠指纹认应用。
-- 仓库**只在本地**（`git init` 无 remote，党哥要求「代码先全放本地」）。`.gitattributes` 钉死 LF（本机 autocrlf=true，CRLF 会让逐行正则静默失效）。
-- ⬜ 仍欠**正式上架证书**（`.p12`/`.cer`/`.p7b`）与「添加公钥指纹」——出正式包时再弄。
-
-### 9.1 界面 v2「边白」（2026-11-04 第一期移植完成，commit `750d9cc`）⇒ 细节见 `reference-ui-v2.md`
-
-⭐ **all2md 视觉与 Rock 家族彻底脱钩**（党哥要求「保持自己的特色」）—— 换的不是色号是材料：
-`#E9EBE1` 校样纸 / `#16211B` 墨绿黑 / `#EFAF39` 警示黄（**只表示出问题，零装饰性黄**）/ 圆角只有 2 与 8。
-**禁用家族四件套**：`#ff4a3d`、纯黑 `#000` 底、圆角 0/12、`docs/tokens.css`。
-
-- 隐喻 **「一页留了边白的校样」**；核心判断：产品唯一不可替代的是「错了你看得见」⇒ 体检是边白，不是底部一排勾。
-- **signature 三件套（拆了就散）**：① 七格色标条，**失败那格被抠掉**（不是变红）② 出错行的行号被顶替（`27`→`A4`）
-  ③ 荧光笔只压字高中段。
-- ✅ 已按 §〇 重审并落地：阅读屏升为主角（不带边白批注）、入口有格式带、转出的 .md 存档进本地书架。
-- ⚠️ **「转换中」不给假进度**：设计稿画的是逐块吐字，实际一次算完 ⇒ 只给文字进度（PDF 有真页码进度）。
-- 战略对账已完成 ⇒ `all2md/docs/策略对账-2026-11-03.md`：DeepSeek 稿的六条决议标了采纳/部分/存疑，
-  两条修正 = ① 第一版先 DOCX（OCR 排第二入口）② PDF 照做但把 `structureInferred` 显式暴露。
-  ⚠️ 稿子里的三组数字（5–19 倍 / 12.7% / 17.8 分）**无出处，禁入商店文案**。
-- ⬜ 激励计划待党哥查：**首次上架日期须晚于 2026-03-12** 才够格（更新版本不算）；
-  金额两档（热门 1 万 / 新应用 3000）；**必须开通商户服务并在 12-31 前过审**，否则视为放弃。
-
-### 9.2 PDF 读入器（2026-11-04，commit `9279309`）⇒ 细节见 `reference-pdf-reader.md`
-
-- ⚠️ **模拟器没有 PDFKit**：`canIUse('SystemCapability.OfficeService.PDFService.Core')` 返回 **false**，
-  `pdfService` 运行时 undefined ⇒ **PDF 端到端只能在真机验**。探测只探 syscap 字符串，
-  写 `pdfService !== undefined` 会被 `arkts-no-ns-as-obj` 编译期拦。
-- ⭐ **验不了机器就验数据**：电脑上 `pypdf` 抽 `(text,x,y,size)` 成 JSON 直接喂 `readPdf()`
-  （内核零 `@kit.*` 才能这么干）—— 三个真 bug（109 个标题 / 假表格 / 间距被抹）全是这么发现的。
-- 三条判据别乱改：**标题两档**（≥1.5 倍直接算；1.15–1.5 倍须占比 ≤8%）、
-  **页眉四条件**（上下 8% + 字号 ≤正文×1.1 + 跨页重复 + ≥半数页）、
-  **表格四门槛**（≥3 列、连续 ≥3 行、≥80% 行满列、归类失败 ≤5%）。
-- **间距即版面语义**：`gap > size*0.9` 就补空格，**与语言无关**（中文之间也补，那是分栏不是连字）。
+只留三条**跨项目也成立**的禁令：
+- ⚠️ 包名 `rock.all.2.md`、APP ID `6917620824955651111` —— **与 `com.rocktier.*` 不是同一体系，别顺手统一**（AGC 建了改不了）。
+- ⚠️ **模拟器没有 PDFKit**（`canIUse` 返回 false，`pdfService` 运行时 undefined）⇒ **PDF 端到端只能真机验**。
+- ⭐ 通用打法：**验不了机器就验数据** —— 纯逻辑抽到零 `@kit.*` 内核层，用真实文件导出中间数据喂它（三个真 bug 都是这么发现的）。
 
 ## 十、ASR（Core Speech Kit）
 
