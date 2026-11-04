@@ -5,7 +5,7 @@
 > 深度清单（同目录）：
 > `reference-signing.md` 签名出包上传 · `reference-releases.md` 包指纹/版本/测试基线 ·
 > `reference-performance.md` 性能六律 · `reference-arkui-pitfalls.md` ArkUI/混淆/编译坑 ·
-> `reference-simulator.md` hdc/模拟器工具 · `reference-roadmap.md` 产品对标。
+> `reference-simulator.md` hdc/模拟器工具 · `reference-clouddebug.md` AGC 云调试（密码框黑屏/命令白名单/灌文件死路）· `reference-roadmap.md` 产品对标。
 
 ## 一、产品口径：非主动联网（党哥 2026-10-18 拍板）
 
