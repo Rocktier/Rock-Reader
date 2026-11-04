@@ -19,6 +19,7 @@ import { common } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { BookDb } from '../data/BookDb';
+import { BackLayer, topmostLayer } from '../common/BackStack';
 import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
 import { bookCharsLeft, bookLeftText, bookPercentOf, chapterLeftText } from '../engine/stats/ReadStats';
 import {
@@ -823,6 +824,61 @@ struct Reader {
       this.deferHeavyWork(() => {
         this.openChapter(this.chapterIndex, keep);
       });
+    }
+  }
+
+  /**
+   * 系统返回键：**先撤掉挡在面前的那一层，都撤完了才退页面**。
+   *
+   * 本页此前**完全没有 onBackPress** —— 这是个真实缺陷，不是漏写：
+   * 目录/设置抽屉开着时按返回，直接退出阅读页回书架，抽屉状态还挂在内存里。
+   * 用户的心智是「返回 = 后退一步」，一步退出整本书违背它。
+   * 证据就在本文件里：`SETTINGS_STRIP_VP` 那段注释 2026-10-23 写着
+   * 「面板铺满全屏且点上面关不掉，**只能靠系统返回**」—— 而系统返回其实是退出页面。
+   *
+   * 「哪一层优先」不写在这里，写在 `common/BackStack.ets`（纯逻辑、有单测）：
+   * 那是本功能唯一的易错点，以后加浮层时测试会提醒，肉眼在 4000 行里找 if 做不到。
+   *
+   * ⚠️ 摘录面板必须走 `closeHighlightPanel()` 而不是直接置 false：
+   *    它要顺带恢复 `selectionEnabled`，否则用户再也划不了词（功能静默失效）。
+   */
+  onBackPress(): boolean {
+    const layer: BackLayer = topmostLayer({
+      hasHighlight: this.showHighlight,
+      editingBookmark: this.editingBookmarkId !== -1,
+      hasSettings: this.showSettings,
+      hasToc: this.showToc,
+      hasMenu: this.showMenu
+    });
+    if (layer === BackLayer.Exit) {
+      return false;
+    }
+    this.dismissLayer(layer);
+    return true;
+  }
+
+  /** 撤掉指定的一层（与 `topmostLayer` 配对使用，一一对应） */
+  private dismissLayer(layer: BackLayer): void {
+    switch (layer) {
+      case BackLayer.Highlight:
+        this.closeHighlightPanel();
+        break;
+      case BackLayer.EditBookmark:
+        // 只退出编辑态，**保留抽屉**：一次退一层，别一步退回书架
+        this.editingBookmarkId = -1;
+        this.editingBookmarkNote = '';
+        break;
+      case BackLayer.Settings:
+        this.showSettings = false;
+        break;
+      case BackLayer.Toc:
+        this.showToc = false;
+        break;
+      case BackLayer.Menu:
+        this.showMenu = false;
+        break;
+      default:
+        break;
     }
   }
 

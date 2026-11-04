@@ -28,3 +28,4 @@ import './shelfauthor.test.ts';
 import './highlightpalette.test.ts';
 import './screensettings.test.ts';
 import './selectionrange.test.ts';
+import './backstack.test.ts';
