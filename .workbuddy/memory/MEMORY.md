@@ -67,6 +67,12 @@
 - **构建环境**：`DEVECO_SDK_HOME` 指到 `...\DevEco Studio\sdk`（根，指 `sdk\default` 报 00303312）；
   自带 hvigorw wrapper 已坏，用 DevEco 自带 node 跑 `hvigorw.js`。
 - **模拟器点击坐标只取自 `uitest dumpLayout` 的 bounds**（截图目测偏 30px ⇒ 点空被 Column 空 onClick 吞掉，表现「点了没反应」）。
+- **PDF（2026-11-05 起支持，只做论文/电子书这类文字版）**：
+  ① 判据 `canIUse('SystemCapability.OfficeService.PDFService.Core')` —— **本地 x86 模拟器为 false**
+  ⇒ **PDF 端到端只能真机/云真机验**，别在模拟器上找原因；② 默认 `PageFit.FIT_WIDTH`（论文双栏必须）；
+  ③ **零 schema 改动**：`ReadingProgress` 复用成页码坐标系（`chapterIndex`=页码、`charOffset`=0、
+  `percent` 分母用 `total-1`）；④ 独立 `pages/PdfReader`，**不许塞进 Reader 的字符偏移管线**；
+  ⑤ `getParams()` 不许 `params['x']` 索引访问（`arkts-no-props-by-index`）⇒ 定义 interface 再 `as`。
 - ⚠️ **记忆台账要进版本库**：Reader 仓 `.workbuddy/memory/` 全追踪，Journal 用 `.workbuddy/*` + `!.workbuddy/memory/`
   ⇒ 改 .gitignore 后 `git add -A` 并 `git ls-files .workbuddy` 验一下真的进去了。
 

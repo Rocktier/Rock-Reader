@@ -5,6 +5,7 @@
     "pages/Settings",
     "pages/Stats",
     "pages/About",
-    "pages/Privacy"
+    "pages/Privacy",
+    "pages/PdfReader"
   ]
 }

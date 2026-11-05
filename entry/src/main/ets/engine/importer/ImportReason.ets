@@ -23,7 +23,17 @@ export function reasonText(reason: string): string {
       // PalmDOC/无压缩 —— HUFF/CDIC 压缩（新版 MOBI 很常见）解析时直接抛异常，
       // 用户拿着解不开的 MOBI 来，文案却说 MOBI 可以，等于把人往坑里带。
       // 「部分支持」不进宣传清单：能吃进去是惊喜，吃不进去不欠解释。
-      return '这个格式不支持（TXT/EPUB/HTML/MD/FB2 可以）';
+      return '这个格式不支持（TXT/EPUB/PDF/HTML/MD/FB2 可以）';
+    case 'PDF_ENCRYPTED':
+      // ⚠️ 必须与「文件损坏」分开说：加密 PDF 重新下载多少次都一样，
+      // 告诉用户"坏了"会让他白折腾一轮。
+      return '这本 PDF 有密码，暂时打不开';
+    case 'PDF_BROKEN':
+      return '这本 PDF 打不开（文件可能已损坏或没下载完）';
+    case 'PDF_UNSUPPORTED':
+      // 本地 x86 模拟器就是这一条（canIUse 返回 false）。设备能力缺失不是用户的问题，
+      // 也不能说成"文件坏了" —— 换个设备就能读。
+      return '这台设备不支持 PDF 阅读（需要有 PDF 能力的鸿蒙设备）';
     case 'TOO_LARGE':
       return '文件太大';
     case 'EMPTY':

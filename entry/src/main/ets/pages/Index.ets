@@ -30,6 +30,7 @@ import {
   STATUS_UNREAD
 } from '../engine/shelf/ShelfRules';
 import { shelfSubtitle } from '../engine/shelf/ShelfAuthor';
+import { isPdfFormat } from '../engine/pdf/PdfPages';
 import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
 import { shelfColsOf } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
@@ -419,15 +420,41 @@ struct Index {
   }
 
   private openBook(book: BookRecord): void {
-    this.openBookById(book.id);
+    this.routeTo(book.id, book.format);
   }
 
   /**
-   * 按 id 开 Reader（卡片「继续读」用）—— 不依赖 this.items 已加载：
-   * 冷启动时书架列表可能还没拉到，Reader.init 自己查库，查不到有「找不到这本书」兜底。
+   * 按 id 开（卡片「继续读」用）—— 不依赖 this.items 已加载。
+   *
+   * ⚠️ 冷启动从卡片进来时书架列表可能还没拉到，`bookOf` 会返回空记录（format = ''），
+   * 那道「PDF 走 PdfReader」的分支就会失效、把 PDF 当 TXT 打开。
+   * 所以内存里查不到格式时**补一次查库**（很便宜，且只在卡片冷启动这条路上发生）。
    */
   private openBookById(bookId: string): void {
-    this.getUIContext().getRouter().pushUrl({ url: 'pages/Reader', params: { bookId: bookId } });
+    const inMem: BookRecord = this.bookOf(bookId);
+    if (inMem.format.length > 0) {
+      this.routeTo(bookId, inMem.format);
+      return;
+    }
+    this.db.getBook(bookId).then((b: BookRecord | null) => {
+      this.routeTo(bookId, b === null ? '' : b.format);
+    }).catch((e: Error) => {
+      hilog.error(DOMAIN, TAG, 'open book lookup failed: %{public}s', e.message);
+      this.routeTo(bookId, '');
+    });
+  }
+
+  /**
+   * 阅读器分流（2026-11-05 加 PDF）：
+   *   PDF → pages/PdfReader（固定版式，PdfView 渲染，按页存进度）
+   *   其余 → pages/Reader（字符流管线，按章 + 字符偏移）
+   *
+   * 为什么必须分流而不是一个页面兼容两种：见 engine/pdf/PdfPages.ets 顶部注释。
+   * 判定只有 `isPdfFormat` 一处 —— 以后加 EPUB-固定版式之类，也只改这里。
+   */
+  private routeTo(bookId: string, format: string): void {
+    const url: string = isPdfFormat(format) ? 'pages/PdfReader' : 'pages/Reader';
+    this.getUIContext().getRouter().pushUrl({ url: url, params: { bookId: bookId } });
   }
 
   @Builder

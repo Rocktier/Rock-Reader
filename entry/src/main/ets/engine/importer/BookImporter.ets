@@ -28,6 +28,7 @@ import { parseTxtSync, MAX_TXT_BYTES, CHAPTER_DIR } from '../parser/TxtParser';
 import { parseEpub, MAX_EPUB_BYTES, readEpubResource } from '../parser/EpubParser';
 import { parseMarkupSync } from '../parser/MarkupParser';
 import { parseMobiSync } from '../parser/MobiParser';
+import { PdfInfo, pdfBookTitle, probePdf } from '../pdf/PdfProbe';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -72,6 +73,11 @@ function parseKindOf(ext: string): string {
   // AZW = Kindle 的 MOBI（无 DRM 时与 mobi 同构）；AZW3 = KF8
   if (ext === 'mobi' || ext === 'azw' || ext === 'azw3') {
     return 'mobi';
+  }
+  // PDF：固定版式，**不走文本解析**，阅读交给独立的 PdfReader 页面
+  // （见 engine/pdf/PdfPages.ets 顶部：为什么不能塞进 Reader 的字符偏移管线）
+  if (ext === 'pdf') {
+    return 'pdf';
   }
   return '';
 }
@@ -457,6 +463,32 @@ export class BookImporter {
         }
         return { ok: false, reason: reason, book: book };
       }
+    } else if (parseKindOf(ext) === 'pdf') {
+      // PDF：**不解析文本、不建章表**（固定版式没有章节这回事），阅读走 pages/PdfReader。
+      // 但必须在导入这里就探一次，理由：
+      //   ① 加密 PDF 能拷进沙箱、能出现在书架上，却**永远打不开** ——
+      //      用户点进去只看到一片空白，观感上等于应用坏了；
+      //   ② 下到一半的 PDF、改了扩展名的 doc 同理。
+      // 探失败就**不进书架**，并把沙箱副本删掉（不留占地方的孤儿文件）。
+      const info: PdfInfo = probePdf(dstPath);
+      if (!info.ok) {
+        hilog.warn(DOMAIN, TAG, 'pdf rejected: %{public}s', info.reason);
+        this.cleanupFailedCopy(dir, dstPath);
+        return { ok: false, reason: info.reason, book: null };
+      }
+      book = {
+        id: id,
+        // 论文 PDF 的 metadata.title 常是「Microsoft Word - 论文初稿.doc」，
+        // 过滤规则在 PdfPages.pickPdfTitle（有单测），不可用时退回文件名
+        title: pdfBookTitle(info, book.title),
+        author: info.author.trim(),
+        format: ext,
+        path: dstPath,
+        size: srcSize,
+        addedAt: now,
+        lastReadAt: now,
+        groupName: ''
+      };
     } else {
       // html / md / fb2：**导入时**转成纯文本并预切章落盘 —— 阅读端直接走 TxtSource，
       // 所以阅读页对这三种格式零改动（详见 MarkupParser 文件头）
@@ -515,10 +547,15 @@ export class BookImporter {
       return 'NOT_SUPPORTED';
     }
     // TXT 与标记类（html / md / fb2）同为纯文本，共用同一个上限
-    if (kind !== 'epub' && size > MAX_TXT_BYTES) {
+    if (kind === 'epub' && size > MAX_EPUB_BYTES) {
       return 'TOO_LARGE';
     }
-    if (kind === 'epub' && size > MAX_EPUB_BYTES) {
+    // PDF 不吃 MAX_TXT_BYTES：TXT 的 100MB 上限来自"要整份读进内存再切章"，
+    // 而 PDFKit 是按需解析（只读页对象与文字层），不吃这一套。给到全局 300MB。
+    if (kind === 'pdf') {
+      return '';
+    }
+    if (kind !== 'epub' && size > MAX_TXT_BYTES) {
       return 'TOO_LARGE';
     }
     return '';
