@@ -62,8 +62,14 @@
 - 🔒 **release 混淆**：会改 JSON 落盘字段名 ⇒ 文件级 `-keep`（条目**不能缩进**）；还要保护**按名反射的跨模块契约**
   （AsrService 的 `RecognitionListener` 被 SDK 按名回调，改名 ⇒ 语音**静默失效**）。
   ⚠️ 反例：TtsEngine 不必加 -keep，**不要盲目类推**。
-- **safe-delete 钩子**：单轮删 ≥50 文件会拦（00308004 Unable to delete entry\build）
-  ⇒ **把 `entry/build`、`.hvigor` 改名让开再构建，不要硬删**。
+- **safe-delete 钩子**：单轮删 ≥50 文件会拦。（2026-11-05 修正：**别一上来就动 `entry/build`**）
+  报 `00308018 Unknown Error` 且 Failed 在 `CompileArkTS` 上 ⇒ 往下翻一定有一行
+  `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":N,...}` 指向真实目标。
+  **只把 `.../cache/default/default@CompileArkTS` 改名 `.old-1` 就够**（33 秒构建成功，
+  只丢 ArkTS 一层增量缓存）；整个 `entry/build` 改名是最后手段。
+- 📁 **桌面交付物必须用中文应用名**：`Rock阅读-x.y.z-上架.app` / `Rock私记-x.y.z-上架.app`（清单同理），
+  **不要写 RockReader / RockJournal** —— 2026-11-05 党哥指出"汉字全改成英文了"，
+  而与 `桌面\旧版本存档\` 里既有命名不一致会认错包。
 - **构建环境**：`DEVECO_SDK_HOME` 指到 `...\DevEco Studio\sdk`（根，指 `sdk\default` 报 00303312）；
   自带 hvigorw wrapper 已坏，用 DevEco 自带 node 跑 `hvigorw.js`。
 - **模拟器点击坐标只取自 `uitest dumpLayout` 的 bounds**（截图目测偏 30px ⇒ 点空被 Column 空 onClick 吞掉，表现「点了没反应」）。
@@ -83,12 +89,15 @@
 
 ## 六、发版状态
 
-- 🟡 **已上传待审：Reader 1.0.11（code 1000012）/ Journal 1.0.10（code 1000011）** ——
-  2026-11-04 23:52 党哥确认两包都已提交，闸门全 PASS、tag 已推。**下次开工先看这两条审核结果**。
-  📦 桌面已清空（11-04 23:56）：两包与清单都移进 `桌面\旧版本存档\`，**桌面根目录没有**。
-  已达标上线：Reader 1.0.10 / Journal **1.0.9**（当晚达标；它带着 ASR 错拼，需 1.0.10 补）。
-  完整指纹、未验项、测试基线（307/307、253/253）、tag 规则 ⇒ **`reference-releases.md`**。
-- 下一版版本号：Reader `1.0.12` / code `1000013`；Journal `1.0.11` / code `1000012`。
+- ✅ **已上架（2026-11-05 21:0x 党哥贴 AGC 后台确认）：Reader 1.0.11 / Journal 1.0.10**。
+  ⚠️ Journal 1.0.10 带着 ASR 修复上架了，但**过审 ≠ 语音能用**（审核员不对麦克风说话）
+  ⇒ ASR 真机验证仍是唯一硬缺口。
+- 🟡 **已提交待审（2026-11-05 21:10 党哥确认两包都已提交）**：
+  Reader **1.0.12**（code 1000013，含 PDF 一期）/ Journal **1.0.11**（code 1000012，含 Markdown 导入）。
+  两包闸门全 PASS；`.app` 已移进 `桌面\旧版本存档\`。**下次开工先看这两条审核结果**。
+  1.0.11 / 1.0.10 的旧 `.app` 已按党哥指示移入回收站（可还原）。
+  完整指纹、未验项、测试基线（337/337、293/293）、tag 规则 ⇒ **`reference-releases.md`**。
+- 下一版版本号：Reader `1.0.13` / code `1000014`；Journal `1.0.12` / code `1000013`。
 - ⭐ **判断「包有没有变」不能看 md5**（签名含时间戳，每次都变）⇒ 解包 `ets/modules.abc` **数符号次数**比新旧包
   （`onBackPress` 0→2 这种）。混淆会改内部函数名，只有字符串常量与 SDK API 名可查。
 - **发 Release 不盯（2026-10-29 定）**：push tag 后只推不监控，**下个任务开始时**再看那批 run（`gh run list`）。
