@@ -3,6 +3,17 @@
 > 从 MEMORY.md 拆出（2026-10-28，因主文件超注入上限）。
 > 适用：RockReader + RockJournal 模拟器验证。
 
+- ⭐ **模拟器可以纯命令行起停，不用开 DevEco**（2026-11-05 实测，all2md 用）：
+  ```bash
+  cd "/e/Program Files/Huawei/DevEco Studio/tools/emulator"
+  ./Emulator.exe -start "Pura 90 Pro" -noWindow   # 无窗口后台跑，3 秒内 hdc 可见 127.0.0.1:5555
+  ./Emulator.exe -stop  "Pura 90 Pro"
+  ```
+  实例名取自 `C:/Users/Dang/AppData/Local/Huawei/Emulator/deployed/lists.json`
+  （现有：`Pura 90 Pro` 手机 / `MatePad Pro 13` 平板 / `Mate X7` 折叠 / `MateBook Pro` 2in1）。
+  `-help` 还有 `-instance <name> -click/-slide/-fill/-screenshot/-power` 等交互子命令。
+  ⇒ **以后要验界面不必等党哥开模拟器**，自己起、验完自己 `-stop`。
+
 - 沙箱写入：`hdc file send` 写不进应用沙箱（SELinux 拒）；**真正能写应用私有目录的是设备上 `sqlite3` 的 `writefile()`**（**只能写 `haps/entry/files/`**）。
 - **模拟器**：dpr=3.5、视口≈359vp；**自动锁屏**（`keyEvent Power` + `swipe 628 2680 628 700`）；**约 30s 自动息屏** ⇒ `power-shell wakeup` 点亮、`power-shell timeout -o <ms>` 覆盖（**参数是 -o**）。**安全键盘是 secure 窗口：键盘弹出期间 screenCap 拍到应用区域纯黑，但 dumpLayout 仍读到完整 UI 树** ⇒ 极易误判成「渲染黑屏」⇒ **判据：关掉键盘再截图**。深浅色在系统设置「显示和亮度 → 显示模式」Radio（浅 ~(349,1634) / 深 ~(907,1634)）。
 - hdc 不在 PATH：`/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`、**`uitest uiInput inputText <x> <y> <text>`（三参数版！）**，两参数版报「The number of parameters is incorrect」。`uitest dumpLayout` 输出路径每次随机 ⇒ 读 stdout 的 `DumpLayout saved to:/data/local/tmp/layout_xxx.json` 再 `hdc shell cat`（`file recv` 本地路径写相对名）。设备绝对路径需 `MSYS_NO_PATHCONV=1`。DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。shell 无 wm 命令 ⇒ 横屏断点抽纯函数 + 单测守。
