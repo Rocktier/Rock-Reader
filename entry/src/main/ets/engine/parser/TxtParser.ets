@@ -95,19 +95,28 @@ export function decodeBytes(bytes: Uint8Array, encoding: string): string {
 /**
  * 解析整个 TXT：探测编码 → 解码 → 切章。
  * 同步实现（供 taskpool 调用）；结果只含章节索引，**不留全文**。
+ *
+ * @param forced 用户手动指定的编码（`'auto'` = 自动探测）。手动指定时**不做兜底**：
+ *   用户选了 BIG5 却被悄悄换回 UTF-8，只会让人以为"换了也没用"。
  */
-export function parseTxtSync(path: string): TxtParseResult {
+export function parseTxtSync(path: string, forced: string = 'auto'): TxtParseResult {
   const bytes = readAllBytes(path);
-  const guess: EncodingGuess = detectEncoding(bytes);
 
-  let encoding: string = guess.encoding;
+  let encoding: string = '';
   let text: string = '';
-  try {
-    text = decodeBytes(bytes, encoding);
-  } catch (e) {
-    // 兜底（家族 findings：TextDecoder 的 GB18030 支持待实测）→ 退 UTF-8，保证「能读」
-    encoding = 'utf-8';
-    text = decodeBytes(bytes, 'utf-8');
+  if (forced !== 'auto') {
+    encoding = forced;
+    text = decodeBytes(bytes, forced);
+  } else {
+    const guess: EncodingGuess = detectEncoding(bytes);
+    encoding = guess.encoding;
+    try {
+      text = decodeBytes(bytes, encoding);
+    } catch (e) {
+      // 兜底（家族 findings：TextDecoder 的 GB18030 支持待实测）→ 退 UTF-8，保证「能读」
+      encoding = 'utf-8';
+      text = decodeBytes(bytes, 'utf-8');
+    }
   }
 
   const chapters: ChapterMeta[] = splitChapters(text);

@@ -29,6 +29,8 @@ import { ScreenService } from '../engine/reader/ScreenService';
 import { ReaderPrefs, TTS_PERSON_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ProgressSnapshot, ReadingProgress, SearchHitRow } from '../common/Types';
 import { BookSource, createBookSource } from '../engine/parser/BookSource';
+import { parseTxtSync, TxtParseResult } from '../engine/parser/TxtParser';
+import { encodingHint, encodingLabel, normalizeEncoding } from '../engine/text/Encoding';
 import {
   fontSizeFpOf,
   fontWeightOf,
@@ -224,6 +226,20 @@ struct Reader {
   @State chapterTitle: string = '';
   @State chapterIndex: number = 0;
   @State chapterCount: number = 0;
+  /**
+   * 这本书按哪种编码读：`'auto' | 'utf-8' | 'gb18030' | 'big5'`（2026-11-05，党哥选项 A）。
+   * 只有纯文本系（TXT/HTML/MD/FB2/MOBI）才有这个入口 —— EPUB 走 zip+XML 自带编码声明，
+   * 不存在"猜错"的问题，给它摆一排按钮只会让人以为自己按错了。
+   */
+  @State txtEncoding: string = 'auto';
+  /**
+   * 是否显示编码入口。**必须是 @State**，不能写成 `if (this.book !== null && ...)`：
+   * ① `book` 是普通字段不是 @State，首帧为 null，条件按首帧定型后就再也不翻了；
+   * ② ArkUI V1 的分支条件只认表达式里**直接读 @State** 的依赖。
+   * 只对 TXT 开放：HTML/MD/FB2 走 MarkupParser（自带编码声明与标签剥离）、
+   * MOBI/AZW 是压缩容器、EPUB 走 OPF —— 拿 parseTxtSync 重解这些格式只会更糟。
+   */
+  @State showEncodingSection: boolean = false;
   /** 各章已确认字数（下标 = 章序，未量过 = 0）。见 computeBookPercent 的口径说明。 */
   private charCounts: number[] = [];
   /** 字数普查进行中标记（防重复进入） */
@@ -966,6 +982,8 @@ struct Reader {
       }
       this.book = book;
       this.title = book.title;
+      this.txtEncoding = this.prefs.getTxtEncoding(book.id);
+      this.showEncodingSection = book.format === 'txt';
       this.source = createBookSource(book, this.prefs);
 
       this.fontFamily = this.prefs.effectiveFamily(book.id);
@@ -3486,6 +3504,81 @@ struct Reader {
       .onClick(() => this.pickTtsSpeed(v))
   }
 
+  /**
+   * 编码按钮。**选中态必须在 builder 内部直接读 @State**（`this.txtEncoding`），
+   * 不能当值参数传进来 —— 家族第 7 次同型坑：@Builder 值参数不随 @State 重跑，
+   * 传进来就会"点了没反应，退出重进才对"。speedChip 能热切换正是因为它内部直接读 this.ttsSpeed。
+   */
+  @Builder
+  encodingChip(value: string) {
+    Text(encodingLabel(value))
+      .fontSize(RR_FS_LABEL)
+      .fontFamily('monospace')
+      .fontColor(this.txtEncoding === value ? this.palette.bg : this.palette.text2)
+      .backgroundColor(this.txtEncoding === value ? this.palette.text : this.palette.card)
+      .borderWidth(1)
+      .borderColor(this.txtEncoding === value ? this.palette.text : this.palette.line)
+      .height(34)
+      .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .stateStyles({ pressed: { opacity: 0.6 } })
+      .accessibilityText(`编码 ${encodingLabel(value)}`)
+      .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
+      .onClick(() => this.pickEncoding(value))
+  }
+
+  /** 点编码按钮：落盘 + 重解析。同一个值重复点直接返回（不做无谓的整本重解）。 */
+  private pickEncoding(value: string): void {
+    const next: string = normalizeEncoding(value);
+    if (next === this.txtEncoding) {
+      return;
+    }
+    this.reparseAs(next);
+  }
+
+  /**
+   * **换编码重读**（2026-11-05，党哥选项 A）。
+   *
+   * 为什么是"重解析整本"而不是"换个显示"：编码决定的是**字节 → 字符**的映射，
+   * 章节边界、字符偏移、预切章文件全都长在解码结果之上 ⇒ 换编码等于换了对整本书的解释。
+   * 所以四步一件都不能省：重新解码切章 → 清旧章节表（否则两套章节撞车）→
+   * **清页表缓存**（章序号没变、正文变了，缓存键不变 ⇒ 不清就会读回旧乱码）→ 从当前章开头重读。
+   *
+   * 位置为什么回到章首：乱码状态下的字符偏移没有意义，硬按旧偏移跳会落到莫名其妙的地方。
+   * 宁可让用户少读几行，也不能让他以为"换了编码书就坏了"。
+   */
+  private async reparseAs(enc: string): Promise<void> {
+    const book: BookRecord | null = this.book;
+    if (book === null) {
+      return;
+    }
+    const prompt = this.getUIContext().getPromptAction();
+    this.txtEncoding = enc;
+    this.prefs.setTxtEncoding(book.id, enc);
+    prompt.showToast({ message: `正在按 ${encodingLabel(enc)} 重新解析…` });
+    try {
+      const parsed: TxtParseResult = parseTxtSync(book.path, enc);
+      await this.db.clearChapters(book.id);
+      await this.db.addChapters(book.id, parsed.chapters);
+      this.chapters = await this.db.listChapters(book.id);
+      this.chapterCount = this.chapters.length;
+      // 字数普查结果与旧解码绑定，换编码后一律作废（下次打开会重新普查）
+      this.charCounts = [];
+      this.cache.clear();
+      if (this.chapterCount === 0) {
+        this.hint = '这本书没有解析出章节';
+        return;
+      }
+      const idx: number = Math.max(0, Math.min(this.chapterIndex, this.chapterCount - 1));
+      this.openChapter(idx, 0);
+      prompt.showToast({ message: `已按 ${encodingLabel(enc)} 重新解析，共 ${this.chapterCount} 章` });
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'reparse as %{public}s failed: %{public}s', enc, JSON.stringify(e));
+      prompt.showToast({ message: '这个编码解不出来，换一个再试' });
+    }
+  }
+
   /** 选音色：落盘 + 热切换引擎 + 立即试听当前页（失败走 onErr 回退默认） */
   private pickPerson(person: number): void {
     if (person === this.ttsPerson) {
@@ -3798,6 +3891,53 @@ struct Reader {
           .scrollable(ScrollDirection.Horizontal)
           .scrollBar(BarState.Off)
           .width('100%')
+        }
+        .width('100%')
+        .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })
+        .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+      }
+
+      /**
+       * 文字编码（2026-11-05，党哥选项 A）。
+       *
+       * 自动探测的兜底是「不是 UTF-8 就当 GB18030」，所以 **BIG5 繁体 TXT 会静默乱码** ——
+       * 模拟器实测：`碷垎 纒砰いゅ代刚ゅン`，一句提示都没有，用户只会以为"这软件读不了我的书"。
+       * 探测再聪明也会判错，判错时唯一能自救的途径就是自己选。
+       */
+      if (this.showEncodingSection) {
+        Column() {
+          Row() {
+            Text('文字编码')
+              .fontSize(RR_FS_BODY)
+              .fontColor(this.palette.text)
+            Blank()
+            Text(encodingHint(this.txtEncoding))
+              .fontSize(RR_FS_MICRO)
+              .fontColor(this.palette.text3)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .width('100%')
+          .margin({ bottom: RR_SP_XL })
+
+          Scroll() {
+            Row({ space: 8 }) {
+              this.encodingChip('auto')
+              this.encodingChip('utf-8')
+              this.encodingChip('gb18030')
+              this.encodingChip('big5')
+            }
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+          .width('100%')
+
+          Text('正文是乱码，说明导入时判断错了。换一个会重新解析这本书，读到本章开头。')
+            .fontSize(RR_FS_MICRO)
+            .fontColor(this.palette.text3)
+            .width('100%')
+            .margin({ top: RR_SP_MD })
         }
         .width('100%')
         .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_3XL, bottom: RR_SP_3XL })

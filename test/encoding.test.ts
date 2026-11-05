@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import {
   detectBom,
   detectEncoding,
-  isValidUtf8
+  isValidUtf8,
+  normalizeEncoding,
+  encodingLabel,
+  encodingHint,
+  FORCED_ENCODINGS
 } from '../entry/src/main/ets/engine/text/Encoding.ets';
 // BOM 长度只有生产真源这一份：Utf8Decode.bomLengthOf（Encoding 里那份重复实现已删）
 import { bomLengthOf } from '../entry/src/main/ets/engine/text/Utf8Decode.ets';
@@ -53,4 +57,50 @@ test('非法首字节 / 截断序列不误判', () => {
 
 test('bomLengthOf 对无 BOM 返回 0', () => {
   assert.equal(bomLengthOf(new Uint8Array([0x61, 0x62])), 0);
+});
+
+/* ---------------- 手动指定编码（2026-11-05，党哥选项 A） ----------------
+ * 为什么必须有出口：自动探测的兜底是「不是 UTF-8 就当 GB18030」，
+ * 而 BIG5 繁体字节同样不是合法 UTF-8 ⇒ 会被当成 GB18030 解成满屏乱码，且**一声不响**。
+ * 模拟器实测原文「這是一份繁體中文測試文件」显示为「碷垎 纒砰いゅ…」。
+ */
+
+test('BIG5 字节同样落进 gb18030 —— 自动探测救不了繁体（留手动出口的理由）', () => {
+  // 0xA4 是 UTF-8 的续字节，不能当首字节 ⇒ 必判非法
+  const big5 = new Uint8Array([0xA4, 0xE5, 0xA4, 0x40]);
+  assert.equal(isValidUtf8(big5), false);
+  assert.equal(detectEncoding(big5).encoding, 'gb18030');
+});
+
+test('normalizeEncoding：白名单原样返回', () => {
+  assert.equal(normalizeEncoding('auto'), 'auto');
+  assert.equal(normalizeEncoding('utf-8'), 'utf-8');
+  assert.equal(normalizeEncoding('gb18030'), 'gb18030');
+  assert.equal(normalizeEncoding('big5'), 'big5');
+});
+
+test('normalizeEncoding：脏值一律回 auto（手改偏好库不该把解码搞崩）', () => {
+  assert.equal(normalizeEncoding(''), 'auto');
+  assert.equal(normalizeEncoding('gbk'), 'auto');   // 常见误写，故意不收
+  assert.equal(normalizeEncoding('utf8'), 'auto');
+  assert.equal(normalizeEncoding('BIG5'), 'auto');  // 大小写不宽容：存进去的一定是小写
+  assert.equal(normalizeEncoding('utf-16le'), 'auto');
+});
+
+test('按钮顺序：auto 在最前（默认项），四项不重复', () => {
+  assert.equal(FORCED_ENCODINGS.length, 4);
+  assert.equal(FORCED_ENCODINGS[0], 'auto');
+  assert.equal(new Set(FORCED_ENCODINGS).size, 4);
+});
+
+test('label 短、hint 长，且都不是空串', () => {
+  for (const e of FORCED_ENCODINGS) {
+    assert.notEqual(encodingLabel(e).length, 0);
+    assert.notEqual(encodingHint(e).length, 0);
+  }
+  assert.equal(encodingLabel('big5'), 'BIG5');
+  assert.equal(encodingLabel('auto'), '自动');
+  // 中文用户认「繁体」比认「BIG5」快 —— hint 必须带人话
+  assert.ok(encodingHint('big5').includes('繁体'));
+  assert.ok(encodingHint('gb18030').includes('简体'));
 });

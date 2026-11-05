@@ -8,6 +8,56 @@
 
 export type EncodingName = 'utf-8' | 'utf-16le' | 'utf-16be' | 'gb18030';
 
+/**
+ * 用户**手动指定**的正文编码（2026-11-05，党哥拍板选项 A）。
+ *
+ * 为什么需要：自动探测只到「BOM → UTF-8 合法性 → 否则 GB18030」这一步，
+ * **BIG5 繁体 TXT 会静默乱码**（模拟器实测：`碷垎 纒砰いゅ`，一句提示都没有）。
+ * 探测再聪明也会判错，而判错时用户唯一能自救的途径就是自己选。
+ *
+ * `'auto'` = 沿用导入时的自动探测（不是"没有编码"，是"交给探测"）。
+ */
+export type ForcedEncoding = 'auto' | 'utf-8' | 'gb18030' | 'big5';
+
+/** 面板上的按钮顺序：自动在最前（默认项），其余按简体用户→繁体用户的常见程度排 */
+export const FORCED_ENCODINGS: ForcedEncoding[] = ['auto', 'utf-8', 'gb18030', 'big5'];
+
+/** 归一：只接受白名单值，脏值一律回 'auto'（手改过偏好库也不该把解码搞崩） */
+export function normalizeEncoding(v: string): ForcedEncoding {
+  if (v === 'utf-8' || v === 'gb18030' || v === 'big5') {
+    return v as ForcedEncoding;
+  }
+  return 'auto';
+}
+
+/** 按钮上的短标签 */
+export function encodingLabel(e: string): string {
+  if (e === 'utf-8') {
+    return 'UTF-8';
+  }
+  if (e === 'gb18030') {
+    return 'GB18030';
+  }
+  if (e === 'big5') {
+    return 'BIG5';
+  }
+  return '自动';
+}
+
+/** 说明用全称（中文用户认「简体」比认「GB18030」快） */
+export function encodingHint(e: string): string {
+  if (e === 'utf-8') {
+    return 'UTF-8（国际通用）';
+  }
+  if (e === 'gb18030') {
+    return 'GB18030（简体中文）';
+  }
+  if (e === 'big5') {
+    return 'BIG5（繁体中文，港台常用）';
+  }
+  return '自动（按内容判断）';
+}
+
 export interface EncodingGuess {
   encoding: EncodingName;
   /** 是否带 BOM */

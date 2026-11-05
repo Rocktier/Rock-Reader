@@ -7,6 +7,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { router, promptAction } from '@kit.ArkUI';
 import { BookDb } from '../data/BookDb';
 import { pushCardUpdate } from '../data/CardData';

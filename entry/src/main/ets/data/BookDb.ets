@@ -217,6 +217,14 @@ export class BookDb {
     await store.executeSql('DELETE FROM highlights WHERE book_id = ?', [bookId]);
   }
 
+  /**
+   * 清空章节索引（2026-11-05）。换编码重新解析时必须先清 ——
+   * 否则新旧章节混在一张表里，目录会出现两份且序号撞车。
+   */
+  async clearChapters(bookId: string): Promise<void> {
+    await this.ready().executeSql('DELETE FROM chapters WHERE book_id = ?', [bookId]);
+  }
+
   async addChapters(bookId: string, chapters: ChapterRow[]): Promise<void> {
     if (chapters.length === 0) {
       return;

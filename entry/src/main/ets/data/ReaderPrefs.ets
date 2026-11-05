@@ -39,6 +39,11 @@ const KEY_TTS_PERSON: string = 'tts_person';
  * 不会波及其他书、也不需要整表解析。值为 JSON；读端逐字段校验，脏值整体丢弃回落全局。
  */
 const KEY_BOOK_PREF_PREFIX: string = 'book_pref_';
+/**
+ * 每本书的用户指定正文编码（2026-11-05，选项 A）：`'auto' | 'utf-8' | 'gb18030' | 'big5'`。
+ * 一本书一个键，理由同 `KEY_BOOK_PREF_PREFIX` —— 换编码是**这一本的决定**，不该传染别的书。
+ */
+const KEY_TXT_ENC_PREFIX: string = 'txt_enc_';
 /** 每日阅读目标（分钟）；0 = 关闭。党哥默认 20 分钟（A4） */
 const KEY_DAILY_GOAL: string = 'daily_goal_min';
 
@@ -448,6 +453,36 @@ export class ReaderPrefs {
     this.convertMode = mode;
     this.put(KEY_CONVERT, mode);
     this.flush();
+  }
+
+  /**
+   * 这本书按哪种编码读（`'auto'` = 导入时的自动探测）。
+   * 只对 TXT 系（含 html/md/fb2 等已转纯文本的格式）有意义，别的格式调用方不展示。
+   */
+  getTxtEncoding(bookId: string): string {
+    if (this.store === null || bookId.length === 0) {
+      return 'auto';
+    }
+    const raw: preferences.ValueType = this.store.getSync(KEY_TXT_ENC_PREFIX + bookId, 'auto');
+    return typeof raw === 'string' ? raw : 'auto';
+  }
+
+  setTxtEncoding(bookId: string, enc: string): void {
+    this.put(KEY_TXT_ENC_PREFIX + bookId, enc);
+    this.flush();
+  }
+
+  /** 删书时顺手清掉它的编码决定，避免 id 复用时串味 */
+  clearTxtEncoding(bookId: string): void {
+    if (this.store === null) {
+      return;
+    }
+    try {
+      this.store.deleteSync(KEY_TXT_ENC_PREFIX + bookId);
+      this.flush();
+    } catch (e) {
+      hilog.error(DOMAIN, TAG, 'clearTxtEncoding failed: %{public}s', JSON.stringify(e));
+    }
   }
 
   /** 朗读语速（产品档位 0.5~2.0，默认 1.0） */
