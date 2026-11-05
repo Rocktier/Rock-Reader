@@ -42,7 +42,9 @@
 - ⭐ **ArkUI V1 分支条件陷阱（家族最重要）**：`if` 的分支条件按**首次求值定型**，依赖插桩只认表达式里**直接读 @State**；
   藏进 getter/方法体追不到。**@Computed 救不了**（本族 V1）。条件里就地读 @State。
   「数据变了 UI 不更新」按序查：① ForEach key 少带变化位 ② 分支条件藏在 getter/方法 ③ 高度被 layoutWeight 压成 0。
-- **@Builder 值参数不随 @State 重跑**（已第 6 次同型）⇒ key 带状态后缀 / 拆 if-else / 版本号 key 强制重建。
+- **@Builder 值参数不随 @State 重跑**（已第 7 次同型）⇒ **首选「把表达式内联回 build()」**；
+  ⚠️ **`key` 不是万能解**（2026-11-05 实测无效）：`Column().key('stats-'+total)` 对**普通单子节点**
+  不会因 key 变化被销毁，只在 **ForEach 列表项**上有效。拆 if-else 亦可，但别再把 key 当第一条路。
 - **划词三条**（1.0.10 实测，细节 ⇒ reference-arkui-pitfalls 第五节）：
   ① Text 上挂自定义长按手势会**抢赢系统选词** ⇒ 长按完整让给系统，入口挂 menuItem；
   ② `onMenuItemClick` **返回 false**（true = 拦截 ⇒ 系统浮动菜单不收）；
