@@ -584,60 +584,71 @@ struct PdfReader {
     .width('100%')
     .padding({ left: RR_SP_2XL, right: RR_SP_2XL, top: RR_SP_2XL, bottom: RR_SP_2XL })
     .backgroundColor(this.palette.bg)
-    .border({ width: { top: 1 }, color: this.palette.line })
+    .border({ width: { bottom: 1 }, color: this.palette.line })
   }
 
   @Builder
   jumpPanel() {
+    /**
+     * 版式与 searchPanel() 必须保持一致（2026-11-05 党哥定）：
+     * 第一行「标题 … 关闭」，第二行「输入框 + 主操作按钮」。
+     * 原先这个面板把「取消」放在底部一排、搜索把「关闭」放在右上角，
+     * 同一个「退出面板」的动作出现两种叫法、两个位置 —— 属于无谓的不一致。
+     */
     Column() {
-      Text('跳到第几页')
-        .fontSize(RR_FS_BODY)
-        .fontColor(this.palette.text)
-      TextInput({ text: this.jumpText, placeholder: '页码，例如 12 或 65%' })
-        .type(InputType.Number)
-        .fontSize(RR_FS_BODY)
-        .fontColor(this.palette.text)
-        .backgroundColor(this.palette.card)
-        .borderRadius(4)
-        .padding({ left: RR_SP_MD, right: RR_SP_MD, top: RR_SP_SM, bottom: RR_SP_SM })
-        .margin({ top: RR_SP_MD })
-        .onChange((v: string) => {
-          this.jumpText = v;
-          this.jumpHint = '';
-        })
-        .onSubmit(() => this.jumpTo(this.jumpText))
-      if (this.jumpHint.length > 0) {
-        Text(this.jumpHint)
-          .fontSize(RR_FS_MICRO)
-          .fontColor(this.palette.text3)
-          .margin({ top: RR_SP_XS })
-      }
       Row() {
-        Text('取消')
+        Text('跳到第几页')
+          .fontSize(RR_FS_BODY)
+          .fontColor(this.palette.text)
+        Blank()
+        Text('关闭')
           .fontSize(RR_FS_META)
-          .fontColor(this.palette.text2)
-          .padding({ left: RR_SP_LG, right: RR_SP_LG, top: RR_SP_SM, bottom: RR_SP_SM })
+          .fontColor(this.palette.text3)
           .onClick(() => {
             this.showJump = false;
             this.jumpHint = '';
           })
-        Blank()
+      }
+      .width('100%')
+
+      Row() {
+        TextInput({ text: this.jumpText, placeholder: '页码，例如 12 或 65%' })
+          .type(InputType.Number)
+          .layoutWeight(1)
+          .fontSize(RR_FS_BODY)
+          .fontColor(this.palette.text)
+          .backgroundColor(this.palette.card)
+          .borderRadius(4)
+          .padding({ left: RR_SP_MD, right: RR_SP_MD, top: RR_SP_SM, bottom: RR_SP_SM })
+          .onChange((v: string) => {
+            this.jumpText = v;
+            this.jumpHint = '';
+          })
+          .onSubmit(() => this.jumpTo(this.jumpText))
         Text('跳转')
           .fontSize(RR_FS_META)
           .fontColor(this.palette.bg)
           .backgroundColor(this.palette.text)
           .padding({ left: RR_SP_LG, right: RR_SP_LG, top: RR_SP_SM, bottom: RR_SP_SM })
           .borderRadius(4)
+          .margin({ left: RR_SP_SM })
           .onClick(() => this.jumpTo(this.jumpText))
       }
       .width('100%')
       .margin({ top: RR_SP_MD })
+
+      if (this.jumpHint.length > 0) {
+        Text(this.jumpHint)
+          .fontSize(RR_FS_MICRO)
+          .fontColor(this.palette.text3)
+          .margin({ top: RR_SP_SM })
+      }
     }
     .alignItems(HorizontalAlign.Start)
     .width('100%')
     .padding({ left: RR_SP_2XL, right: RR_SP_2XL, top: RR_SP_2XL, bottom: RR_SP_2XL })
     .backgroundColor(this.palette.bg)
-    .border({ width: { top: 1 }, color: this.palette.line })
+    .border({ width: { bottom: 1 }, color: this.palette.line })
   }
 
   build() {
@@ -658,10 +669,24 @@ struct PdfReader {
       .width('100%')
       .height('100%')
 
-      if (this.showSearch) {
-        this.searchPanel()
-      } else if (this.showJump) {
-        this.jumpPanel()
+      /**
+       * 搜索 / 跳页两个面板**一律贴顶**，不贴底。
+       * 原因（2026-11-05 云真机实测）：键盘是**覆盖式**弹出（不改变窗口高度），
+       * 面板贴在底部时，它的下半截正好被键盘盖住 —— 跳页盖住「跳转」，
+       * 搜索盖住「上一个 / 下一个」。贴顶则与键盘永不相交。
+       * 用 position 绝对定位而非撑满高度的容器：容器只有面板那么高，不会挡住下方 PDF。
+       * 两个面板必须同进同出，别只修一个（另一处会被当成"没问题"漏掉）。
+       */
+      if (this.showSearch || this.showJump) {
+        Column() {
+          if (this.showSearch) {
+            this.searchPanel()
+          } else {
+            this.jumpPanel()
+          }
+        }
+        .width('100%')
+        .position({ x: 0, y: 0 })
       }
     }
     .width('100%')
