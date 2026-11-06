@@ -50,7 +50,9 @@
 - ⭐ **ArkUI V1 分支条件陷阱（家族最重要）**：`if` 的条件按**首次求值定型**，插桩只认表达式里
   **直接读 @State**（藏进 getter/方法追不到，`@Computed` 在 V1 救不了）。「数据变了 UI 不更新」按序查：
   ① ForEach key 少带变化位 ② 分支条件藏在 getter/方法 ③ 高度被 layoutWeight 压成 0。
-- **@Builder 值参数不随 @State 重跑**（第 7 次同型）⇒ 首选「表达式内联回 build()」。
+- **@Builder 值参数不随 @State 重跑**（第 8 次同型）⇒ 首选「表达式内联回 build()」。
+  ⚠️ 更狠的形态（2026-11-06 书架封面）：带参 @Builder 里**只要还有 `if`**，分支按首次求值
+  **定死** —— 里面碰 @State 派生的东西就永不更新 ⇒ 条件必须挪到**直接读 @State 的那个 body**。
   ⚠️ **`key` 不是万能解**：只对 ForEach 列表项有效，普通单子节点不因 key 重建。
 - **回后台 ≠ 用户暂停**：后台停表但**不改状态**，回前台自动续；用独立 `suspended` 区分主动暂停。
 - **浮层状态机**：别在开/关浮层时同步两套状态 ⇒ **到点才判断**（定时器里判「浮层开着」）。
@@ -72,6 +74,10 @@
   划词**长按让给系统**（自定义长按会抢赢系统选词）；PDF **本地 x86 模拟器 `canIUse` 为 false ⇒ 只能真机验**。
 - ⚠️ **记忆台账要进版本库**：Reader 全追踪；Journal 用 `.workbuddy/*` + `!.workbuddy/memory/`
   ⇒ 改完 `git ls-files .workbuddy` 验一下。
+- **书架封面**：导入时抽一次落盘 `books/<id>/cover.jpg`。EPUB **四条来源**（properties /
+  meta name=cover / guide 封面页抠 `<img>` / 裸 `cover.jpg` 启发式），MOBI 走 EXTH201；
+  写盘前一律验文件头。TXT/MD/HTML 永远无封面 ⇒ 回退首字占位。
+  识别细则 + 造数/推文件/截图命令 ⇒ `2026-11-06.md` 第八节。
 
 ## 五、性能层
 
