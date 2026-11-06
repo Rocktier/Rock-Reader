@@ -80,6 +80,18 @@ struct Index {
   /** 书架网格列数（P0-5 平板断点：<600vp=3 列 / 600~839=4 列 / ≥840=6 列） */
   @State shelfCols: number = 3;
   @State resume: ShelfItem | null = null;
+  /**
+   * 续读那本书的封面路径（沙箱内裸路径，'' = 没有）。
+   *
+   * ⚠️ **必须单独存成 @State，不能在被复用的 @Builder 里调 `coverPathOf(book)`**：
+   *    `bookCover(book, size)` 是个带值参数的 @Builder，`if (coverPathOf(book)...)` 里的
+   *    分支条件读的是**参数**而不是 @State —— V1 的分支按首次求值定型，参数变了也不重判。
+   *    实测症状（2026-11-06）：导入一本带封面的新书后，续读卡片的书名换了、
+   *    **封面仍停在上一本书的首字占位（一个 g）**，重启应用才正常，网格里却是对的
+   *    （网格每次换 ForEach 键会重建节点，首次求值恰好拿到新书）。
+   *    修法就是家族铁律那一条：**把条件挪到读 @State 的地方**。
+   */
+  @State private resumeCover: string = '';
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
   /**
@@ -268,6 +280,8 @@ struct Index {
         this.activeGroup = GROUP_ALL;
       }
       this.resume = built.length > 0 ? built[0] : null;
+      // 封面路径与 resume 同步算好（每次 load 覆盖，删书/重导入自动跟着变）
+      this.resumeCover = this.resume === null ? '' : coverPathOf(this.resume.book);
     } catch (e) {
       hilog.error(DOMAIN, TAG, 'load shelf failed: %{public}s', JSON.stringify(e));
     }
@@ -571,7 +585,30 @@ struct Index {
   resumeCard() {
     if (this.resume !== null) {
       Row({ space: 14 }) {
-        this.bookCover(this.resume.book, 58)
+        // 封面在这里**就地展开，不复用 bookCover(book, size) 那个 @Builder**。
+        // 理由见 `resumeCover` 声明的注释（@Builder 值参数 + 分支条件首次求值定型 = 封面不换）。
+        // 尺寸与 bookCover(…, 58) 完全一致：58 × 81.2。
+        if (this.resumeCover.length > 0) {
+          Image('file://' + this.resumeCover)
+            .width(58)
+            .height(81.2)
+            .objectFit(ImageFit.Contain)
+            .backgroundColor(this.palette.cover)
+            .borderRadius(RR_RADIUS_COVER)
+            .draggable(false)
+        } else {
+          Column() {
+            Text(this.resume.book.title.length > 0 ? this.resume.book.title.substring(0, 1) : '书')
+              .fontSize(24)
+              .fontColor(this.palette.text3)
+              .fontWeight(FontWeight.Bold)
+          }
+          .width(58)
+          .height(81.2)
+          .backgroundColor(this.palette.cover)
+          .borderRadius(RR_RADIUS_COVER)
+          .justifyContent(FlexAlign.Center)
+        }
         Column({ space: 6 }) {
           // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
           Text('继续阅读')

@@ -111,6 +111,113 @@ export function resolveHref(baseDir: string, href: string): string {
   return normalizePath(baseDir + normalizeHref(href));
 }
 
+/** 文件名去掉目录与扩展名，小写 —— 封面启发式用 */
+function stemOf(href: string): string {
+  const slash: number = href.lastIndexOf('/');
+  const base: string = slash < 0 ? href : href.substring(slash + 1);
+  const dot: number = base.lastIndexOf('.');
+  const stem: string = dot > 0 ? base.substring(0, dot) : base;
+  return stem.toLowerCase();
+}
+
+function isImagePath(href: string): boolean {
+  const h: string = href.toLowerCase();
+  return h.endsWith('.jpg') || h.endsWith('.jpeg') || h.endsWith('.png') || h.endsWith('.gif') ||
+    h.endsWith('.webp') || h.endsWith('.bmp');
+}
+
+/**
+ * manifest 里这条是不是图片。
+ * media-type 优先，但**错标很常见**（自制 EPUB 会把 jpg 写成 application/octet-stream），
+ * 所以扩展名也算数。
+ */
+function isImageItem(item: ManifestItem): boolean {
+  if (item.mediaType.toLowerCase().indexOf('image/') === 0) {
+    return true;
+  }
+  return isImagePath(item.href);
+}
+
+/**
+ * 「这张图有多像封面」：0 = 不像，3 = 名字就叫封面。
+ *
+ * 分级而不是布尔，是为了在同时存在 `cover.jpg` 与 `cover-thumb.jpg` /
+ * `cover_back.jpg` 的书里挑对正封（都是"含 cover"，但只有前者精确命中）。
+ */
+export function coverScoreOf(item: ManifestItem): number {
+  if (!isImageItem(item)) {
+    return 0;
+  }
+  const stem: string = stemOf(item.href);
+  const id: string = item.id.toLowerCase();
+  if (id === 'cover' || id === 'cover-image' || id === 'coverimage' ||
+    stem === 'cover' || stem === 'cover-image' || stem === 'coverimage') {
+    return 3;
+  }
+  if (id.indexOf('cover') >= 0 || stem.indexOf('cover') >= 0) {
+    return 2;
+  }
+  if (stem.indexOf('封面') >= 0) {
+    return 2;
+  }
+  return 0;
+}
+
+/**
+ * 从 manifest 里猜封面。同分取**先出现的** —— OPF 的 manifest 顺序通常就是作者建书的顺序，
+ * 正封一般排在封底/缩略图之前。
+ */
+export function guessCoverHref(opfDir: string, items: ManifestItem[]): string {
+  let best: ManifestItem | null = null;
+  let bestScore: number = 0;
+  for (let i: number = 0; i < items.length; i++) {
+    const score: number = coverScoreOf(items[i]);
+    if (score > bestScore) {
+      bestScore = score;
+      best = items[i];
+    }
+  }
+  return best === null ? '' : resolveHref(opfDir, best.href);
+}
+
+/**
+ * 从「封面页」里抠出真正的图片路径（EPUB2 的 guide 形态）。
+ *
+ * 老书的 `<guide><reference type="cover" href="Text/cover.xhtml"/></guide>` 指的是**一页 XHTML**，
+ * 那一页里通常只有一个 `<img src="../Images/cover.jpg"/>`（也有用 SVG 的 `<image xlink:href>`）。
+ * 直接把这一页的字节当封面写下去 = 写进一段 HTML 文本 → `Image` 解不出、静默空白。
+ *
+ * 返回 zip 内路径；抠不到返回 `''`（调用方回退首字占位）。
+ */
+export function coverImageOfPage(xhtml: string, pageHref: string): string {
+  const base: string = dirOf(pageHref);
+  const imgTags: string[] = findTags(xhtml, 'img');
+  for (let i: number = 0; i < imgTags.length; i++) {
+    const src: string = attrOf(imgTags[i], 'src');
+    if (src.length > 0) {
+      const resolved: string = resolveHref(base, src);
+      if (isImagePath(resolved)) {
+        return resolved;
+      }
+    }
+  }
+  // SVG 封面：<svg><image xlink:href="cover.jpg"/></svg>
+  const imageTags: string[] = findTags(xhtml, 'image');
+  for (let i: number = 0; i < imageTags.length; i++) {
+    let href: string = attrOf(imageTags[i], 'xlink:href');
+    if (href.length === 0) {
+      href = attrOf(imageTags[i], 'href');
+    }
+    if (href.length > 0) {
+      const resolved: string = resolveHref(base, href);
+      if (isImagePath(resolved)) {
+        return resolved;
+      }
+    }
+  }
+  return '';
+}
+
 export function parseOpf(xml: string, opfDir: string): EpubPackage {
   const clean: string = stripProlog(xml);
   const items: ManifestItem[] = [];
@@ -195,9 +302,29 @@ export function parseOpf(xml: string, opfDir: string): EpubPackage {
             break;
           }
         }
+        // 规范说 content 是 item 的 id，但**相当多的自制 EPUB 写成文件名**
+        // （`content="cover.jpg"`），按 id 找必然落空 —— 于是这本永远没有封面。
+        // 再按 href / 文件名找一次，成本为零。
+        if (coverHref.length === 0) {
+          const wanted: string = coverId.toLowerCase();
+          for (let k: number = 0; k < items.length; k++) {
+            const hrefLower: string = items[k].href.toLowerCase();
+            if (hrefLower === wanted || stemOf(hrefLower) === stemOf(wanted)) {
+              coverHref = resolveHref(opfDir, items[k].href);
+              break;
+            }
+          }
+        }
         break;
       }
     }
+  }
+  // ③ 命名启发式（最后一道）：既没有 properties="cover-image"，也没有 <meta name="cover">。
+  //    自制 EPUB 里极其常见，规范没要求这么写，但实务上封面文件几乎一定叫 cover.*
+  //    —— 这是"要不要给一本没声明封面的书找封面"的取舍：只在名字明确指向封面时才认，
+  //    认错的表现是书架显示了一张不相干的图，比永远显示首字更糟，所以门槛设得保守。
+  if (coverHref.length === 0) {
+    coverHref = guessCoverHref(opfDir, items);
   }
 
   return {

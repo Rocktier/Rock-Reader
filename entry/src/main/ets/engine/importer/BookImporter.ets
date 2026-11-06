@@ -29,6 +29,9 @@ import { parseEpub, MAX_EPUB_BYTES, readEpubResource } from '../parser/EpubParse
 import { parseMarkupSync } from '../parser/MarkupParser';
 import { parseMobiSync } from '../parser/MobiParser';
 import { PdfInfo, pdfBookTitle, probePdf } from '../pdf/PdfProbe';
+import { isImageBytes } from './CoverImage';
+import { coverImageOfPage } from '../epub/Opf';
+import { decodeUtf8 } from '../text/Utf8Decode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -181,6 +184,12 @@ export function writeCoverBytes(bookPath: string, bytes: Uint8Array): void {
   if (bytes.length === 0) {
     return;
   }
+  // 防御性：写之前一律验文件头。MOBI 的封面是按"记录号"算出来的（firstImageIndex + EXTH201），
+  // 算偏一位就会取到**文本记录**；那种情况写下去是一张空图，比不写更难查。
+  if (!isImageBytes(bytes)) {
+    hilog.warn(DOMAIN, TAG, 'cover bytes rejected: not an image');
+    return;
+  }
   const slash: number = bookPath.lastIndexOf('/');
   if (slash <= 0) {
     return;
@@ -205,15 +214,53 @@ export function writeCoverBytes(bookPath: string, bytes: Uint8Array): void {
   }
 }
 
-/** EPUB：按 coverHref 从 zip 里取封面字节再落盘 */
-export function writeCover(bookPath: string, coverHref: string): void {
-  if (coverHref.length === 0) {
+/**
+ * 从 zip 里取一个资源，**确认它真是图片**再落盘。返回是否写成。
+ *
+ * 为什么要这一道：`Image` 解不出内容时**不报错、只画空白**，看起来和"这本书本来没封面"
+ * 一模一样 —— 于是排查会一路跑到解析器上去。宁可不写，也不要写一个坏封面进去。
+ */
+function writeIfImageResource(bookPath: string, href: string): boolean {
+  if (href.length === 0) {
+    return false;
+  }
+  try {
+    const bytes: Uint8Array = readEpubResource(bookPath, href);
+    if (!isImageBytes(bytes)) {
+      hilog.warn(DOMAIN, TAG, 'cover candidate is not an image, skipped: %{public}s', href);
+      return false;
+    }
+    writeCoverBytes(bookPath, bytes);
+    return true;
+  } catch (e) {
+    hilog.warn(DOMAIN, TAG, 'extract cover failed: %{public}s', JSON.stringify(e));
+    return false;
+  }
+}
+
+/**
+ * 抽 EPUB 封面：三条路依次试，前一条不成才走后一条。
+ *
+ *   ① `coverHref` —— OPF 的 `properties="cover-image"` / `<meta name="cover">` / 命名启发式给的**图片**；
+ *   ② `guideCoverHref` —— EPUB2 guide 指的**封面页**（XHTML），真正的图在这页的 `<img>` 里，
+ *      把这一页的字节直接当封面写下去只会得到一段 HTML 文本 ⇒ 必须抠出 img 再取；
+ *   ③ 都没有 —— 不写，书架回退首字占位。**绝不因此拦住导入**。
+ */
+export function writeEpubCover(bookPath: string, coverHref: string, guideCoverHref: string): void {
+  if (writeIfImageResource(bookPath, coverHref)) {
+    return;
+  }
+  if (guideCoverHref.length === 0) {
     return;
   }
   try {
-    writeCoverBytes(bookPath, readEpubResource(bookPath, coverHref));
+    const page: string = decodeUtf8(readEpubResource(bookPath, guideCoverHref));
+    const imgHref: string = coverImageOfPage(page, guideCoverHref);
+    if (imgHref.length > 0) {
+      writeIfImageResource(bookPath, imgHref);
+    }
   } catch (e) {
-    hilog.warn(DOMAIN, TAG, 'extract cover failed: %{public}s', JSON.stringify(e));
+    hilog.warn(DOMAIN, TAG, 'extract cover from guide page failed: %{public}s', JSON.stringify(e));
   }
 }
 
@@ -422,7 +469,7 @@ export class BookImporter {
         };
         await this.db.addChapters(id, parsed.chapters);
         // 封面：趁这次已经打开过 zip，把封面字节抽出来落盘（书架渲染就不用再解压了）
-        writeCover(dstPath, parsed.coverHref);
+        writeEpubCover(dstPath, parsed.coverHref, parsed.guideCoverHref);
       } catch (e) {
         hilog.error(DOMAIN, TAG, 'parse epub failed: %{public}s', JSON.stringify(e));
         await this.db.addBook(book);

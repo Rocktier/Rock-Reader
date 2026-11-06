@@ -29,6 +29,12 @@ export interface EpubParseResult {
   author: string;
   /** zip 内路径；没有封面则为 '' */
   coverHref: string;
+  /**
+   * EPUB2 `guide` 指到的**封面页**（一页 XHTML，不是图片本身）；'' = 没有。
+   * 老书常是这种形态：封面图只在这页里以 `<img>` 出现。
+   * 与 `coverHref` 的关系见 `Opf.coverImageOfPage`。
+   */
+  guideCoverHref: string;
   chapters: ChapterRow[];
 }
 
@@ -190,6 +196,7 @@ export function parseEpubArchive(zip: ZipArchive): EpubParseResult {
     title: pkg.title,
     author: pkg.author,
     coverHref: pkg.coverHref,
+    guideCoverHref: pkg.guideCoverHref,
     chapters: chapters
   };
 }
