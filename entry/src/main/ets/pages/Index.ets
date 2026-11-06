@@ -36,7 +36,10 @@ import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
 import { shelfColsOf } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
-import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER, RR_RADIUS_SM, RR_RADIUS_MD, RR_RADIUS_CARD } from '../theme/RrTokens';
+import {
+  MOTION_MS_ENTER, MOTION_SHIFT_ENTER, MOTION_SCALE_ENTER, motionMs, staggerMs
+} from '../common/Motion';
+import { RR_FS_HERO, RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_MIN, RR_FS_DIGIT, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER, RR_RADIUS_SM, RR_RADIUS_MD, RR_RADIUS_CARD } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -79,6 +82,16 @@ struct Index {
   @State resume: ShelfItem | null = null;
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
+  /**
+   * 入场错峰开关（2026-11-06 去 AI 味改版）。
+   *
+   * ⚠️ 为什么不能直接在 build 里写死终态：ArkUI 的 `.animation()` 只在**属性值变化**时补间。
+   *    首帧就是 1 的话没有"变化"，动画无从播起 —— 必须先以 0 渲染一帧，再翻到 1。
+   * ⚠️ 为什么用独立布尔而不是 `if (entered)` 包住列表：ArkUI V1 的分支条件按**首次求值定型**，
+   *    用 if 包内容等于让整棵子树在首帧不存在，风险比收益大（家族踩过多次）。
+   *    这里只改 opacity/translate，节点始终在树里。
+   */
+  @State entered: boolean = false;
   // 「用其他应用打开」带进来的待导入 uri —— EntryAbility 收到后写进 AppStorage，这里接住。
   // 键名两边都写死（ArkUI 装饰器只接受字面量，抽不成常量），改要一起改。
   @StorageLink('pendingImportUri') @Watch('onIncomingFile') incomingUri: string = '';
@@ -141,6 +154,11 @@ struct Index {
     this.onIncomingFile();
     // 同理：卡片点击冷启动时 pendingOpenBook 也可能早于 @Watch 写入，这里补消费一次。
     this.onOpenBookFromCard();
+    // 入场错峰：先让首帧落在"未入场"，下一拍再翻真值（16ms ≈ 一帧）。
+    // 只翻一次 —— 从阅读页返回时 entered 已是 true，不该再演一遍。
+    setTimeout(() => {
+      this.entered = true;
+    }, 16);
   }
 
   /**
@@ -471,6 +489,30 @@ struct Index {
     .width('100%')
   }
 
+  /**
+   * 墨块上的进度条（「继续阅读」卡专用）。
+   *
+   * 为什么不能复用 `cellBar`：它把"已读"画成 `palette.text`、"未读"画成 `palette.line` ——
+   * 这两个颜色在墨底上**恰好反了**（浅色主题下 text 是墨、压在墨块上等于消失）。
+   * 单独一支、只读 `heroText`，槽位用它自己的 22% 透明度：槽是装饰不是文字，
+   * 对比度要求不适用，而"读了多少"由旁边那行百分比文字负责说清楚。
+   */
+  @Builder
+  heroBar(percent: number) {
+    // 间隙只留 1vp、线高 3vp：原来照抄网格那套（2vp 缝 + 2vp 线），
+    // 在墨块上读起来是**一条白色虚线**，不像"读了多少"。缝变窄、线变粗，才是进度。
+    Row({ space: 1 }) {
+      ForEach([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], (i: number) => {
+        Row()
+          .layoutWeight(1)
+          .height(3)
+          .backgroundColor(this.palette.heroText)
+          .opacity(filledCells(percent, CELLS) > i ? 1 : 0.22)
+      }, (i: number) => 'hb' + i)
+    }
+    .width('100%')
+  }
+
   @Builder
   bookCover(book: BookRecord, size: number) {
     // 有封面图就渲染图；没有（TXT / EPUB 没写封面 / 抽图失败）才回退首字占位。
@@ -510,13 +552,20 @@ struct Index {
   }
 
   /**
-   * 「继续阅读」卡片。
+   * 「继续阅读」卡片 —— **首屏唯一的墨块**（2026-11-06 去 AI 味改版）。
+   *
+   * 原来它是一张"卡片"：`card` 底 + 1px 描边，与网格里的书、筛选芯片同一套灰面语言，
+   * 结果整页**没有一个元素比别的更重要** —— 用户在首屏扫过去，找不到该按哪儿。
+   * 改成整块墨（`heroBg`）后，页面自然分成"一块墨、一片纸"，重点由面积和反差自己立起来，
+   * 不需要加粗描边、也不需要多一个颜色。
+   *
+   * ⚠️ **不能用 `text` 反白当墨块**：深色主题的 `text` 是 86% 白，反白就成一块白卡压在
+   *    纯黑上，夜间阅读刺眼。四套主题的 heroBg/heroText 由 `Theme.ets` 分别给值、
+   *    `theme.test.ts` 守对比度 ≥4.5:1 且深色下不得比正文更亮。
    *
    * ⚠️ **必须无参、在 Builder 内部读 `this.resume`** —— @Builder **按值传参不驱动刷新**
-   * （抽屉档位那个 bug 就是这么来的，见 findings；groupChip 已按同样原则修过）。
-   * 原来写成 `resumeCard(item: ShelfItem)`：load() 明明更新了 resume，卡片却仍显示旧进度
-   * —— 华为实测「返回书架后网格进度变 2%、顶部这张还是 0%，切一下筛选标签才跟上」，
-   * 就是因为切标签会强制整块重建、顺便把新值带进去。
+   * （抽屉档位那个 bug 就是这么来的）。原来写成 `resumeCard(item: ShelfItem)`：
+   * load() 明明更新了 resume，卡片却仍显示旧进度。本地已按同原则修过一次，别改回去。
    */
   @Builder
   resumeCard() {
@@ -526,41 +575,51 @@ struct Index {
         Column({ space: 6 }) {
           // 说清楚这张卡片是干嘛的 —— 没有它，用户会以为这是"多出来的一本书"（真机反馈 #2）
           Text('继续阅读')
-            .fontSize(RR_FS_MICRO)
+            .fontSize(RR_FS_MIN)
             .fontFamily('monospace')
-            .fontColor(this.palette.text3)
+            .fontColor(this.palette.heroText)
             .letterSpacing(1)
+            .opacity(0.72)
           Text(this.resume.book.title)
-            .fontSize(RR_FS_HEADING)
+            .fontSize(RR_FS_TITLE)
             .fontWeight(FontWeight.Bold)
-            .fontColor(this.palette.text)
+            .fontColor(this.palette.heroText)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           // P0-5：有作者显作者，没作者用格式大写兜底（永不空白、不编造）。
           // 就地调用纯函数，实参直接读 @State 的 resume.book —— V1 插桩追得到。
           Text(shelfSubtitle(this.resume.book.author, this.resume.book.format).text)
-            .fontSize(RR_FS_DIGIT)
+            .fontSize(RR_FS_MIN)
             .fontFamily('monospace')
-            .fontColor(this.palette.text3)
+            .fontColor(this.palette.heroText)
+            .opacity(0.72)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          this.cellBar(this.resume.percent, 2)
+          this.heroBar(this.resume.percent)
           Text(percentText(this.resume.percent))
-            .fontSize(RR_FS_MICRO)
+            .fontSize(RR_FS_MIN)
             .fontFamily('monospace')
-            .fontColor(this.palette.text3)
+            .fontColor(this.palette.heroText)
+            .opacity(0.72)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
       }
       .width('100%')
-      .padding(14)
+      .padding({ left: 16, right: 16, top: 16, bottom: 16 })
       .borderRadius(RR_RADIUS_CARD)
-      .backgroundColor(this.palette.card)
-      .borderWidth(1)
-      .borderColor(this.palette.line)
-      // 闭包里类型窄化不算数（延迟执行），这里再判一次空
+      .backgroundColor(this.palette.heroBg)
+      // 入场：推近 + 上移归位（不是"淡入" —— 墨块是实心的，淡入会先像一块灰斑）
+      .translate({ y: this.entered ? 0 : MOTION_SHIFT_ENTER })
+      .scale({
+        x: this.entered ? 1 : MOTION_SCALE_ENTER,
+        y: this.entered ? 1 : MOTION_SCALE_ENTER
+      })
+      .animation({ duration: MOTION_MS_ENTER, curve: Curve.EaseOut })
+      // 容器伪按钮：按压给一点整体压暗，读屏给出"继续阅读"这个名字
+      .stateStyles({ pressed: { opacity: 0.88 } })
       .accessibilityText('继续阅读')
+      // 闭包里类型窄化不算数（延迟执行），这里再判一次空
       .onClick(() => {
         if (this.resume !== null) {
           this.openBook(this.resume.book);
@@ -817,17 +876,22 @@ struct Index {
   build() {
     Stack() {
       Column() {
-        // 顶部
+        // 顶部：标题与元数据**两个峰**（2026-11-06 去 AI 味改版）
+        //
+        // 原来 22fp 标题 + 12fp 书数是"同一量级里的大小差"，扫过去三个元素权重相当 ⇒
+        // 整页没有重点。现在 30 / 11，中间那层（说明性的 14/16fp）一个不留。
+        // 右侧三个工具按钮**去掉描边**：它们是"低频、次要"，画三个框等于给它们和大标题
+        // 同等的存在感。热区仍是 44×44（HIG 推荐值），只是不再靠边框示意可点。
         Row() {
           Text($r('app.string.shelf_title'))
-            .fontSize(RR_FS_DISPLAY)
+            .fontSize(RR_FS_HERO)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.palette.text)
           Text(`${this.items.length} 本`)
-            .fontSize(RR_FS_META)
+            .fontSize(RR_FS_MIN)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
-            .margin({ left: RR_SP_XL })
+            .margin({ left: RR_SP_XL, bottom: 6 })
           Blank()
           Text('▤')
             .fontSize(RR_FS_LABEL)
@@ -835,10 +899,9 @@ struct Index {
             .width(30)
             .height(30)
             .textAlign(TextAlign.Center)
-            .borderWidth(1)
-            .borderColor(this.palette.line)
-            // 视觉 30，热区 46：30vp 的点击目标太小（触摸标准 ≥44）
-            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
+            // 视觉 30，热区 44（HIG 推荐值；原来是 46，多出来的 2vp 没有意义）
+            .responseRegion({ x: -7, y: -7, width: 44, height: 44 })
+            .stateStyles({ pressed: { opacity: 0.45 } })
             .margin({ left: RR_SP_LG })
             .accessibilityText('阅读统计')
             .onClick(() => {
@@ -850,9 +913,8 @@ struct Index {
             .width(30)
             .height(30)
             .textAlign(TextAlign.Center)
-            .borderWidth(1)
-            .borderColor(this.palette.line)
-            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
+            .responseRegion({ x: -7, y: -7, width: 44, height: 44 })
+            .stateStyles({ pressed: { opacity: 0.45 } })
             .margin({ left: RR_SP_LG })
             .accessibilityText('设置')
             .onClick(() => {
@@ -864,9 +926,8 @@ struct Index {
             .width(30)
             .height(30)
             .textAlign(TextAlign.Center)
-            .borderWidth(1)
-            .borderColor(this.palette.line)
-            .responseRegion({ x: -8, y: -8, width: 46, height: 46 })
+            .responseRegion({ x: -7, y: -7, width: 44, height: 44 })
+            .stateStyles({ pressed: { opacity: 0.45 } })
             .margin({ left: RR_SP_LG })
             .accessibilityText('导入书籍')
             .onClick(() => {
@@ -874,7 +935,7 @@ struct Index {
             })
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
+        .alignItems(VerticalAlign.Bottom)
         .padding({ top: RR_SP_XL, bottom: RR_SP_2XL })
 
         // 搜索：书一多，「找那本书」比「筛某种状态」用得频繁得多，所以它排在两种筛件之前，
@@ -999,7 +1060,7 @@ struct Index {
         } else {
           Scroll() {
             Grid() {
-              ForEach(this.visibleItems(), (item: ShelfItem) => {
+              ForEach(this.visibleItems(), (item: ShelfItem, idx: number) => {
                 GridItem() {
                   Column({ space: 6 }) {
                     this.bookCover(item.book, 88)
@@ -1015,7 +1076,7 @@ struct Index {
                     // 作者时用格式大写兜底。总是显示一行（不用 if），规避 V1 分支条件陷阱。
                     // 就地调纯函数、实参直接读 item.book —— 与 title 同一套刷新语义。
                     Text(shelfSubtitle(item.book.author, item.book.format).text)
-                      .fontSize(RR_FS_MICRO)
+                      .fontSize(RR_FS_MIN)
                       .fontColor(this.palette.text3)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -1023,16 +1084,25 @@ struct Index {
                     this.cellBar(item.percent, 2)
                     Row() {
                       Text(percentText(item.percent))
-                        .fontSize(RR_FS_MICRO)
+                        .fontSize(RR_FS_MIN)
                         .fontFamily('monospace')
                         .fontColor(this.palette.text3)
                     }
                     .width('100%')
                   }
                   .width('100%')
+                  // 入场错峰：前 9 格各晚 60ms 落位，第 10 格起一起落位
+                  // （不封顶的话，一百本书的最后一本要等六秒 —— 比不动效更糟）。
+                  .opacity(this.entered ? 1 : 0)
+                  .translate({ y: this.entered ? 0 : MOTION_SHIFT_ENTER })
+                  .animation({
+                    duration: MOTION_MS_ENTER,
+                    delay: staggerMs(idx, 8),
+                    curve: Curve.EaseOut
+                  })
                   // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
                   // 审查报告 B28：管理操作只有长按手势，读屏用户不可达 —— 文案里明确告知
-                  .stateStyles({ pressed: { opacity: 0.6 } })
+                  .stateStyles({ pressed: { opacity: 0.72 } })
                   .accessibilityText(item.book.title + '，长按可重命名、分组或移除')
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
@@ -1061,7 +1131,7 @@ struct Index {
 
         Row() {
           Text('LOCAL ONLY')
-            .fontSize(RR_FS_MICRO)
+            .fontSize(RR_FS_MIN)
             .fontFamily('monospace')
             .fontColor(this.palette.text3)
         }

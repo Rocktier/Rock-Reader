@@ -30,3 +30,4 @@ import './screensettings.test.ts';
 import './selectionrange.test.ts';
 import './backstack.test.ts';
 import './pdfpages.test.ts';
+import './motion.test.ts';

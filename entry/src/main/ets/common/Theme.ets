@@ -79,6 +79,17 @@ export interface Palette {
    * 不上 blur —— backdrop 模糊吃 GPU，撞家族铁律 1（极致快）。
    */
   overlay: string;
+  /**
+   * **重点色块底**（书架「继续阅读」卡这类首屏唯一焦点）。
+   *
+   * ⚠️ 不能图省事写成 `text` 反色：深色主题的 `text` 是 86% 白，反白后就变成
+   *   一整块白卡压在纯黑页面上 —— 夜间刺眼，且与「阅读界面不该有亮块」冲突。
+   *   所以深色主题取 `card`（#303030，比黑底抬一档），浅色/护眼才真的"墨底"。
+   *   四套主题各给一套值，页面里零 `if (isDark)`。对比度由 theme.test.ts 守。
+   */
+  heroBg: string;
+  /** 重点色块上的文字/图形色（与 heroBg 成对使用，≥4.5:1） */
+  heroText: string;
 }
 
 const DARK: Palette = {
@@ -91,7 +102,10 @@ const DARK: Palette = {
   accent: '#317AF7',
   card: '#303030',
   cover: '#1A1A1A',
-  overlay: '#EB000000'
+  overlay: '#EB000000',
+  // 深色不反白：抬一档灰做"墨块"，文字仍是 86% 白（9.4:1）
+  heroBg: '#303030',
+  heroText: '#DBFFFFFF'
 };
 
 const LIGHT: Palette = {
@@ -106,7 +120,10 @@ const LIGHT: Palette = {
   accent: '#0A59F7',
   card: '#F1F3F5',
   cover: '#EBEBEB',
-  overlay: '#EBFFFFFF'
+  overlay: '#EBFFFFFF',
+  // 晴昼：真正的墨块（90% 黑压在白纸上），纸白字 ≈18:1
+  heroBg: '#E6000000',
+  heroText: '#FFFFFF'
 };
 
 /**
@@ -125,7 +142,10 @@ const SEPIA: Palette = {
   accent: '#0A59F7',
   card: '#083C3226',
   cover: '#E4DCCB',
-  overlay: '#EBF4EFE4'
+  overlay: '#EBF4EFE4',
+  // 旧纸：深褐墨块 + 纸底字（10.9:1）
+  heroBg: '#3C3226',
+  heroText: '#F4EFE4'
 };
 
 /** 绿（豆沙绿）。正文 10.5:1 ／ text2 ≈4.6:1 ／ text3 ≈5.3:1；强调色 #0A59F7（绿底 ≈4.34:1） */
@@ -139,7 +159,10 @@ const GREEN: Palette = {
   accent: '#0A59F7',
   card: '#0822331F',
   cover: '#AFD9B4',
-  overlay: '#EBC7EDCC'
+  overlay: '#EBC7EDCC',
+  // 新苔：深绿墨块 + 豆沙绿字（10.5:1）
+  heroBg: '#22331F',
+  heroText: '#C7EDCC'
 };
 
 export function paletteOf(theme: ThemeName): Palette {

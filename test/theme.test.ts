@@ -71,8 +71,31 @@ function contrast(fg: string, bg: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** 把（可能是半透明的）颜色压到**已经算好的 rgb 底**上 */
+function over(fg: string, bgRgb: number[]): number[] {
+  const f: number[] = hexToRgb(fg);
+  const a: number = alphaOf(fg);
+  return [
+    f[0] * a + bgRgb[0] * (1 - a),
+    f[1] * a + bgRgb[1] * (1 - a),
+    f[2] * a + bgRgb[2] * (1 - a)
+  ];
+}
+
+/** 两个实际渲染出来的 rgb 之间的对比度 */
+function contrastRgb(a: number[], b: number[]): number {
+  const la: number = luminance(a);
+  const lb: number = luminance(b);
+  const hi: number = Math.max(la, lb);
+  const lo: number = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
 test('四个主题都有完整色板（没有缺失字段）', () => {
-  const keys: string[] = ['bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'accent', 'card', 'cover', 'overlay'];
+  const keys: string[] = [
+    'bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'accent', 'card', 'cover', 'overlay',
+    'heroBg', 'heroText'
+  ];
   for (const t of THEMES) {
     const p = paletteOf(t) as unknown as Record<string, string>;
     for (const k of keys) {
@@ -104,6 +127,32 @@ test('强调色对比度 ≥ 4:1（accent、非正文；护眼底上要做到不
     const p = paletteOf(t);
     const c: number = contrast(p.accent, p.bg);
     assert.ok(c >= 4, `${t}.accent 只有 ${c.toFixed(2)}:1`);
+  }
+});
+
+/**
+ * 重点色块（书架「继续阅读」卡）—— 2026-11-06 加。
+ *
+ * 三条一起守，是因为这块色只要漏一条就出事：
+ *   ① 块上文字 ≥4.5:1（它不是装饰，书名与进度都要读）
+ *   ② 块与页面底要分得开（太接近 ⇒ 焦点立不起来，白做一个色块）
+ *   ③ **深色主题不许出现大块亮面**：深色下 heroBg 若取 `text` 反白，
+ *      就是一块白卡压在纯黑上，夜里刺眼 —— 所以浅色/护眼才用"墨底"，深色用抬一档灰。
+ */
+test('hero 色块：文字 ≥4.5:1、与页面底分得开、深色下不许变成白卡', () => {
+  for (const t of THEMES) {
+    const p = paletteOf(t);
+    const pageRgb: number[] = hexToRgb(p.bg);
+    const heroRgb: number[] = over(p.heroBg, pageRgb);
+    const textRgb: number[] = over(p.heroText, heroRgb);
+    const cText: number = contrastRgb(textRgb, heroRgb);
+    const cSep: number = contrastRgb(heroRgb, pageRgb);
+    assert.ok(cText >= 4.5, `${t}.heroText 只有 ${cText.toFixed(2)}:1（应 ≥4.5:1）`);
+    assert.ok(cSep >= 1.25, `${t}.heroBg 与页面底只差 ${cSep.toFixed(2)}:1，色块立不起来`);
+    if (t === THEME_DARK) {
+      assert.ok(luminance(heroRgb) < luminance(over(p.text, pageRgb)),
+        `${t}.heroBg 比正文还亮 —— 深色下会变成刺眼的白卡`);
+    }
   }
 });
 
