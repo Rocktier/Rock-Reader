@@ -35,8 +35,7 @@
 ## 三、法律文件：一个链接覆盖全家族
 
 - 博客 <https://www.91hym.cn/devs/756.html> 三章 + 锚点 `#privacy`/`#agreement`/`#rights`，两应用共用。
-  **博客在党哥自己的站上 ⇒ 改动要给党哥「照抄文本」。**
-- 双写纪律：博客 `#privacy` == 两仓 `pages/Privacy.ets` == 逐字一致。
+  **博客在党哥自己的站上 ⇒ 改动要给党哥「照抄文本」**；双写纪律：博客 `#privacy` == 两仓 `pages/Privacy.ets` 逐字一致。
 - ⚠️ **新增权限 ⇒ 必须同步隐私政策**（1.0.6 加麦克风后政策仍写「不申请任何权限」= 拒审理由）
   ⇒ 同一提交内改完两仓 + 产出博客待同步文本。
   ⚠️ 例外：`backgroundModes` 不是权限 ⇒ 政策无需改（Reader 1.0.8 已过审 = 实证）。
@@ -75,8 +74,8 @@
 
 ## 五、性能层
 
-详见 `reference-performance.md`（AGC「点击操作完成快」口径 + 六律 + 验证层四坑）。
-一句话：重活要让帧（`setTimeout(0)`，不是微任务）、点击后先给反馈、后台 O(N) 活必须可取消、同步 SDK 调用是秒级嫌疑。
+详见 `reference-performance.md`。一句话：重活要让帧（`setTimeout(0)`，不是微任务）、点击后先给反馈、
+后台 O(N) 活必须可取消、同步 SDK 调用是秒级嫌疑。
 
 ## 六、发版状态
 
@@ -96,15 +95,14 @@
 
 ## 七、CI 现状（拍板「CI 不急」）
 
-- Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmony SDK**，而
-  `@kit.CoreSpeechKit`/`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 10505001 / 10311003，打 tag 也不发 Release。
-- 已排除：注入 hms kit；改 runtimeOS（00303038/00303313）；工程内桩（10605038）。
-- 将来修法：CI 工作区把 kit 类型声明**内联到消费文件顶部**（ArkTS 要求同文件）再改 import。
+Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmony SDK**，
+而 `@kit.CoreSpeechKit`/`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 10505001 / 10311003，打 tag 也不发 Release。
+已排除：注入 hms kit / 改 runtimeOS（00303038、00303313）/ 工程内桩（10605038）。
+将来修法：CI 工作区把 kit 类型声明**内联到消费文件顶部**（ArkTS 要求同文件）再改 import。
 
 ## 八、产品对标与迭代方向
 
 主标杆 **Day One**（Journal）/ **Apple Books·Kindle·静读天下**（Reader）。完整对账 ⇒ `reference-roadmap.md`。
-文档 `RockReader/docs/生态融入与对标改进方案-2026-10-25.md`（第七节 = 真实差距）。
 
 - **A 类·本地零联网（优先）**：语音转文字 ✅ / 位置标签 ⬜ / 写作提醒 ⬜ / Markdown 双向 ⬜ /
   自定义模板 ✅ / 多日记本 ✅ / PDF 导出 ⬜ / 每日提示 ✅
@@ -125,25 +123,25 @@
 
 **四个坑**（② 是真凶，前三版一直带着）：
 ① `online` 名与值相反（.d.ts 原话「1: offline」⇒ **1 = 离线**，教程写 `online: 0` 是错的）；
-② ⭐⭐ `StartParams.extraParams` 的键是 **`recognitionMode`**（re-cogni-**tion**-Mode，不是 `recognizeMode`）。
-   **0 = 引擎自己开麦**；不传/键名错 ⇒ 默认 1 = 外部 `writeAudio` 喂流 ⇒ **引擎起了、权限有了、
-   界面显示"正在聆听"、但永远没声音没结果，且没有任何错误码**。写错名带了 4 个版本（1.0.6–1.0.9）。
-   ⚠️ 同一 createEngine 里还有 **`recognizerMode`**（'short'/'long' 选模型），**是另一个字段**。
-   键名现收在 `AsrText.asrEngineExtra()/asrStartExtra()`，单测盯拼写。
+② ⭐⭐ `StartParams.extraParams` 的键是 **`recognitionMode`**（re-cogni-**tion**-Mode，**不是**
+   `recognizeMode`）。**0 = 引擎自己开麦**；不传/键名错 ⇒ 默认 1 = 外部 `writeAudio` 喂流
+   ⇒ **引擎起了、权限有了、界面显示"正在聆听"、但永远没声音没结果，且无任何错误码**。
+   写错名带了 4 个版本（1.0.6–1.0.9）。⚠️ 同一 createEngine 里还有 **`recognizerMode`**
+   （'short'/'long' 选模型），**是另一个字段**。键名现收在 `AsrText.asrEngineExtra()/asrStartExtra()`。
 ③ `PermissionRequestResult` 没导出到 `abilityAccessCtrl` ⇒ 靠 `const res = await ...` 推断；
 ④ `vadEnd` 默认 800ms ⇒ 换气就被判"说完了"；我们设 3000ms。
 
-**判据**：云测报「语音不生效」不能直接当结论，**也不能当噪音忽略**。
-看 HiLog 有没有 `asr: onResult` —— 有回调没文本 = 音频进来了识别不出；**一个都没有 = 音频压根没进来**（坑②）。
+**判据**：云测报「语音不生效」不能直接当结论，**也不能当噪音忽略**。看 HiLog 有没有 `asr: onResult` ——
+有回调没文本 = 音频进来了识别不出；**一个都没有 = 音频压根没进来**（坑②）。
 
 **「必须真机」的通用打法**：① 纯逻辑抽出（不引 @kit）用 node:test；② 用真 SDK 编译验签名；
 ③ **「用不了」当一等公民**（UNREADY + 按钮禁用但保留 + 如实文案）；④ 按名反射的实现加 `-keep`。
 
 ## 十一、ArkTS 类型三坑
 
-① **`null` 与 `undefined` 是两种类型**，`x === undefined` 挡不住 null ⇒ 签名写 `T | null | undefined`；
-② **非空断言 `!` 不允许**，自写 `isAbsent()` 也不是类型守卫 ⇒ 只能**内联判空**让类型收窄；
-③ `arr[k].field !== undefined ? ...` **收窄失效**（两次下标是不同表达式）⇒ 先 `const x = arr[k];` 再判。
+① **`null` 与 `undefined` 是两种类型**（`x === undefined` 挡不住 null ⇒ 签名写 `T | null | undefined`）；
+② **非空断言 `!` 不允许**，自写 `isAbsent()` 也不是类型守卫 ⇒ 只能**内联判空**收窄；
+③ `arr[k].field !== undefined ? …` **收窄失效**（两次下标是不同表达式）⇒ 先 `const x = arr[k];`。
 
 ## 十二、设计基准：Apple HIG + 鸿蒙 HDS（家族基本要求）
 
@@ -163,11 +161,7 @@
 | 布局 | 重要内容靠上；缩进表达层级；相关项分组；遵守安全区 |
 | 动效 | 尊重「减少动态效果」，降级为瞬时 |
 
-### 自检怎么做（可执行）
-
-1. **量**：`uitest dumpLayout` 拿每个可点元素 bounds，任一维 < 88px（44vp@2x）即违规。
-2. **算**：文字色 vs 背景按 WCAG 算比值（sRGB 反 gamma → 相对亮度 → (L1+.05)/(L2+.05)）。
-3. **验**：切深色截图、字体调到最大截图，两套都不糊不截断；**查**状态位是否只靠颜色区分。
+### 自检怎么做 → 见下方「审计三抓手」
 
 ⚠️ 家底好的地方别推翻：all2md 的 `Tokens.ets` 已是量化 token，只补缺口。
 
@@ -175,22 +169,35 @@
 
 **HIG 管可量化硬指标，HDS 管平台视觉语言**（毛玻璃、渐变模糊、按压弹性、悬浮圆角），两者不冲突。
 
-- 官方「空间化 / 沉浸光感」六特性 + 四档材质（业务推荐 `ADAPTIVE`）；
-  ⚠️ 普通组件只在 Navigation 标题栏 / 底部 TabBar 生效 ⇒ **内容区大卡用通用 `backgroundBlurStyle`，
-  不假装接了 HDS**；官方明说「光感不能牺牲操作效率」「耗 GPU」。
-- Apple《材质》：**Liquid Glass 不要在内容层用**；玻璃优先用在浮层 / 抽屉（背后有正文才透得出来），不是首页大卡。
+- HDS「沉浸光感」的**生效范围有限**：普通组件只在 Navigation 标题栏 / 底部 TabBar 生效
+  ⇒ 内容区大卡用通用 `backgroundBlurStyle`，**不假装接了 HDS**（官方也说「光感不能牺牲操作效率」「耗 GPU」）。
+- Apple《材质》：**Liquid Glass 不在内容层用**；玻璃优先给浮层 / 抽屉（背后有正文才透得出来）。
 - 半透明只写组件 `.opacity()`；**资源色一律 6 位**（8 位被静默吞成透明）。
 - ⭐ **淡化 ≠ 降对比度**：说明 / slogan 用 11fp + `muted` + 留白退后，4.5:1 照守，**文案一字不改**。
-- ⭐ **动效别用 `if (entered)` 包内容** ⇒ @State 数值 + `.animation()`；时长抽常量，接系统开关时置 0。
+- ⭐ **动效别用 `if (entered)` 包内容** ⇒ @State 数值 + `.animation()`。
 
 ### 重点色块与字号双峰（2026-11-06 两仓改版立）
 
-- **要立焦点就立"一块墨"**：首屏只留**一个**实心色面（阅读续读卡、私记今日卡），其余退到纸面 ——
-  靠**面积与反差**立重点，不靠加粗描边、不靠再加一个颜色。
+- **要立焦点就立"一块墨"**：首屏只留**一个**实心色面，其余退到纸面 —— 靠面积与反差立重点，
+  不靠加粗描边。改版前的共同病是"每个元素都在说话"，于是没有重点。
 - 语义色**成对** `heroBg`/`heroText`，四套主题各给一套，页面零 `if (isDark)`。
-  ⚠️ **深色下不能拿 `text` 反白**（`text` 是 86% 白 ⇒ 一块白卡压纯黑，夜里刺眼），取抬一档的卡片灰。
-  单测守三条：块上文字 ≥4.5:1、块与页底 ≥1.25:1、**深色下块亮度必须低于正文色**。
+  ⚠️ **深色下不能拿 `text` 反白**（86% 白 ⇒ 一块白卡压纯黑），取抬一档的卡片灰。
 - **字号双峰**：一页只留两档（30–38 与 11），中间层全撤。小字**不得低于 11fp**。
 - **动效** `common/Motion.ets`（两仓各一份，纯数值 + 纯函数可单测）：`motionMs(base, reduced)`
   降级返回 **0**（瞬时，不是变慢）、`staggerMs(index, cap)` **必须封顶**。
   ⚠️ **入场只用位移/缩放，不用 opacity** —— `entered` 万一没翻成 true，"动效没播"会变成"内容不见了"。
+- ⭐ **「减少动态效果」已接上（2026-11-06 三仓）**：读 `settings.display.ANIMATOR_DURATION_SCALE`
+  （`@ohos.settings`，**0 = 动画立即结束**；⚠️ `@deprecated since 21`，compileSdk 20 暂安全，**升 21 要回来换**）。
+  **纯判断放 `Motion.ets`、SDK 读取放 `SystemMotion.ets`** —— 引 `@ohos.settings` 或 `$r()` 的文件
+  进不了 node:test（all2md 把纯函数塞 Tokens 里，测试直接 `$r is not defined`）。
+  ⚠️ **`Number('')` 是 0 不是 NaN** ⇒ 必须显式挡空串，否则"读不到"被判成"用户要关动画"，
+  动效静默全没且看着像设计决定。降级时连 setTimeout 都别排（闪一帧 = 内容闪一帧）。
+- ⭐ **审计三抓手**（打磨前先跑，别凭感觉）：
+  ① 字号分布 —— **必须查 token 值**，只扫字面数字会漏掉 9/10fp 那一大批；
+  ② 点击目标 —— `.height(<44)` + 同块 `onClick`，再分「有 responseRegion（视觉小=合规）」与「没有」；
+  ③ 对比度全组合 —— **别漏「强调色当底」**（主按钮即此形态）；判读时剔掉永不出现的理论组合。
+- ⭐ **不达标优先改 token，不改调用点**（阅读 67 处、私记 62 处）。代价：11fp 会甩孤字
+  （设置页「a）」），处理方式是**显式断行、断在语义边界**，不是缩文案。
+- ⭐ **主按钮字色不是 `bg`**：那是"拿页面底色当字色"，护眼主题下压蓝底只有 4.3:1 ⇒
+  与 heroBg/heroText 同款再立一对 `onAccent`。
+- ⭐ **热区 44 要让位于"不压邻居"**：私记图片删除角标视觉 24、热区 40（缩略图间距 8、中心距 72）。
