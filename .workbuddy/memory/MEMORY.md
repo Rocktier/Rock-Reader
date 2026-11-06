@@ -54,6 +54,8 @@
 - **模拟器点击坐标只取自 `uitest dumpLayout` 的 bounds**（截图目测偏 30px ⇒ 点空被空 onClick 吞）。
   ⚠️ **按钮实际可点区可能小于整行**（私记「日记统计」只覆盖 x≤842，点右侧数字无反应）。
 - **鸿蒙桌面图标取 `module.json5` 里 ability 的 `icon`**，不是 `app.json5` —— 换图不生效先查这里。
+  ⚠️ **AGC 商店图标是单独上传字段**（216 或 1024、正方形、**不许自己加圆角**、背景禁透明），
+  不从包里取；两套口径 ⇒ `reference-icon.md`。
 - ⚠️ **记忆台账要进版本库**：Reader 全追踪；Journal 用 `.workbuddy/*` + `!.workbuddy/memory/` ⇒ `git ls-files` 验。
 
 ## 六、性能层
