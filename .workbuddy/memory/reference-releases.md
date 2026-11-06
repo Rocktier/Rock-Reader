@@ -126,3 +126,11 @@
 - **push tag `v*` 才触发 `gh release create`**（编译失败则不执行）。
 - ⚠️ Reader 的 `fonts-v1` tag 本地/远端指向不同 commit ⇒ `git push --tags` 会被拒，**这是正常的**；
   出包一律 `git push origin v1.0.10` 这种**指定推**。
+
+## CI 现状（2026-11 台账，拍板「CI 不急」）
+
+Reader CI 自引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmony SDK**，而
+`@kit.CoreSpeechKit` / `@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 10505001 / 10311003，
+打 tag 也不发 Release。已排除：注入 hms kit、改 runtimeOS（00303038/00303313）、工程内桩
+（`arkts-no-untyped-obj-literals` 10605038）。将来修法：CI 工作区把 kit 类型声明
+**内联到消费文件顶部**（ArkTS 要求同文件）再改 import。

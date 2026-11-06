@@ -76,3 +76,11 @@
 封面：导入时抽一次落盘 `books/<id>/cover.jpg`。EPUB 四条来源（`properties` /
 `meta name=cover` / `guide` 封面页抠 `<img>` / 裸 `cover.jpg`），MOBI 走 EXTH201；
 **写盘前验文件头**。TXT/MD/HTML 无封面 ⇒ 首字占位。
+
+## 八、Journal 锁库三铁律（2026-11-05/06 从 MEMORY.md 迁入）
+
+① **先落盘再锁**：密钥一清 `encrypt()` 返 null ⇒ 防抖窗口里的内容永远存不下。
+   做法：`onPageHide` 立刻落盘 + 锁延迟 > 防抖窗口。
+② 只清密钥不够，还要清内存里的**内容预览**。
+③ 送解锁页必须 `router.clear()` 再 `replaceUrl`（只 replaceUrl ⇒ 返回键翻回已解密页）。
+④ 调试期把「上锁档位」临时改成 5 分钟再连着截图；默认「立即」会因为每次切前台都回解锁页而打断操作。

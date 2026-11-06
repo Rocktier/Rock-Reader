@@ -94,3 +94,11 @@
 `module.json` / `ets/modules.abc` / `resources/**` 的 md5。
 2026-10-28 实测两包 hap 内内容逐字节相同，差异只在签名块。
 （顺带证实：`module.json5` 的注释不进 hap ⇒ 改注释不必重新出包。）
+
+## 构建环境（2026-11 定点）
+
+- `DEVECO_SDK_HOME` 指到 `...\DevEco Studio\sdk`（**根**；指 `sdk\default` 报 00303312）。
+- 仓内自带 hvigorw wrapper 已坏 ⇒ 用 DevEco 自带 node 跑 `hvigorw.js`；
+  Git Bash 里必须 `cmd //c "scripts\build.cmd ..."`（写 `scripts/build.cmd` 报「'scripts' 不是内部或外部命令」）。
+- safe-delete 拦批量删除时，**只把 `entry/build/.../cache/default/default@CompileArkTS` 改名 `.old-1`**
+  就够（33 秒构建成功，只丢 ArkTS 一层增量缓存），别一上来动整个 `entry/build`。
