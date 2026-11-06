@@ -70,3 +70,9 @@
   ⚠️ 浅色主题下背景是米白，**看到纯黑第一反应应该是 ②，不是"内容被裁"或"页面崩了"**。
 
 
+
+## 七、书籍解析与封面（2026-11 从 MEMORY.md 迁入）
+
+封面：导入时抽一次落盘 `books/<id>/cover.jpg`。EPUB 四条来源（`properties` /
+`meta name=cover` / `guide` 封面页抠 `<img>` / 裸 `cover.jpg`），MOBI 走 EXTH201；
+**写盘前验文件头**。TXT/MD/HTML 无封面 ⇒ 首字占位。
