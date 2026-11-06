@@ -39,6 +39,7 @@ import { applyThemeToSystem } from '../common/SystemBar';
 import {
   MOTION_MS_ENTER, MOTION_SHIFT_ENTER, MOTION_SCALE_ENTER, motionMs, staggerMs
 } from '../common/Motion';
+import { systemReducesMotion } from '../common/SystemMotion';
 import { RR_FS_HERO, RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_MIN, RR_FS_DIGIT, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER, RR_RADIUS_SM, RR_RADIUS_MD, RR_RADIUS_CARD } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
@@ -92,6 +93,14 @@ struct Index {
    *    修法就是家族铁律那一条：**把条件挪到读 @State 的地方**。
    */
   @State private resumeCover: string = '';
+  /**
+   * 系统是否要求「减少动态效果」（读数见 `common/SystemMotion.ets`）。
+   *
+   * 它只影响"要不要表演"，不影响任何功能 —— 降级后内容该出现还是出现，只是瞬间到位。
+   * 只在 `aboutToAppear` 读一次：应用内改系统设置要重进才生效，这个取舍是刻意的
+   * （动效不是功能，没必要为它挂监听、增加一处可能失效的状态同步）。
+   */
+  @State private reducedMotion: boolean = false;
   @State busy: boolean = false;
   @State palette: Palette = paletteOf(THEME_DARK);
   /**
@@ -168,9 +177,15 @@ struct Index {
     this.onOpenBookFromCard();
     // 入场错峰：先让首帧落在"未入场"，下一拍再翻真值（16ms ≈ 一帧）。
     // 只翻一次 —— 从阅读页返回时 entered 已是 true，不该再演一遍。
-    setTimeout(() => {
+    // 系统要求减少动态效果时不走这条：直接落位，否则首帧会闪一下"未入场"的位置。
+    this.reducedMotion = systemReducesMotion(this.getUIContext().getHostContext() as Context);
+    if (this.reducedMotion) {
       this.entered = true;
-    }, 16);
+    } else {
+      setTimeout(() => {
+        this.entered = true;
+      }, 16);
+    }
   }
 
   /**
@@ -652,7 +667,7 @@ struct Index {
         x: this.entered ? 1 : MOTION_SCALE_ENTER,
         y: this.entered ? 1 : MOTION_SCALE_ENTER
       })
-      .animation({ duration: MOTION_MS_ENTER, curve: Curve.EaseOut })
+      .animation({ duration: motionMs(MOTION_MS_ENTER, this.reducedMotion), curve: Curve.EaseOut })
       // 容器伪按钮：按压给一点整体压暗，读屏给出"继续阅读"这个名字
       .stateStyles({ pressed: { opacity: 0.88 } })
       .accessibilityText('继续阅读')
@@ -749,7 +764,7 @@ struct Index {
               .onClick(() => this.closeEditor())
             Text('移除')
               .fontSize(RR_FS_LABEL)
-              .fontColor(this.palette.bg)
+              .fontColor(this.palette.onAccent)
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
               .padding({ top: RR_SP_LG, bottom: RR_SP_LG })
@@ -837,15 +852,16 @@ struct Index {
               .borderRadius(RR_RADIUS_MD)
               .onClick(() => this.closeEditor())
             // 主行动：官方 `ButtonStyleMode.EMPHASIZED`（语义就是"指向最重要任务的按钮"）
-            // + 官方系统蓝实心。字色仍用 palette.bg —— 深蓝上黑字 5.25:1、浅蓝上白字 5.56:1，
-            // 都比固定白字（深蓝上仅 4.0:1）更清楚。
+            // + 官方系统蓝实心。字色用 `onAccent`（不是 `bg`）：深色亮蓝底配黑字 5.26:1、
+            // 浅色系深蓝底配白字 5.47:1。**别再用 palette.bg** —— 拿页面底色当字色，
+            // 护眼主题下会变成"豆沙绿字压蓝底"，只有 4.34:1（2026-11-06 审计实测）。
             Button('确定', { type: ButtonType.Normal, stateEffect: true })
               .buttonStyle(ButtonStyleMode.EMPHASIZED)
               .fontSize(RR_FS_LABEL)
-              .fontColor(this.palette.bg)
+              .fontColor(this.palette.onAccent)
               .backgroundColor(this.palette.accent)
               .layoutWeight(1)
-              .height(34)
+              .height(44)
               .borderRadius(RR_RADIUS_MD)
               .onClick(() => {
                 this.submitEditor();
@@ -1130,11 +1146,13 @@ struct Index {
                   .width('100%')
                   // 入场错峰：前 9 格各晚 60ms 落位，第 10 格起一起落位
                   // （不封顶的话，一百本书的最后一本要等六秒 —— 比不动效更糟）。
-                  .opacity(this.entered ? 1 : 0)
+                  // ⚠️ 这里**不用 opacity**：`entered` 万一没翻成 true，透明度版会把
+                  //    "动效没播"变成"整屏书都不见了"；位移卡住只差 8vp，功能一点不少。
+                  //    （2026-11-06 统一：续读卡本来就这么写，网格这处漏了。）
                   .translate({ y: this.entered ? 0 : MOTION_SHIFT_ENTER })
                   .animation({
-                    duration: MOTION_MS_ENTER,
-                    delay: staggerMs(idx, 8),
+                    duration: motionMs(MOTION_MS_ENTER, this.reducedMotion),
+                    delay: this.reducedMotion ? 0 : staggerMs(idx, 8),
                     curve: Curve.EaseOut
                   })
                   // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
@@ -1312,6 +1330,9 @@ struct Index {
             .height(20)
             .select(this.privacyChecked)
             .selectedColor(this.palette.text)
+            // 视觉 20vp（勾选框本来就这么大），热区补到 44：向右借到 44 宽、上下各 12。
+            // 与右侧文字行重叠无妨 —— 两处 onClick 都是"切换勾选"，语义相同。
+            .responseRegion({ x: 0, y: -12, width: 44, height: 44 })
             .onChange((checked: boolean) => {
               this.privacyChecked = checked;
               hilog.info(DOMAIN, TAG, 'privacy checkbox => %{public}s', String(checked));
@@ -1334,7 +1355,9 @@ struct Index {
           .fontColor(this.palette.text3)
           .backgroundColor(Color.Transparent)
           .width('100%')
-          .height(30)
+          // 44vp：HIG 点击目标下限。原来 30vp —— 文字态按钮本来就"轻"，
+          // 再矮一点就变成"看得见但点不准"，而它是读条款的唯一入口。
+          .height(44)
           .onClick(() => {
             router.pushUrl({ url: 'pages/Privacy' });
           })
@@ -1350,7 +1373,7 @@ struct Index {
             .backgroundColor(Color.Transparent)
             .border({ width: 1, color: this.palette.line })
             .borderRadius(RR_RADIUS_SM)
-            .height(40)
+            .height(44)
             .layoutWeight(1)
             .onClick(() => {
               this.rejectPrivacy();
@@ -1363,10 +1386,10 @@ struct Index {
             .buttonStyle(ButtonStyleMode.EMPHASIZED)
             .fontSize(RR_FS_LABEL)
             .fontWeight(FontWeight.Medium)
-            .fontColor(this.palette.bg)
+            .fontColor(this.palette.onAccent)
             .backgroundColor(this.palette.accent)
             .borderRadius(RR_RADIUS_SM)
-            .height(40)
+            .height(44)
             .layoutWeight(1)
             .enabled(this.privacyChecked)
             .onClick(() => {

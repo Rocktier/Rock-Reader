@@ -90,6 +90,18 @@ export interface Palette {
   heroBg: string;
   /** 重点色块上的文字/图形色（与 heroBg 成对使用，≥4.5:1） */
   heroText: string;
+  /**
+   * **强调色底上的文字**（实心主按钮：确定 / 移除 / 同意）。
+   *
+   * 为什么不继续用 `palette.bg`（2026-11-06 审计发现）：那是**页面底色**，
+   * 拿它当字色等于"字色跟着主题漂移" —— 晴昼/子夜碰巧接近纯白纯黑还过得去，
+   * 但护眼主题的底是**豆沙绿/米黄**，绿字压在蓝底上只有 **4.34:1**（低于 AA）。
+   * 语义一旦写错，换主题就出事，且单看图看不出来。
+   *
+   * 取值依据：accent 在深色是亮蓝 `#317AF7` ⇒ 黑字 5.26:1；
+   * 浅色系三套 accent 都是深蓝 `#0A59F7` ⇒ 白字 5.47:1。四套均 ≥5:1，由单测守。
+   */
+  onAccent: string;
 }
 
 const DARK: Palette = {
@@ -105,7 +117,9 @@ const DARK: Palette = {
   overlay: '#EB000000',
   // 深色不反白：抬一档灰做"墨块"，文字仍是 86% 白（9.4:1）
   heroBg: '#303030',
-  heroText: '#DBFFFFFF'
+  heroText: '#DBFFFFFF',
+  // 亮蓝底上用黑字：5.26:1（白字只有 4.08:1，不达标）
+  onAccent: '#000000'
 };
 
 const LIGHT: Palette = {
@@ -123,7 +137,9 @@ const LIGHT: Palette = {
   overlay: '#EBFFFFFF',
   // 晴昼：真正的墨块（90% 黑压在白纸上），纸白字 ≈18:1
   heroBg: '#E6000000',
-  heroText: '#FFFFFF'
+  heroText: '#FFFFFF',
+  // 深蓝底上白字 5.47:1
+  onAccent: '#FFFFFF'
 };
 
 /**
@@ -145,7 +161,9 @@ const SEPIA: Palette = {
   overlay: '#EBF4EFE4',
   // 旧纸：深褐墨块 + 纸底字（10.9:1）
   heroBg: '#3C3226',
-  heroText: '#F4EFE4'
+  heroText: '#F4EFE4',
+  // 白字 5.47:1（纸色字只有 4.84:1，虽过线但没余量）
+  onAccent: '#FFFFFF'
 };
 
 /** 绿（豆沙绿）。正文 10.5:1 ／ text2 ≈4.6:1 ／ text3 ≈5.3:1；强调色 #0A59F7（绿底 ≈4.34:1） */
@@ -162,7 +180,9 @@ const GREEN: Palette = {
   overlay: '#EBC7EDCC',
   // 新苔：深绿墨块 + 豆沙绿字（10.5:1）
   heroBg: '#22331F',
-  heroText: '#C7EDCC'
+  heroText: '#C7EDCC',
+  // ⚠️ 这里原来用 palette.bg（豆沙绿）当字色，蓝底上只有 4.34:1 —— 改白字 5.47:1
+  onAccent: '#FFFFFF'
 };
 
 export function paletteOf(theme: ThemeName): Palette {

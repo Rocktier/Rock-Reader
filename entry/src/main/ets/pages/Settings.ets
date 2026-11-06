@@ -358,6 +358,9 @@ struct Settings {
               .height(30)
               .border({ width: 1, color: this.palette.line })
               .accessibilityText(this.fontActionText(entry) + ' ' + entry.displayName)
+              // 视觉 30vp 保持轻量（描边小按钮），热区补到 44 —— 上下各借 7vp，
+              // 行内 padding 12+12 足够，不会压到相邻行（HIG 点击目标下限）。
+              .responseRegion({ x: 0, y: -7, width: '100%', height: 44 })
               .onClick(() => {
                 if (entry.builtin) {
                   return;
@@ -390,7 +393,9 @@ struct Settings {
         }
 
         // 首版只内置宋体一款（小而美、零联网）；后续版本会继续增加字体 —— 这里给用户留个预期
-        Text('宋体已内置在应用里，无需下载、断网可用。后续版本会增加更多字体。')
+        // 显式断行，理由同上：11fp 下这句会折，而自动折点落在「更多字体」中间，
+        // 末行只剩三个字（2026-11-06 实测）。断在句号处，两行都完整。
+        Text('宋体已内置在应用里，无需下载、断网可用。\n后续版本会增加更多字体。')
           .fontSize(RR_FS_MICRO)
           .fontColor(this.palette.text3)
           .margin({ top: RR_SP_XL })
@@ -454,7 +459,11 @@ struct Settings {
         Column() {
           // 排版档位已移到**阅读页的抽屉**：那里改一下正文立刻跟着变（能边看边调），
           // 本页只留"与正文内容/资源相关"的设置，避免同一项两处维护。
-          Text('字号 / 行距 / 边距 / 字重 / 主题 ⭢ 在阅读页里调（点屏幕中间 → A a）')
+          //
+          // ⚠️ 显式断成两行（2026-11-06）：字号从 10 提到 11 之后这句在 3x 屏上放不下，
+          //    自动换行会把结尾的「a）」甩成孤字单独一行 —— 内容没丢，但看着像排版事故。
+          //    断点选在「主题 / 在阅读页里调」之间：前半是"有什么可调"，后半是"去哪调"。
+          Text('字号 / 行距 / 边距 / 字重 / 主题\n在阅读页里调：点屏幕中间 → A a')
             .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
             .width('100%')

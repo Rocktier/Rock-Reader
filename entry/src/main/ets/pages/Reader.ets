@@ -3350,7 +3350,7 @@ struct Reader {
           })
         Button('存下', { type: ButtonType.Normal, stateEffect: true })
           .fontSize(RR_FS_LABEL)
-          .fontColor(this.palette.bg)
+          .fontColor(this.palette.onAccent)
           .backgroundColor(this.palette.accent)
           .borderRadius(RR_RADIUS_COVER)
           .layoutWeight(1)
@@ -3748,7 +3748,8 @@ struct Reader {
           Text('应用到所有书')
             .fontSize(RR_FS_META)
             .fontColor(this.palette.accent)
-            .height(34)
+            // 44vp：HIG 下限。原来 34 —— 一行里并排两个文字按钮，矮了就互相错点
+            .height(44)
             .accessibilityText('把当前排版应用到所有书')
             .onClick(() => {
               // 把当前这本书的排版升格为全局默认（覆盖仍留着，其他书随后续）
@@ -3760,7 +3761,7 @@ struct Reader {
           Text('恢复全局')
             .fontSize(RR_FS_META)
             .fontColor(this.palette.accent)
-            .height(34)
+            .height(44)
             .accessibilityText('恢复全局排版')
             .onClick(() => {
               if (this.book !== null) {
@@ -4327,6 +4328,18 @@ struct Reader {
             this.settingsPanel()
           }
           .layoutWeight(1)
+          /**
+           * 底部 32vp 安全余量 —— 修「面板最底一行点不中」。
+           *
+           * 2026-11-06 复核：滚到最底时「主题」这一行落在 y≈2584–2662，屏高 2760，
+           * 下面就是系统手势条。物理上"点在元素上"，但手指按在边缘会被系统手势截走，
+           * 实测出现过一次落空（当时是先在面板里选主题、再点「应用到所有书」绕过去的）。
+           *
+           * 不用 `expandSafeArea` / `getWindowAvoidArea` 动态取：手势条高度各机型不同，
+           * 但取值在 16–28vp 之间，32 是能覆盖全部机型的**静态上界**，
+           * 而代价只是面板少 32vp —— 反正内部是 Scroll，滚得到。
+           */
+          .padding({ bottom: 32 })
         }
         .width('100%')
         .height('100%')

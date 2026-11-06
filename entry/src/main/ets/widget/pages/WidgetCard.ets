@@ -56,14 +56,14 @@ struct WidgetCard {
   headerRow() {
     Row() {
       Text(this.appLabel)
-        .fontSize(this.dimension === '2*4' ? 11 : 10)
+        .fontSize(11)
         .fontColor($r('sys.color.font_secondary'))
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .layoutWeight(1);
       if (this.hasBook) {
         Text(`${this.percent}%`)
-          .fontSize(this.dimension === '2*4' ? 11 : 10)
+          .fontSize(11)
           .fontColor($r('sys.color.font_primary'))
           .fontWeight(FontWeight.Medium);
       }
@@ -104,7 +104,7 @@ struct WidgetCard {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
       Text(this.author)
-        .fontSize(10)
+        .fontSize(11)
         .fontColor($r('sys.color.font_secondary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -135,7 +135,7 @@ struct WidgetCard {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%');
       Text(this.leftText.length > 0 ? this.leftText : '点卡片继续读')
-        .fontSize(10)
+        .fontSize(11)
         .fontColor($r('sys.color.font_tertiary'))
         .maxLines(1)
         .width('100%');
@@ -158,7 +158,7 @@ struct WidgetCard {
         .fontColor($r('sys.color.font_secondary'))
         .margin({ top: 4 });
       Text('导入一本，桌面就能续读')
-        .fontSize(10)
+        .fontSize(11)
         .fontColor($r('sys.color.font_tertiary'))
         .margin({ top: 2 });
     }

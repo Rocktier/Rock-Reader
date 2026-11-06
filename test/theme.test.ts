@@ -94,7 +94,7 @@ function contrastRgb(a: number[], b: number[]): number {
 test('四个主题都有完整色板（没有缺失字段）', () => {
   const keys: string[] = [
     'bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'accent', 'card', 'cover', 'overlay',
-    'heroBg', 'heroText'
+    'heroBg', 'heroText', 'onAccent'
   ];
   for (const t of THEMES) {
     const p = paletteOf(t) as unknown as Record<string, string>;
@@ -139,6 +139,33 @@ test('强调色对比度 ≥ 4:1（accent、非正文；护眼底上要做到不
  *   ③ **深色主题不许出现大块亮面**：深色下 heroBg 若取 `text` 反白，
  *      就是一块白卡压在纯黑上，夜里刺眼 —— 所以浅色/护眼才用"墨底"，深色用抬一档灰。
  */
+/**
+ * 强调色底上的文字（实心主按钮：确定 / 移除 / 同意 / 存下）—— 2026-11-06 加。
+ *
+ * 这条守的是一个**语义错误**，不是配色偏好：原来按钮字色写的是 `palette.bg`
+ * （页面底色），等于"字色跟着主题漂移"。四个主题里三个碰巧过线，**新苔过不了**——
+ * 豆沙绿 `#C7EDCC` 字压在蓝 `#0A59F7` 底上只有 4.34:1。
+ * 换成 `onAccent` 后四套都在 5:1 以上，且以后加护眼主题不会重演。
+ *
+ * 顺带守另一种反色按钮：`text` 底 + `bg` 字（PDF 页的「查找」「跳转」）。
+ * 那两处不是强调色，形状是"墨底反白"，语义没错，但同样要 ≥4.5:1。
+ */
+test('强调色底上的文字 ≥4.5:1（主按钮；含 text 底反白按钮）', () => {
+  for (const t of THEMES) {
+    const p = paletteOf(t);
+    const pageRgb: number[] = hexToRgb(p.bg);
+    const accentRgb: number[] = over(p.accent, pageRgb);
+    const onAccentRgb: number[] = over(p.onAccent, accentRgb);
+    const c: number = contrastRgb(onAccentRgb, accentRgb);
+    assert.ok(c >= 4.5, `${t}.onAccent 压在 accent 上只有 ${c.toFixed(2)}:1（应 ≥4.5:1）`);
+
+    const textRgb: number[] = over(p.text, pageRgb);
+    const onTextRgb: number[] = over(p.bg, textRgb);
+    const c2: number = contrastRgb(onTextRgb, textRgb);
+    assert.ok(c2 >= 4.5, `${t}.bg 压在 text 上只有 ${c2.toFixed(2)}:1（反色按钮要 ≥4.5:1）`);
+  }
+});
+
 test('hero 色块：文字 ≥4.5:1、与页面底分得开、深色下不许变成白卡', () => {
   for (const t of THEMES) {
     const p = paletteOf(t);
