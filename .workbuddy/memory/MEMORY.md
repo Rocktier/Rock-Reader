@@ -51,8 +51,7 @@
   ⚠️ **`key` 不是万能解**：只对 ForEach 列表项有效，普通单子节点不因 key 重建。
 - **回后台 ≠ 用户暂停**：后台停表但**不改状态**，回前台自动续；用独立 `suspended` 区分主动暂停。
 - **浮层状态机**：别在开/关浮层时同步两套状态 ⇒ **到点才判断**（定时器里判「浮层开着」）。
-  按钮覆盖多态时，**按了会发生什么必须写在按钮上**（OFF→滚屏 / RUNNING→停 / PAUSED→继续）。
-- **锁库三铁律**（Journal）：① **先落盘再锁**（密钥一清 `encrypt()` 返 null ⇒ 防抖窗口内容永远存不下）
+  按钮覆盖多态时，**按了会发生什么必须写在按钮上**（OFF→滚屏 / RUNNING→停 / PAUSED→继续）。- **锁库三铁律**（Journal）：① **先落盘再锁**（密钥一清 `encrypt()` 返 null ⇒ 防抖窗口内容永远存不下）
   ⇒ `onPageHide` 立刻落盘 + 锁延迟 > 防抖；② 只清密钥不够，还要清内存里的**内容预览**；
   ③ 送解锁页必须 `router.clear()` 再 `replaceUrl`（否则返回键翻回已解密页）。
 - **日期一律本地时区**，禁用 `toISOString()`（东八区 00–08 点写成昨天）。CI 有守门单测。
@@ -69,8 +68,7 @@
 - ⚠️ **记忆台账要进版本库**：Reader 全追踪；Journal 用 `.workbuddy/*` + `!.workbuddy/memory/` ⇒ 改完 `git ls-files` 验。
 - **书架封面**：导入时抽一次落盘 `books/<id>/cover.jpg`。EPUB **四条来源**（properties /
   meta name=cover / guide 封面页抠 `<img>` / 裸 `cover.jpg` 启发式），MOBI 走 EXTH201；
-  写盘前一律验文件头（`CoverImage.isImageBytes()`）。TXT/MD/HTML 永远无封面 ⇒ 回退首字占位。
-  造数/推文件/截图命令 ⇒ `2026-11-06.md` 第八节。
+  写盘前一律验文件头。TXT/MD/HTML 永远无封面 ⇒ 回退首字占位。造数/截图命令 ⇒ `2026-11-06.md` 第八节。
 
 ## 五、性能层
 
@@ -79,12 +77,8 @@
 
 ## 六、发版状态
 
-| 应用 | APP ID | 包名 | 在架 |
-|---|---|---|---|
-| Rock阅读 | `6917617208943200991` | `com.rocktier.rockreader` | **1.0.12** |
-| Rock私记 | `6917617645309338498` | `com.rocktier.rockjournal` | **1.0.11** |
-
-（2026-11-06 20:35 党哥贴 AGC 应用列表；⇒ 11-05 那批「待审」两版都已过审上架。）
+**在架**：Rock阅读 `1.0.12`（APP ID `6917617208943200991` / `com.rocktier.rockreader`）、
+Rock私记 `1.0.11`（`6917617645309338498` / `com.rocktier.rockjournal`）—— 2026-11-06 20:35 党哥贴 AGC 列表确认。
 
 - 🟢 桌面 Reader 1.0.13 / Journal 1.0.12 两只包 **确认没传** ⇒ 不传，等下一版重出。
   ⚠️ **过审 ≠ 功能可用**（审核员不对麦克风说话；换编码入口也没上机点过）。
@@ -117,19 +111,17 @@ Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公�
 - ⚠️ 包名 `rock.all.2.md`、APP ID `6917620824955651111` —— **与 `com.rocktier.*` 不是同一体系，别顺手统一**。
 - ⭐ 通用打法：**验不了机器就验数据** —— 纯逻辑抽到零 `@kit.*` 内核层，用真实文件导出中间数据喂它。
 
-## 十、ASR（Core Speech Kit）
+## 十、ASR（Core Speech Kit）—— 已上架，只留判据
 
 **边界**：只有中文普通话、只有离线模型（短 ≤60s / 长 ≤8h）；**模拟器无离线引擎 ⇒ 只能真机验**。
 
-**四个坑**（② 是真凶，前三版一直带着）：
+**两个必记的坑**：
 ① `online` 名与值相反（.d.ts 原话「1: offline」⇒ **1 = 离线**，教程写 `online: 0` 是错的）；
 ② ⭐⭐ `StartParams.extraParams` 的键是 **`recognitionMode`**（re-cogni-**tion**-Mode，**不是**
-   `recognizeMode`）。**0 = 引擎自己开麦**；不传/键名错 ⇒ 默认 1 = 外部 `writeAudio` 喂流
-   ⇒ **引擎起了、权限有了、界面显示"正在聆听"、但永远没声音没结果，且无任何错误码**。
-   写错名带了 4 个版本（1.0.6–1.0.9）。⚠️ 同一 createEngine 里还有 **`recognizerMode`**
-   （'short'/'long' 选模型），**是另一个字段**。键名现收在 `AsrText.asrEngineExtra()/asrStartExtra()`。
-③ `PermissionRequestResult` 没导出到 `abilityAccessCtrl` ⇒ 靠 `const res = await ...` 推断；
-④ `vadEnd` 默认 800ms ⇒ 换气就被判"说完了"；我们设 3000ms。
+   `recognizeMode`）。**0 = 引擎自己开麦**；键名错 ⇒ 默认 1 = 外部 `writeAudio` 喂流 ⇒
+   **引擎起了、权限有了、界面显示"正在聆听"、但永远没声音没结果，且无任何错误码**（错了 4 个版本）。
+   ⚠️ 同一 createEngine 里还有 **`recognizerMode`**（'short'/'long' 选模型），是另一个字段。
+   ⚠️ `vadEnd` 默认 800ms ⇒ 换气就被判"说完了"，我们设 3000ms。
 
 **判据**：云测报「语音不生效」不能直接当结论，**也不能当噪音忽略**。看 HiLog 有没有 `asr: onResult` ——
 有回调没文本 = 音频进来了识别不出；**一个都没有 = 音频压根没进来**（坑②）。
