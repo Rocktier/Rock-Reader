@@ -26,8 +26,8 @@
 
 - 出包 `assembleApp -p product=release -p buildMode=release --no-daemon`（不要 `--mode module`）；
   上传前必跑 `pwsh scripts/verify-upload.ps1`，**闸门跑在桌面待传包上**。
-- **第 0 步只能靠人**：先确认 AGC 后台当前应用 = 该应用。**包侧全绿仍 993 ⇒ 问题在包之外**。
-  993 分流：抠包内 Profile 看 `"type"` —— `debug` = 用错 product；`release` 但包名不符 = 拿错 Profile。
+- **第 0 步只能靠人**：先确认 AGC 后台当前应用 = 该应用。**包侧全绿仍 993 ⇒ 问题在包之外**
+  （分流：抠包内 Profile 看 `"type"`，`debug` = 用错 product；`release` 但包名不符 = 拿错 Profile）。
 - build-profile 的 store/keyPassword 必须是 DevEco 加密串（明文报 00303116/00303117）。
 - 版本号 `code = 1000000 + (minor + 1)`，**两处一起改**：`AppScope/app.json5` +
   `entry/src/main/ets/common/AppMeta.ets`（Reader 无 AppMeta；Journal 1.0.6 漏改 ⇒ smoke 红）。
