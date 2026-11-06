@@ -95,23 +95,19 @@
 
 ⇒ 11-05 那批「提交待审」的两版**都已经过审上架**（1.0.12 带 PDF 一期，1.0.11 带 Markdown 导入）。
 
-- 🟢 **桌面待提交（2026-11-05 22:11 出包）**：Reader **1.0.13**（code 1000014，md5 `92DA21E7…`）、
-  Journal **1.0.12**（1000013，`175F9AAB…`），配套 `Rock家族-1.0.13+1.0.12-交付清单.md`。
-  ✅ **2026-11-06 20:39 党哥确认：都没提交待审** ⇒ 接着要做 UI 调整，**这两只先不传**，改完重出包
-  （versionCode 1000014/1000013 理论上还没占用）。
-- ⚠️ **过审 ≠ 功能可用**：ASR 上架了但审核员不对麦克风说话；Reader 1.0.13 的换编码入口也没上机点过。
-- ⭐ **判断「包有没有变」别用 md5**（签名含时间戳）⇒ 解包 `ets/modules.abc` 数符号次数比新旧包
+- 🟢 **桌面待提交**：Reader 1.0.13 / Journal 1.0.12 两只包 **党哥 11-06 确认都没传** ⇒ 不传，
+  等下一版一起重出。⚠️ **过审 ≠ 功能可用**（审核员不对麦克风说话；换编码入口也没上机点过）。
+- ⭐ **判断「包有没有变」别用 md5**（签名含时间戳）⇒ 解包 `ets/modules.abc` 数符号次数
   （混淆会改内部函数名，只有字符串常量与 SDK API 名可查）。
 - **发 Release 不盯（2026-10-29 定）**：push tag 后只推不监控，**下个任务开头**再看 `gh run list`。
-  已核查 2026-11-04：含 tag 的 run 全 failure，但手动传包成功 ⇒ 不阻塞。
 - 下一版版本号：Reader `1.0.14`/`1000015`；Journal `1.0.13`/`1000014`。
-  指纹 / 未验项 / 测试基线（349/349、301/301）/ tag 规则 ⇒ **`reference-releases.md`**。
+  指纹 / 未验项 / 测试基线（Reader 361、Journal 301）/ tag 规则 ⇒ **`reference-releases.md`**。
 
 ## 七、CI 现状（党哥拍板「CI 不急」）
 
 - Reader CI 自 2026-10-17 引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmony SDK**，而
-  `@kit.CoreSpeechKit`/`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 10505001 / 10311003。后果：打 tag 也不发 Release。
-- 已排除：注入 hms kit；改 runtimeOS（00303038/00303313）；工程内桩（`arkts-no-untyped-obj-literals` 10605038）。
+  `@kit.CoreSpeechKit`/`@kit.ShareKit` 是 **HarmonyOS 专有 kit** ⇒ 10505001 / 10311003，打 tag 也不发 Release。
+- 已排除：注入 hms kit；改 runtimeOS（00303038/00303313）；工程内桩（10605038）。
 - 将来修法：CI 工作区把 kit 类型声明**内联到消费文件顶部**（ArkTS 要求同文件）再改 import。
 
 ## 八、产品对标与迭代方向
