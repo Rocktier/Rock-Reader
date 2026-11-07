@@ -13,6 +13,12 @@
 ⚠️ **包内图标不生效只查 `module.json5` 里 ability 的 `icon`**（曾经 6 次换图不动，就栽在这；
 `app.json5` 的 icon 管不着桌面）。
 
+**三仓一致（2026-11-07 补齐 all2md）**：Reader / Journal / all2md 的 ability `icon`
+全部指向 `$media:layered_image`。`startWindowIcon` 仍各指 `$media:startIcon`（启动页资源），
+但 **startIcon 的内容必须＝前景+背景逐像素合成**，否则启动页与桌面是两张脸。
+all2md 的 `startIcon` 原是 512 P 模式老图，已换成 512 RGB 合成图；背景层同时去掉 alpha 通道。
+⇒ 判据：改动任一层，要连带重出 startIcon 与 AGC 成品图。
+
 ## 二、官方硬约束（原话）
 
 - 图标资源**必须为正方形图像，无需圆角**，系统会为对应场景自动生成遮罩裁切。
