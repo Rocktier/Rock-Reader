@@ -26,7 +26,8 @@
   `pwsh scripts/verify-upload.ps1`，**闸门跑在桌面待传包上**。
 - **第 0 步只能靠人**：先确认 AGC 当前应用。**包侧全绿仍 993 ⇒ 问题在包之外**
   （抠 Profile 看 `"type"`：`debug` = 用错 product；`release` 但包名不符 = 拿错 Profile）。
-- 版本号 `code = 1000000 + (minor + 1)`，**两处同改**：`app.json5` + `common/AppMeta.ets`（Reader 无 AppMeta）。
+- 版本号 **code = 累计序号，与 versionName 解耦**（旧公式 11-08 作废；name 只是展示值，可跳大版本）。
+  **两处同改**：`app.json5` + `common/AppMeta.ets`（Reader 无 AppMeta）。
 
 ## 四、法律文件：一个链接覆盖全家族
 
@@ -74,7 +75,8 @@
   = `$media:layered_image`，别又退回 `startIcon`）。
 - ⭐ **判断「包有没有变」别用 md5**（签名含时间戳）⇒ 解包 `ets/modules.abc` 数符号次数。
 - **发 Release / 等审核不盯（2026-10-29）**：只触发不监控，**下个任务开头**再看 `gh run list` / AGC 状态。
-- 下一版：阅读 `1.0.15`/`1000016`；私记 `1.0.14`/`1000015`（私记这版要拆门槛）。
+- 下一版：阅读 **`2.0.0`/`1000016`**（11-08 拍板；`1.0.15`/`1.1.0` 作废，别再推荐 1.1.0）；
+  私记 `1.0.14`/`1000015`（拆门槛独占）。两仓 code 独立累计，同号不冲突。
 
 ## 八、产品对标（对账 ⇒ `reference-roadmap.md`）
 

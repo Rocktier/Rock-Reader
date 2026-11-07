@@ -134,3 +134,18 @@ Reader CI 自引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmo
 打 tag 也不发 Release。已排除：注入 hms kit、改 runtimeOS（00303038/00303313）、工程内桩
 （`arkts-no-untyped-obj-literals` 10605038）。将来修法：CI 工作区把 kit 类型声明
 **内联到消费文件顶部**（ArkTS 要求同文件）再改 import。
+
+## 版本号口径订正（2026-11-08，党哥拍板阅读下一版 2.0.0）
+
+- 旧公式 `code = 1000000 + (minor + 1)` **作废**：那是按第三位小版本号推的，遇到大版本会误导。
+  新口径：**`versionCode` = 累计发版序号，与 `versionName` 解耦**；`versionName` 只是展示值，
+  不要求连续、不要求与 code 对应，AGC 上架时从包内解析、不能手填（官方《升级应用版本》等）。
+- 阅读下一版：**`versionName 2.0.0` / `versionCode 1000016`**（code 照旧 +1，不跳号）。
+  `1.0.15` 与曾建议的 `1.1.0` **都作废**，台账注明跳过；别再按序号惯性写回。
+- 出包清单（2.0.0）固定字段：桌面 `Rock阅读-2.0.0-上架.app`、
+  `Rock家族-2.0.0-交付清单.md`、`docs/release-notes-2.0.0.md`；
+  人工闸门 `verify-upload.ps1 -ExpectVersionCode 1000016 -ExpectVersionName 2.0.0`
+  （参数在脚本 36/37 行真实存在；`build-release.ps1:49` 自动调用时不传期望值）。
+- 阅读只改 `AppScope/app.json5`（`About.ets:58` 读 bundleManager）；私记仍要同时改 `AppMeta.ets`。
+  ⚠️ **版本号数值留到真正出包那天才改**，审核期不碰包。
+- 两仓 `versionCode` 各自独立累计：私记将来 `1000016` 与阅读 `1000016` 同号不冲突。
