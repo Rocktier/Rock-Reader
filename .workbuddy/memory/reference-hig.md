@@ -67,3 +67,53 @@
   44 会串到隔壁）。绝对下限 28 必须守，推荐值 44 可以让。
 - 图标按钮视觉小不怕，**加 `responseRegion` 即可**；`Checkbox` 20×20 用
   `.responseRegion({ x: 0, y: -12, width: 44, height: 44 })`。
+
+## 七、HDS 侧补充口径（2026-11-08 重读官方页，与 HIG **取严者**）
+
+- ⭐ **深色模式正文 >5:1**（华为比 HIG 的 4.5:1 更严）；浅色 >4.5:1；
+  大字号 / 辅助文本 / 功能图标 >3:1；**文字对比度上限 17.6:1**（防刺眼）。
+  ⇒ 全家族判据：**浅色 4.5:1、深色 5:1**，两仓 `theme.test.ts` 断言照此写。
+- ⭐ 官方深色模式明写「**应用内避免黑白跳转的页面**」、层级 / 色彩语义 / 同类控件风格
+  三者与浅色一致 ⇒ **系统浅色而应用纯黑**同样算不一致。主题默认应跟随系统，
+  应用内纸色只能是用户**显式选择**的内容层偏好（不能按钟点偷偷切）。
+- 沉浸光感（HarmonyOS 7 首页口径「空间美学」「围绕空间感…和谐美学」）：六特性、
+  强 / 均衡(默认) / 弱三档、开发推荐 `ADAPTIVE`；官方明写「**光感不能牺牲操作效率**」
+  「耗 GPU」「除弹窗 / Slider / Toggle 外，普通组件只在 Navigation/NavDestination 标题栏、
+  底部 TabBar 生效」「亮色非纯白底建议 GENTLE」「API23 及更早 Web 同层渲染会异常透明」。
+  ⇒ 内容区用通用 `backgroundBlurStyle` 是对的，**不要假装接了 HDS**。
+- 手机字号 **≥12vp 推荐 / 最小 8vp 必须**；与家族「最小 11fp」并存时取严：
+  **12 作推荐值，11 作绝对下限**。
+- 设计原则：Concise / Smooth / Intuitive / Emotional / Universal；中文「简洁高级」=
+  平衡性 + 层级性（深度靠明度 / 模糊，平面靠字号 / 饱和度 / 大小）、降低信息密度、
+  适当留白、突出最重要任务、界面一致易学易用。
+
+## 八、三层空间模型与渐变边界（2026-11-08 视觉重设计定稿）
+
+- ⭐ **光 / 材质 / 文字三层**：① 光 = `linearGradient({ angle:165, colors:[[haloTop,0],[bg,0.62]] })`
+  **只铺空白底层、不放任何文字**；② 材质 = 不透明 `card` + 1px `glassEdge` + 12vp 圆角，
+  玻璃**只给抬手唤出的浮层**；③ 文字 = 全落在 `card` / `overlay`(92% 不透明) 上，可算可测。
+  ⇒ **阅读 / PDF 正文区反 HDS**：均匀纸面、禁渐变禁玻璃，四套纸色保留为内容层偏好。
+  两仓共用的是这套**结构语言**，不是主色。
+- ⭐ **卡与底色差只有 1.06–1.19:1** ⇒ 层次必须靠 1px 描边 + 圆角 + 轻投影，不许只靠颜色。
+- ⭐ **跟随系统照抄 Journal 已验证方案**：`common/Appearance.ets`（纯逻辑三态 +
+  `resolveDark` / `paletteNeedsRefresh`）+ app 层 `COLOR_MODE_NOT_SET` +
+  `onConfigurationUpdate(newConfig)` **只读回调参数**换 AppStorage 色板 + `onForeground` 兜底。
+  ⚠️ **运行时 `setColorMode` 会重建 UIContent、丢页面栈**（Journal 10-16 实测退回桌面）；
+  ⚠️ 首帧色板要在 `loadContent` 之前定，且 `@State` 初值（`Index.ets:151` /
+  `Reader.ets:305` / `Settings.ets:32`）也要一起改，否则先黑一帧。
+  官方接入：`arkts-environment`（`Environment.envProp` + `@StorageProp`）、
+  `arkts-light-dark-color-adaptation`、`bpta-dark-mode-adaptation`（均已查证）。
+- **对比度实测（WCAG flatten）**：浅 `text #E6000000` on `#FFFFFF` = **17.58:1**
+  （HDS 上限 17.6 ⇒ **正文色不许再加深**）；深 `accent #317AF7` on `card #1D232D` =
+  **3.95:1** ⇒ 卡上蓝字改用 `accentOnCard #6BA0FF`(6.09:1)，accent 原值留给进度条/图标；
+  深 `text3` 50% 白 = 5.02:1 贴线 ⇒ 提到 56% `#8FFFFFFF`(5.90:1)；
+  浅 `text3` 在渐变最亮端 `#DCE8FA` = 4.68:1 ⇒ **文字一律不上渐变层**。
+- **两仓主色独立**：阅读蓝 `haloTop #DCE8FA/#16233A → bg #F1F3F5/#101318`，
+  `card #FFFFFF/#1D232D`；私记暖 `haloTop #F7EBDC/#241D16 → bg #FAF8F3/#12100E`，
+  `card #FFFFFF/#26211C`，`glassEdge #E8E0D4/#4A3F33`。
+- **版本窗口**：阅读 1.0.15 只做 P0（跟随系统 + 设置入口拆分 + 书架空间化，零数据风险）；
+  私记 1.0.14 **独占拆门槛**，视觉排其后。**审核期不动包**。
+- **不做**：正文渐变 / 书架卡铺玻璃 / 胶囊 TabBar / 统一三仓主色 / 运行时 setColorMode /
+  8 位 hex 进 `color.json` / 为淡化降对比度 / 数据迁移。
+- 交付：桌面 `Rock家族-视觉重设计-2026-11-08/`（清单 + 视觉稿 HTML，已用系统 Edge
+  无头渲染 1400×6800 校验）。

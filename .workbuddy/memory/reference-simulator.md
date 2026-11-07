@@ -14,7 +14,12 @@
   `-help` 还有 `-instance <name> -click/-slide/-fill/-screenshot/-power` 等交互子命令。
   ⇒ **以后要验界面不必等党哥开模拟器**，自己起、验完自己 `-stop`。
 
-- 沙箱写入：`hdc file send` 写不进应用沙箱（SELinux 拒）；**真正能写应用私有目录的是设备上 `sqlite3` 的 `writefile()`**（**只能写 `haps/entry/files/`**）。
+- ⭐ **沙箱写入（2026-11-07 实测更正，旧口径有害）**：`hdc file send` 写不进应用沙箱（SELinux 拒），
+  但 **`hdc shell "cat /data/local/tmp/x.json > /data/app/el2/100/base/<bundle>/haps/entry/files/library/index.json"` 直接重定向可写**
+  （all2md 实测 1908 / 27668 字节都成功，shell 对该目录有写权限）。
+  ⚠️ `sqlite3 :memory: "select writefile(<私有路径>, readfile('/data/local/tmp/x.json'))"` **返回 0 并把目标截成 0 字节**
+  （设备 sqlite3 读不到 `/data/local/tmp/`，readfile 返回 NULL）⇒ **别再用「只能靠 sqlite3 writefile」这条老结论**。
+  **造数前必先 `hdc file recv` 备份索引**；出错 `aa force-stop` → `cat 备份 > 目标` → 重启核条目数。
 - **模拟器**：dpr=3.5、视口≈359vp；**自动锁屏**（`keyEvent Power` + `swipe 628 2680 628 700`）；**约 30s 自动息屏** ⇒ `power-shell wakeup` 点亮、`power-shell timeout -o <ms>` 覆盖（**参数是 -o**）。**安全键盘是 secure 窗口：键盘弹出期间 screenCap 拍到应用区域纯黑，但 dumpLayout 仍读到完整 UI 树** ⇒ 极易误判成「渲染黑屏」⇒ **判据：关掉键盘再截图**。深浅色在系统设置「显示和亮度 → 显示模式」Radio（浅 ~(349,1634) / 深 ~(907,1634)）。
 - hdc 不在 PATH：`/e/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/toolchains/hdc.exe`；uitest 语法 `uitest uiInput click <x> <y>`、**`uitest uiInput inputText <x> <y> <text>`（三参数版！）**，两参数版报「The number of parameters is incorrect」。`uitest dumpLayout` 输出路径每次随机 ⇒ 读 stdout 的 `DumpLayout saved to:/data/local/tmp/layout_xxx.json` 再 `hdc shell cat`（`file recv` 本地路径写相对名）。设备绝对路径需 `MSYS_NO_PATHCONV=1`。DEL = `keyEvent 7`；状态栏 y<136 吞点击；多步连点间隔 2~3s。shell 无 wm 命令 ⇒ 横屏断点抽纯函数 + 单测守。
 - **uitest dumpLayout 会返回旧应用实例的过期布局** ⇒ **一切以 screenCap 截图为 ground truth**。无 PIL 环境用纯 Python PNG 解码（zlib + 手动 unfilter）做像素分析；chip 选中态以黑底像素扫描为准。
@@ -43,6 +48,13 @@
 - **模拟器造数（picker）**：`浏览 → 下载与接收 → 下载管理器` 有 **12 个历史测试书**
   （`minibook.txt` 是中文测试书，含 前言/第1章 開篇/第2章 中段/第3章 結尾）；
   单击文件即导入并自动关闭 picker。⚠️ 搜索框 `uitest uiInput inputText` 不生效（secure 键盘）。
+- **系统 picker 多选（all2md 11-07 实测，1256×2760，一次选 7 份）**：
+  `选择文件(628,1139)` → `浏览(765,290)` → `下载与接收(628,1982)` → `下载管理器(1014,690)`
+  → 右上九宫格 `[906,224][1039,357]`（中心 `972,290`）弹出菜单 → 第一项「多选」
+  `[269,399][1025,567]`（中心 `647,483`）→ 每个文件右下角出现 `Checkbox`
+  （4 行 × 3 列：x=`325/712/1099`，y=`789/1295/1800/2306`）→ 右上 ✓ `[1067,224][1200,357]` 完成。
+  ⚠️ 单选时点文件即导入并自动关闭 picker；**多选必须走「完成」**。
+  ⚠️ 菜单第二组「图标/列表」「名称/类型/时间/大小」是视图与排序，不是多选开关。
 - 测试基线：Reader **297/297**；Journal **240/240**（2026-11-03）。
 
 

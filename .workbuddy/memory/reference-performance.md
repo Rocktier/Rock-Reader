@@ -40,3 +40,11 @@
 3. **`uitest dumpLayout` 不输出 Image 节点** ⇒ 判断「图标在不在」要**截图**（`uitest screenCap`）。
 4. **自动化摸朗读入口要先开菜单**：topBar/bottomBar 都在 `if (this.showMenu)` 浮层里；
    直接点 topBar 坐标会落到正文 ⇒ **触发翻页**（症状极具误导性）。
+
+## 四、书架列表的量级判据（2026-11-07 实测）
+
+all2md 首页 `ForEach` 全量渲染 + 同步 `listLibrary`，压到 **120 条**（索引 27KB）：
+冷启动正常，滚到中部 / 底部都无错位、重叠、空白，页脚完整 ⇒ **这个量级不必上 LazyForEach**，
+A 阶段「文件数多时可能有性能点」的担心在 120 条以内不成立。
+⚠️ 造数用 `hdc shell "cat /data/local/tmp/x > <应用私有路径>"`；
+**别用 `sqlite3 writefile()`**（返回 0 且把目标截成 0 字节，详见 `reference-simulator.md`）。
