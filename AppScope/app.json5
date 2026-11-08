@@ -4,7 +4,8 @@
     "vendor": "Rocktier",
     // 发版纪律：versionCode 是累计发版序号（严格 > 在架版本即可），与 versionName 解耦；
     // versionName 只是展示值，可跳大版本。旧公式「code = 1000000 + (minor+1)」已作废。
-    // 两处数值留到真正出包当天才改；Reader 无 AppMeta，关于页自动读这里的 versionName。
+    // 改版本号只需动这一个文件（Reader 无 AppMeta，关于页自动读这里的 versionName）；
+    // 数值在真正出包当天才改，不要提前改。
     "versionCode": 1000016,
     "versionName": "2.0.0",
     // 分层图标（foreground / background + layered_image.json）：

@@ -142,10 +142,31 @@ Reader CI 自引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmo
   不要求连续、不要求与 code 对应，AGC 上架时从包内解析、不能手填（官方《升级应用版本》等）。
 - 阅读下一版：**`versionName 2.0.0` / `versionCode 1000016`**（code 照旧 +1，不跳号）。
   `1.0.15` 与曾建议的 `1.1.0` **都作废**，台账注明跳过；别再按序号惯性写回。
-- 出包清单（2.0.0）固定字段：桌面 `Rock阅读-2.0.0-上架.app`、
-  `Rock家族-2.0.0-交付清单.md`、`docs/release-notes-2.0.0.md`；
-  人工闸门 `verify-upload.ps1 -ExpectVersionCode 1000016 -ExpectVersionName 2.0.0`
+- 人工闸门 `verify-upload.ps1 -ExpectVersionCode 1000016 -ExpectVersionName 2.0.0`
   （参数在脚本 36/37 行真实存在；`build-release.ps1:49` 自动调用时不传期望值）。
+  ⚠️ 早期设想的 `Rock家族-2.0.0-交付清单.md` / `docs/release-notes-2.0.0.md` **未产出**，
+  实际交付物见下节，别按旧清单找文件。
 - 阅读只改 `AppScope/app.json5`（`About.ets:58` 读 bundleManager）；私记仍要同时改 `AppMeta.ets`。
-  ⚠️ **版本号数值留到真正出包那天才改**，审核期不碰包。
+  ⚠️ 版本号数值**留到真正出包那天才改**（2026-11-09 出包当天已改完），审核期不碰包。
 - 两仓 `versionCode` 各自独立累计：私记将来 `1000016` 与阅读 `1000016` 同号不冲突。
+
+## 六、Rock阅读 2.0.0 发版记录（2026-11-09）
+
+- **状态**：物料与 release 包全部备好，**未上传 AGC**；`1.0.14` 仍在审 ⇒ 等过审再提 2.0.0
+  （同一应用不能两版同审）。审核期不盯、不催、不重传、不动包。
+- **版本**：`versionName 2.0.0` / `versionCode 1000016`，只改 `AppScope/app.json5`。
+- **交付目录**：`C:\Users\Dang\Desktop\Rock阅读-2.0.0-上架\` —— 唯一待传包
+  `Rock阅读-2.0.0-上架.app`（2,636,763 B）、`商店截图\` 6 张（1080×1920 PNG）、
+  `商店文案与更新说明.md`、`功能回归核对表.md`、`交付清单.md`。
+- **指纹**：md5 `FF598FCFAD6840F0326EE16EA486F9DA`、
+  sha256 `83EA904294AC79F48760E031373685292EF5540DCBBD2266F4A5AF4EE9B3EB32`。
+- **闸门**：自动（`build-release.ps1` 内）+ 桌面待传包人工闸门全 PASS：验签、Profile `type=release`、
+  bundleName、包内 Profile 与本地逐字节一致、证书未过期、无 debug-info、pack.info 与 `app.json5` 对照一致。
+- **内容**：三件拍板事（老用户 `theme=dark` 两级覆盖 / 浮层透字 / 深色商店图重拍）+ 全量功能回归
+  （对照 `6cc50fc`，**0 项功能丢失**）+ 点正文唤菜单 /「‹ 书架」标签 / 冷启动首帧。
+- **构建坑复用**：release 首次被 `[safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED]` 拦
+  （`default@CompileArkTS` 下 74 个缓存项 > 50）⇒ 按 `reference-signing.md` 把该目录改名 `.old-*`
+  后重跑 `BUILD SUCCESSFUL in 31 s 972 ms`。
+- **口径**：本版未新增权限 ⇒ 博客与两仓 `pages/Privacy.ets` 不用改；AGC 图标沿用已上传 1024 方角 PNG。
+  `FontStore.ets:177` 的 INTERNET WARN 未改，文案按「主动下载才联网」精确表达。
+- **提交**：`81b421f`（含代码、截图、记忆、桌面清单），工作区干净。

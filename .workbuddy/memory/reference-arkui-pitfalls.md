@@ -84,3 +84,13 @@
 ② 只清密钥不够，还要清内存里的**内容预览**。
 ③ 送解锁页必须 `router.clear()` 再 `replaceUrl`（只 replaceUrl ⇒ 返回键翻回已解密页）。
 ④ 调试期把「上锁档位」临时改成 5 分钟再连着截图；默认「立即」会因为每次切前台都回解锁页而打断操作。
+
+## 九、ArkTS 类型三坑（2026-11-09 从 MEMORY.md 迁入，主文件只留指针）
+
+① **`null` 与 `undefined` 是两种类型**：`x === undefined` 挡不住 null ⇒ 函数签名必须写
+   `T | null | undefined`，别只写 `T | undefined`。
+② **非空断言 `!` 在 ArkTS 里不允许**；自己写 `isAbsent()` 之类辅助函数**也不是类型守卫**
+   （编译器不认），⇒ 只能在调用处**内联判空**收窄类型。
+③ **`arr[k].field !== undefined ? …` 收窄失效**：下标访问两次不构成同一引用 ⇒
+   先 `const x = arr[k];` 再判 `x.field`。
+另：**`@Computed` 在 V1 不可用**（编译报 `only be used in a 'struct' decorated with '@ComponentV2'`），见第四节。
