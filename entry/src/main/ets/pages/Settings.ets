@@ -11,7 +11,10 @@
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { Palette, paletteOf, THEME_LIGHT, THEME_SYSTEM, ThemeName } from '../common/Theme';
+import {
+  Palette, paletteOf, themeLabel,
+  THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, THEME_SYSTEM, ThemeName
+} from '../common/Theme';
 import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { FontStore } from '../data/FontStore';
@@ -25,6 +28,10 @@ const CHIP_SIZE: number = 44;
 const CHIP_HEIGHT: number = 34;
 /** 系统字体列表最多显示多少项（有些设备会返回几十项，取够用的量） */
 const MAX_FONT_ITEMS: number = 40;
+/** 设置页「全局默认主题」档位；与阅读页抽屉同一套顺序，标签统一走 themeLabel */
+const THEME_CHOICES: ThemeName[] = [
+  THEME_SYSTEM, THEME_AUTO, THEME_DARK, THEME_LIGHT, THEME_SEPIA, THEME_GREEN
+];
 
 @Entry
 @Component
@@ -84,6 +91,21 @@ struct Settings {
     this.palette = currentPalette(theme);
     this.fontFamily = this.prefs.getFontFamily();
     this.loadSystemFonts();
+  }
+
+  /**
+   * 2.0.0 设置页选全局主题：写全局 + 同步所有书级覆盖的 theme 字段。
+   *
+   * 老用户升级后仍全黑的根因有**两层**（全局 `theme=dark` + `book_pref_*` 里的
+   * `theme=dark`）；只写全局会被书级覆盖盖住 ⇒ 一步同步两层。
+   * 不做静默迁移：用户不点就不改，尊重主动选深色的用户，也不需要迁移标记位。
+   */
+  private pickGlobalTheme(theme: ThemeName): void {
+    this.prefs.saveTheme(theme);
+    const books: number = this.prefs.applyThemeToAllBooks(theme);
+    this.theme = this.prefs.getTheme();
+    this.palette = currentPalette(this.theme);
+    hilog.info(DOMAIN, TAG, 'global theme: %{public}s books=%{public}d', this.theme, books);
   }
 
   /**
@@ -482,7 +504,43 @@ struct Settings {
           //    断点规则：每行不超过 ~24 字，前半说"有什么可调"、后半说"去哪调"。
           // 2026-11-08 P0-2：入口已从 `A a` 改名「本书排版」，说明必须同步；
           // 并补一句作用域 —— 阅读页抽屉是**每本书覆盖**，本页标题的「全局默认」只管本页这些项。
-          Text('字号 / 行距 / 边距 / 字重 / 主题\n在阅读页里调：点屏幕中间 → 本书排版\n那里改的是当前这本书，可应用到所有书')
+          Text('字号 / 行距 / 边距 / 字重\n在阅读页里调：点屏幕中间 → 本书排版\n那里改的是当前这本书，可应用到所有书')
+            .fontSize(RR_FS_DIGIT)
+            .fontColor(this.palette.text3)
+            .width('100%')
+            .margin({ bottom: RR_SP_2XL })
+
+          // 2.0.0：全局默认主题。老用户「整页黑」有两层根因，这里一步同步两层。
+          Text('主题 · 全局默认')
+            .fontSize(RR_FS_BODY)
+            .fontColor(this.palette.text)
+            .width('100%')
+            .margin({ bottom: RR_SP_LG })
+
+          // ⚠️ 不用带参 @Builder：V1 下参数不追踪 @State，选中态会定死。
+          //    内联在 ForEach 里直接读 this.theme；Flex 换行让 6 档全部可见，
+          //    不用横向 Scroll 把选项藏起来（HIG：别让用户猜还有更多）。
+          Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
+            ForEach(THEME_CHOICES, (t: ThemeName) => {
+              Text(themeLabel(t))
+                .fontSize(RR_FS_LABEL)
+                .fontColor(this.theme === t ? this.palette.bg : this.palette.text2)
+                .backgroundColor(this.theme === t ? this.palette.text : this.palette.card)
+                .border({ width: 1, color: this.theme === t ? this.palette.text : this.palette.line })
+                .borderRadius(RR_RADIUS_COVER)
+                .height(CHIP_HEIGHT)
+                .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
+                .margin({ right: RR_SP_SM, bottom: RR_SP_SM })
+                .stateStyles({ pressed: { opacity: 0.6 } })
+                .accessibilityText('全局主题：' + themeLabel(t))
+                .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
+                .onClick(() => this.pickGlobalTheme(t))
+            }, (t: ThemeName) => t)
+          }
+          .width('100%')
+          .margin({ bottom: RR_SP_LG })
+
+          Text('改动会同时应用到所有已读的书\n阅读页「本书排版」只改当前这一本')
             .fontSize(RR_FS_DIGIT)
             .fontColor(this.palette.text3)
             .width('100%')

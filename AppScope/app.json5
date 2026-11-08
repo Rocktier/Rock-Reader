@@ -2,9 +2,11 @@
   "app": {
     "bundleName": "com.rocktier.rockreader",
     "vendor": "Rocktier",
-    // 发版纪律：name 1.0.x 与 code 100000x+1 同步 bump，包内 module.json 复核过再传。
-    "versionCode": 1000015,
-    "versionName": "1.0.14",
+    // 发版纪律：versionCode 是累计发版序号（严格 > 在架版本即可），与 versionName 解耦；
+    // versionName 只是展示值，可跳大版本。旧公式「code = 1000000 + (minor+1)」已作废。
+    // 两处数值留到真正出包当天才改；Reader 无 AppMeta，关于页自动读这里的 versionName。
+    "versionCode": 1000016,
+    "versionName": "2.0.0",
     // 分层图标（foreground / background + layered_image.json）：
     // 系统据此做遮罩、视差与深浅色适配。之前是**单张纯色占位块**（0.5KB、无图形），
     // 桌面上看起来"没同步 / 很粗糙"就是这个原因 —— 不是设计问题，是根本没有图。

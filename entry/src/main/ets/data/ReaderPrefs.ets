@@ -383,6 +383,52 @@ export class ReaderPrefs {
     this.flush();
   }
 
+  /**
+   * 2.0.0：把主题选择同步到**所有已有书的覆盖层**（设置页「全局默认主题」用）。
+   *
+   * 第一性原理：老用户在书里显式选过深色，留下 `book_pref_*` 里的 `theme: 'dark'`。
+   * 只改全局 `theme` 会被这些覆盖盖住 ⇒ 升级后照样全黑，「跟随系统」这个卖点不成立。
+   * 阅读页原来那个「应用到所有书」其实只写了全局（注释里就写着「覆盖仍留着」），
+   * 名字与行为不符，本方法补上真正缺的那一步。
+   *
+   * ⚠️ 只改 theme，**保留 levels / fontFamily**：字号行距是每本书的排版，
+   * 不该被主题选择捎带改掉。不碰书籍文件、进度、书签、摘录。
+   * ⚠️ 不做静默迁移：用户不点就不改，尊重主动选深色的用户，也不需要迁移标记位。
+   */
+  applyThemeToAllBooks(theme: ThemeName): number {
+    if (this.store === null) {
+      return 0;
+    }
+    const t: ThemeName = normalizeTheme(theme);
+    const all: Object = this.store.getAllSync();
+    const record: Record<string, preferences.ValueType> = all as Record<string, preferences.ValueType>;
+    const keys: string[] = Object.keys(record);
+    let changed: number = 0;
+    for (let i: number = 0; i < keys.length; i++) {
+      const key: string = keys[i];
+      if (key.indexOf(KEY_BOOK_PREF_PREFIX) !== 0) {
+        continue;
+      }
+      const raw: preferences.ValueType = record[key];
+      if (typeof raw !== 'string' || raw.length === 0) {
+        continue;
+      }
+      try {
+        const o = JSON.parse(raw) as BookOverride;
+        o.theme = t;
+        this.put(key, JSON.stringify(o));
+        changed++;
+      } catch (e) {
+        // 脏数据跳过即可，不能让一条坏记录把整个设置页卡住
+        hilog.warn(DOMAIN, TAG, 'skip dirty book override: %{public}s', key);
+      }
+    }
+    if (changed > 0) {
+      this.flush();
+    }
+    return changed;
+  }
+
   hasBookOverride(bookId: string): boolean {
     return this.getBookOverride(bookId) !== null;
   }

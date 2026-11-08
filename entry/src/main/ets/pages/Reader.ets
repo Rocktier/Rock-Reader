@@ -2543,6 +2543,9 @@ struct Reader {
       Text('摘录')
         .fontSize(RR_FS_MICRO)
         .fontColor(this.palette.text)
+        // 2026-11-09：原来「1/1」与「摘录」之间没有间距，两个字组糊成一串，
+        // 连带右边的喇叭也认不出来 ⇒ 补一个 token 级的间距（热区仍 ≥44vp）
+        .margin({ left: RR_SP_MD })
         .responseRegion({ x: -8, y: -8, width: 64, height: 44 })
         .accessibilityText('把当前页存为摘录')
         .onClick(() => {
@@ -2758,7 +2761,7 @@ struct Reader {
     }
     .width('100%')
     .padding({ left: RR_SP_3XL, right: RR_SP_3XL, top: RR_SP_3XL, bottom: RR_SP_5XL })
-    .backgroundColor(this.palette.overlay)
+    .backgroundColor(this.palette.bg)
     .border({ width: { top: 1 }, color: this.palette.lineSoft })
     // 中央菜单唤起时自下滑入（复评整改：原瞬现）
     .transition(TransitionEffect.OPACITY
@@ -2814,7 +2817,7 @@ struct Reader {
     }
     .width('100%')
     .padding({ left: this.marginVp, right: this.marginVp })
-    .backgroundColor(this.palette.overlay)
+    .backgroundColor(this.palette.bg)
   }
 
   @Builder
@@ -2873,7 +2876,7 @@ struct Reader {
     }
     .width(TOC_PANEL_WIDTH)
     .height('100%')
-    .backgroundColor(this.palette.overlay)
+    .backgroundColor(this.palette.bg)
     // 左抽屉：圆角与描边只做贴着屏幕右缘的那侧（左侧贴着屏边，不需要）
     .borderRadius({ topRight: 12, bottomRight: 12 })
     .border({ width: { top: 1, right: 1, bottom: 1 }, color: this.palette.line })
@@ -3053,7 +3056,7 @@ struct Reader {
                       .fontColor(this.palette.text)
                       .placeholderColor(this.palette.text3)
                       .caretColor(this.palette.accent)
-                      .backgroundColor(this.palette.overlay)
+                      .backgroundColor(this.palette.cover)
                       .borderRadius(RR_RADIUS_COVER)
                       .height(36)
                       .margin({ top: 4 })
@@ -3364,7 +3367,7 @@ struct Reader {
         .height(110)
         .margin({ top: RR_SP_MD })
         .padding(RR_SP_MD)
-        .backgroundColor(this.palette.overlay)
+        .backgroundColor(this.palette.cover)
         .borderRadius(8)
         .onChange((v: string) => {
           this.highlightExcerpt = v;
@@ -3385,7 +3388,7 @@ struct Reader {
         .placeholderColor(this.palette.text3)
         .placeholderFont({ size: 12.5 })
         .caretColor(this.palette.accent)
-        .backgroundColor(this.palette.overlay)
+        .backgroundColor(this.palette.cover)
         .borderRadius(RR_RADIUS_COVER)
         .height(40)
         .margin({ top: RR_SP_MD })
@@ -3828,10 +3831,14 @@ struct Reader {
             .height(44)
             .accessibilityText('把当前排版应用到所有书')
             .onClick(() => {
-              // 把当前这本书的排版升格为全局默认（覆盖仍留着，其他书随后续）
+              // 把当前这本书的排版升格为全局默认
               this.prefs.saveLevels(this.levels);
               this.prefs.saveTheme(this.theme);
               this.prefs.saveFontFamily(this.fontFamily);
+              // 2.0.0：补上原来缺的一步 —— 其他书的 book_pref_* 里还留着各自的
+              // theme 覆盖，只写全局它们不会跟着变（按钮名叫「应用到所有书」）。
+              // 只同步主题，不动每本书的字号 / 行距 / 字体。
+              this.prefs.applyThemeToAllBooks(this.theme);
               this.applyPrefsToLayout();
             })
           Text('恢复全局')
@@ -4044,7 +4051,7 @@ struct Reader {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.palette.overlay)
+    .backgroundColor(this.palette.bg)
     .borderRadius({ topLeft: 12, topRight: 12 })
     .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
     .transition(TransitionEffect.translate({ y: SETTINGS_SLIDE_VP })
