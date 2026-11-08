@@ -34,8 +34,9 @@ import { shelfSubtitle } from '../engine/shelf/ShelfAuthor';
 import { isPdfFormat } from '../engine/pdf/PdfPages';
 import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
 import { shelfColsOf } from '../common/LayoutStyle';
-import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT, THEME_SYSTEM, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
+import { currentEffectiveTheme } from '../common/ThemeRuntime';
 import {
   MOTION_MS_ENTER, MOTION_SHIFT_ENTER, MOTION_SCALE_ENTER, motionMs, staggerMs
 } from '../common/Motion';
@@ -102,7 +103,10 @@ struct Index {
    */
   @State private reducedMotion: boolean = false;
   @State busy: boolean = false;
-  @State palette: Palette = paletteOf(THEME_DARK);
+  /** 首帧取浅色；aboutToAppear 会同步按系统深浅 / 用户意图覆盖，不会先黑一帧 */
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板，不动页面栈 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   /**
    * 入场错峰开关（2026-11-06 去 AI 味改版）。
    *
@@ -148,7 +152,9 @@ struct Index {
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
-  private theme: ThemeName = THEME_DARK;
+  private theme: ThemeName = THEME_SYSTEM;
+  /** 当前**生效**主题（system / auto 解析后的值）；色板与状态栏都读它 */
+  private activeTheme: ThemeName = THEME_LIGHT;
   /** 页面当前是否在前台 —— 后台时 @State 变更不触发重渲染，进度信号要等可见再补拉 */
   private visible: boolean = false;
   /** 不可见期间收到过进度保存信号 → onPageShow 时补一次重拉 */
@@ -159,9 +165,8 @@ struct Index {
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.applyTheme();
-    // 启动时也同步一次系统层：默认深色时状态栏内容色就是白的，但显式设一次可保证
-    // "上次退出时是浅色"的情况下状态栏文字块也是黑的（EntryAbility 设了 colorMode，这里兜一道底）
-    applyThemeToSystem(this.getUIContext().getHostContext() as Context, this.theme);
+    // 启动时也同步一次系统层（只改状态栏字色，不再钉死系统 colorMode —— P0-1）
+    applyThemeToSystem(this.getUIContext().getHostContext() as Context, this.activeTheme);
     this.load();
     // 首次启动（或隐私政策升版后）提示阅读隐私政策 —— 合规硬性要求，见审核驳回第 1 条
     const agreed: number = this.prefs.getPrivacyAgreedVersion();
@@ -273,12 +278,21 @@ struct Index {
 
   private applyTheme(): void {
     const theme: ThemeName = this.prefs.getTheme();
-    if (theme !== this.theme) {
+    // P0-1：先把「用户意图」解析成生效主题（system 跟系统 / auto 按小时）
+    const effective: ThemeName = currentEffectiveTheme(theme);
+    // ⚠️ 两个变化位都要判：系统深浅变了但 theme 还是 'system' 时，也必须换色板
+    if (theme !== this.theme || effective !== this.activeTheme) {
       this.theme = theme;
-      this.palette = paletteOf(theme);
-      // 主题变了必须同步系统层（状态栏文字颜色 + 系统深色模式），否则浅色下白字白底看不见
-      applyThemeToSystem(this.getUIContext().getHostContext() as Context, theme);
+      this.activeTheme = effective;
+      this.palette = paletteOf(effective);
+      // 只同步状态栏字色，不再动系统 colorMode
+      applyThemeToSystem(this.getUIContext().getHostContext() as Context, effective);
     }
+  }
+
+  /** 控制中心切系统深浅 → 重算色板，书单 / 滚动位置 / 页面栈全保留（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.applyTheme();
   }
 
   private async load(): Promise<void> {
@@ -660,6 +674,8 @@ struct Index {
       .width('100%')
       .padding({ left: 16, right: 16, top: 16, bottom: 16 })
       .borderRadius(RR_RADIUS_CARD)
+      // P0-3：卡与底的色差只有 1.06–1.19:1 ⇒ 层次靠 1px 描边，不许只靠颜色
+      .border({ width: 1, color: this.palette.glassEdge })
       .backgroundColor(this.palette.heroBg)
       // 入场：推近 + 上移归位（不是"淡入" —— 墨块是实心的，淡入会先像一块灰斑）
       .translate({ y: this.entered ? 0 : MOTION_SHIFT_ENTER })
@@ -877,6 +893,10 @@ struct Index {
       // 卡片盖在深色遮罩上，背景一透明，文字就会跟着遮罩走 ——
       // 深色主题是白字所以没事，一切到护眼主题（深褐字）就彻底看不见了（真机反馈 #5）
       .backgroundColor(this.palette.overlay)
+      // P0-3（党哥 11-08 拍板）：玻璃**只给抬手唤出的浮层**。
+      // 书架卡与阅读正文一律不用；这里 overlay 仍是 92% 不透明 ⇒
+      // 文字落在可计算的确定面上，theme.test.ts 的对比度断言不作废。
+      .backgroundBlurStyle(BlurStyle.COMPONENT_THIN)
       .borderWidth(1)
       .borderColor(this.palette.line)
     }
@@ -960,16 +980,19 @@ struct Index {
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Stats' });
             })
-          Text('Aa')
-            .fontSize(RR_FS_LABEL)
-            .fontColor(this.palette.text)
-            .width(30)
-            .height(30)
-            .textAlign(TextAlign.Center)
-            .responseRegion({ x: -7, y: -7, width: 44, height: 44 })
-            .stateStyles({ pressed: { opacity: 0.45 } })
+          // P0-2（2026-11-08）：原来是无标签的 `Text('Aa')`，与阅读页的 `A a`
+          // 同符号却两个作用域 —— 想调全局字号的人会点进本书排版抽屉，反之亦然。
+          // 照抄 Rock私记顶栏的带文字写法；TEXTUAL 去掉按钮底槽，不与大标题抢权重。
+          Button('设置', { type: ButtonType.Normal, stateEffect: true })
+            .buttonStyle(ButtonStyleMode.TEXTUAL)
+            .fontSize(RR_FS_META)
+            .fontColor(this.palette.text2)
+            .padding({ left: 8, right: 8 })
+            .height(32)
+            // 视觉 32，热区补到 44（HIG 推荐值）
+            .responseRegion({ x: -6, y: -6, width: 44, height: 44 })
             .margin({ left: RR_SP_LG })
-            .accessibilityText('设置')
+            .accessibilityText('设置，全局默认，对所有书生效')
             .onClick(() => {
               this.getUIContext().getRouter().pushUrl({ url: 'pages/Settings' });
             })
@@ -1144,6 +1167,13 @@ struct Index {
                     .width('100%')
                   }
                   .width('100%')
+                  // P0-3：不透明卡承载文字，1px 描边 + 12vp 圆角表达层次
+                  // （卡与底只差 1.06–1.19:1，光靠色差等于没有边界）。
+                  // 卡**不铺玻璃**：文字必须落在对比度可确定的面上。
+                  .backgroundColor(this.palette.card)
+                  .border({ width: 1, color: this.palette.glassEdge })
+                  .borderRadius(12)
+                  .padding({ left: 8, right: 8, top: 8, bottom: 8 })
                   // 入场错峰：前 9 格各晚 60ms 落位，第 10 格起一起落位
                   // （不封顶的话，一百本书的最后一本要等六秒 —— 比不动效更糟）。
                   // ⚠️ 这里**不用 opacity**：`entered` 万一没翻成 true，透明度版会把
@@ -1198,9 +1228,14 @@ struct Index {
       // 空态就被压成 0 高度（看不见文案）。这是家族老坑的又一次复发。
       .width('100%')
       .height('100%')
-      .width('100%')
-      .height('100%')
-      .backgroundColor(this.palette.bg)
+      // P0-3（2026-11-08）：「光」层 —— 165° 同色相明度渐变，**只铺空白底层**。
+      // 照 all2md 0cb3b61 那稿（党哥 11-08 认可）：两套主题同一组 token，
+      // 页面零 if (isDark)；0.62 之后回归纯 bg，书单区仍是确定底色。
+      // ⚠️ 不铺玻璃到卡片/正文：文字必须落在可计算的不透明面上（theme.test.ts 守）。
+      .linearGradient({
+        angle: 165,
+        colors: [[this.palette.haloTop, 0], [this.palette.bg, 0.62]]
+      })
       .padding({ left: RR_SP_4XL, right: RR_SP_4XL })
 
       if (this.editorMode !== MODE_NONE) {

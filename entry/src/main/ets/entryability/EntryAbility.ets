@@ -1,35 +1,56 @@
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
-import { ReaderPrefs } from '../data/ReaderPrefs';
-import { isLightTheme, THEME_DARK, ThemeName } from '../common/Theme';
+import { isSystemDarkColorMode, SYSTEM_DARK_KEY } from '../common/Appearance';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    // 系统深色模式跟随**用户选的阅读主题**（不是跟随系统）：
-    // 否则浅色主题下，系统绘制的弹窗/状态栏仍是深色，与页面反差突兀。
-    let theme: ThemeName = THEME_DARK;
+    // 2026-11-08 P0-1：app 层 colorMode 一律 NOT_SET（跟随系统），
+    // **只在 onCreate / loadContent 之前调这一次**。
+    //
+    // 原来按用户主题钉死 LIGHT/DARK，两个代价：系统白天、应用全黑（党哥 11-08 实测）；
+    // app 一旦被钉死，系统主题变化就**不再回调 onConfigurationUpdate**，
+    // "跟随系统"永远跟不上（Rock私记 2026-10-26 华为复评实测）。
+    // ⚠️ 运行中绝不再调 setColorMode：它会重建 UIContent、丢页面栈
+    //    （私记 2026-10-16 装机实测：切完直接退回桌面）。视觉一律由 Palette 决定。
     try {
-      const prefs = new ReaderPrefs();
-      prefs.open(this.context);
-      theme = prefs.getTheme();
+      this.context.getApplicationContext()
+        .setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'read theme failed: %{public}s', JSON.stringify(e));
+      hilog.warn(DOMAIN, TAG, 'startup setColorMode failed: %{public}s', JSON.stringify(e));
     }
-    try {
-      // 纸 / 绿 同属浅色系（isLightTheme），以后再加护眼色不用改这里
-      this.context.getApplicationContext().setColorMode(isLightTheme(theme)
-        ? ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT
-        : ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-    } catch (e) {
-      hilog.warn(DOMAIN, TAG, 'setColorMode failed: %{public}s', JSON.stringify(e));
-    }
-    hilog.info(DOMAIN, TAG, 'onCreate theme=%{public}s', theme);
+    // 系统深浅写进 AppStorage：页面 @StorageProp('systemDark') 首帧就能拿到，
+    // 不用等 onConfigurationUpdate，也不会先闪一下反色。
+    this.writeSystemDark(this.context.config.colorMode);
     this.takeIncomingUri(want);
     this.takeOpenBook(want);
+  }
+
+  /** 系统深浅 → AppStorage（值没变就不写，省一次全 UI 刷新） */
+  private writeSystemDark(colorMode: number | undefined): void {
+    try {
+      const dark: boolean = isSystemDarkColorMode(colorMode);
+      if ((AppStorage.get<boolean>(SYSTEM_DARK_KEY) === true) !== dark) {
+        AppStorage.setOrCreate(SYSTEM_DARK_KEY, dark);
+      }
+      hilog.info(DOMAIN, TAG, 'system colorMode=%{public}d dark=%{public}s',
+        Number(colorMode === undefined ? -1 : colorMode), dark ? 'yes' : 'no');
+    } catch (e) {
+      hilog.warn(DOMAIN, TAG, 'write systemDark failed: %{public}s', JSON.stringify(e));
+    }
+  }
+
+  /**
+   * 系统深浅变了（用户在控制中心切深色）。
+   * ⚠️ 不调 super：UIAbility 基类未实现该方法，调了会黑屏（私记 2026-10-25 实测）。
+   * ⚠️ 必须用**回调参数** newConfig.colorMode，不能读 this.context.config.colorMode ——
+   *    回调那一刻 ctx.config 可能还是旧值，会算出"系统没变"（华为复评实测）。
+   */
+  onConfigurationUpdate(newConfig: Configuration): void {
+    this.writeSystemDark(newConfig.colorMode);
   }
 
   /**
@@ -146,6 +167,9 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, 'onForeground');
+    // 兜底：应用在后台时系统切了深浅，少数机型不走 onConfigurationUpdate。
+    // 回前台对一次账，跟随系统档下色板必须与系统一致（私记同款兜底）。
+    this.writeSystemDark(this.context.config.colorMode);
   }
 
   onBackground(): void {

@@ -26,7 +26,8 @@ import { pdfService, pdfViewManager, PdfView } from '@kit.PDFKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BookDb } from '../data/BookDb';
 import { BookRecord, ReadingProgress, ProgressSnapshot } from '../common/Types';
-import { Palette, paletteOf, resolveTheme } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT } from '../common/Theme';
+import { currentPalette } from '../common/ThemeRuntime';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { MIN_SESSION_MS, ReadSession } from '../engine/stats/ReadStats';
 import {
@@ -69,7 +70,9 @@ struct PdfReader {
   @State private title: string = '';
   @State private total: number = 0;
   @State private pageIndex: number = 0;
-  @State private palette: Palette = paletteOf('dark');
+  @State private palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   /** 跳页面板是否展开 */
   @State private showJump: boolean = false;
   @State private jumpText: string = '';
@@ -92,6 +95,11 @@ struct PdfReader {
   /** loadDocument 是否已经成功（避免 onPageHide 时对空文档操作） */
   private loaded: boolean = false;
 
+  /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.palette = currentPalette(this.prefs.effectiveTheme(this.bookId));
+  }
+
   aboutToAppear(): void {
     const ctx: Context = this.getUIContext().getHostContext() as Context;
     const params = this.getUIContext().getRouter().getParams() as PdfReaderParams;
@@ -100,7 +108,7 @@ struct PdfReader {
     // （党哥 2026-10-25 拍板「仅这一本」）⇒ PDF 页不能另立一套规则，
     // 否则同一本书的文字版和 PDF 版会一深一浅。
     this.prefs.open(ctx);
-    this.palette = paletteOf(resolveTheme(this.prefs.effectiveTheme(this.bookId), new Date().getHours()));
+    this.palette = currentPalette(this.prefs.effectiveTheme(this.bookId));
     if (this.bookId.length === 0) {
       this.phase = PHASE_FAILED;
       this.errText = '找不到这本书';

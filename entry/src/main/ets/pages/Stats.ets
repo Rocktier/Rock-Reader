@@ -11,7 +11,8 @@ import { BookDb } from '../data/BookDb';
 import { ReaderPrefs, DAILY_GOAL_DEFAULT } from '../data/ReaderPrefs';
 import { BookRecord } from '../common/Types';
 import { achievementsOf, Achievement, byBook, BookTotal, dailyMs, durationText, finishedBookCount, msOfDay, ReadSession, streakDays, totalMs, unlockedCount } from '../engine/stats/ReadStats';
-import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT, ThemeName } from '../common/Theme';
+import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_RADIUS_CARD } from '../theme/RrTokens';
 
@@ -34,7 +35,9 @@ interface BookStatRow {
 @Entry
 @Component
 struct Stats {
-  @State palette: Palette = paletteOf(THEME_DARK);
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   @State loading: boolean = true;
   @State totalText: string = '—';
   @State todayText: string = '—';
@@ -62,9 +65,14 @@ struct Stats {
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
 
+  /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.palette = currentPalette(this.prefs.getTheme());
+  }
+
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
-    this.palette = paletteOf(this.prefs.getTheme());
+    this.palette = currentPalette(this.prefs.getTheme());
     this.load();
   }
 

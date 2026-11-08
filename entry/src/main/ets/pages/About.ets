@@ -15,7 +15,8 @@
  */
 import { router } from '@kit.ArkUI';
 import { bundleManager } from '@kit.AbilityKit';
-import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT } from '../common/Theme';
+import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { RR_FS_DISPLAY, RR_FS_TITLE, RR_FS_HEADING, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_SP_SM, RR_SP_MD, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL } from '../theme/RrTokens';
@@ -28,7 +29,9 @@ const SLOGAN_SUB: string = '断网也能读完整本书';
 @Entry
 @Component
 struct About {
-  @State palette: Palette = paletteOf(THEME_DARK);
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   /** 取不到版本就不显示（不编造一个假版本号） */
   @State versionText: string = '';
   /**
@@ -39,16 +42,21 @@ struct About {
   @State private padX: number = 0;
   private prefs: ReaderPrefs = new ReaderPrefs();
 
+  /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.palette = currentPalette(this.prefs.getTheme());
+  }
+
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
-    this.palette = paletteOf(this.prefs.getTheme());
+    this.palette = currentPalette(this.prefs.getTheme());
     this.loadVersion();
   }
 
   onPageShow(): void {
     // 主题可能在别处改过 → 回来时重读，与设置页同一套逻辑
     this.prefs.reload();
-    this.palette = paletteOf(this.prefs.getTheme());
+    this.palette = currentPalette(this.prefs.getTheme());
   }
 
   private loadVersion(): void {

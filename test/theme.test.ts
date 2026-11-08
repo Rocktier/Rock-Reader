@@ -13,6 +13,7 @@ import {
   isLightTheme,
   isNightHour,
   normalizeTheme,
+  paletteFor,
   paletteOf,
   resolveTheme,
   themeForHour,
@@ -22,10 +23,33 @@ import {
   THEME_GREEN,
   THEME_LIGHT,
   THEME_SEPIA,
+  THEME_SYSTEM,
   ThemeName
 } from '../entry/src/main/ets/common/Theme.ets';
 
-const THEMES: ThemeName[] = [THEME_DARK, THEME_LIGHT, THEME_SEPIA, THEME_GREEN, THEME_AUTO];
+const THEMES: ThemeName[] = [THEME_DARK, THEME_LIGHT, THEME_SEPIA, THEME_GREEN, THEME_AUTO, THEME_SYSTEM];
+
+/**
+ * 深色系按 HDS《深色模式》守 5:1，浅色系按 HIG 守 4.5:1（冲突取严者）。
+ * 用**实际色板的底色**判断，而不是按主题名列举 —— 新增主题不会漏登记。
+ */
+function minTextContrast(p: ReturnType<typeof paletteOf>): number {
+  return p.bg === '#000000' ? 5.0 : 4.5;
+}
+
+/** 三种"确定面"：卡（半透明先 flatten）、浮层（半透明先 flatten）、渐变端点 */
+function surfaces(p: ReturnType<typeof paletteOf>): Record<string, number[]> {
+  const page: number[] = hexToRgb(p.bg);
+  return {
+    card: over(p.card, page),
+    overlay: over(p.overlay, page),
+    halo: hexToRgb(p.haloTop)
+  };
+}
+
+function contrastOn(fg: string, baseRgb: number[]): number {
+  return contrastRgb(over(fg, baseRgb), baseRgb);
+}
 
 /** '#RRGGBB' 或 '#AARRGGBB' → [r,g,b]（半透明时丢掉 alpha 部分） */
 function hexToRgb(hex: string): number[] {
@@ -94,7 +118,9 @@ function contrastRgb(a: number[], b: number[]): number {
 test('四个主题都有完整色板（没有缺失字段）', () => {
   const keys: string[] = [
     'bg', 'text', 'text2', 'text3', 'line', 'lineSoft', 'accent', 'card', 'cover', 'overlay',
-    'heroBg', 'heroText', 'onAccent'
+    'heroBg', 'heroText', 'onAccent',
+    // P0-0（2026-11-08）：渐变光层 / 描边 / 卡上蓝字，新增字段一律纳入遍历防漏 key
+    'haloTop', 'glassEdge', 'accentOnCard'
   ];
   for (const t of THEMES) {
     const p = paletteOf(t) as unknown as Record<string, string>;
@@ -104,21 +130,24 @@ test('四个主题都有完整色板（没有缺失字段）', () => {
   }
 });
 
-test('正文对比度 ≥ 7:1（AAA —— 正文要久读，护眼主题更该如此）', () => {
+test('正文对比度 ≥ 7:1（AAA）且 ≤ 17.6:1（HDS 深色模式上限，正文色不许再加深）', () => {
   for (const t of THEMES) {
     const p = paletteOf(t);
     const c: number = contrast(p.text, p.bg);
     assert.ok(c >= 7, `${t} 正文只有 ${c.toFixed(2)}:1（应 ≥7:1）`);
+    // 2026-11-08 P0-0：浅色正文实测 17.58:1，离 HDS 上限 17.6 只剩 0.02
+    assert.ok(c <= 17.6, `${t} 正文 ${c.toFixed(2)}:1 超了 HDS 上限 17.6:1`);
   }
 });
 
-test('text2 / text3 对比度 ≥ 4.5:1（AA —— 页码、章节号是功能性信息）', () => {
+test('text2 / text3 对比度：深色 ≥5:1（HDS）/ 浅色 ≥4.5:1（HIG）', () => {
   for (const t of THEMES) {
     const p = paletteOf(t);
+    const min: number = minTextContrast(p);
     const c2: number = contrast(p.text2, p.bg);
     const c3: number = contrast(p.text3, p.bg);
-    assert.ok(c2 >= 4.5, `${t}.text2 只有 ${c2.toFixed(2)}:1`);
-    assert.ok(c3 >= 4.5, `${t}.text3 只有 ${c3.toFixed(2)}:1`);
+    assert.ok(c2 >= min, `${t}.text2 只有 ${c2.toFixed(2)}:1（应 ≥${min}:1）`);
+    assert.ok(c3 >= min, `${t}.text3 只有 ${c3.toFixed(2)}:1（应 ≥${min}:1）`);
   }
 });
 
@@ -128,6 +157,59 @@ test('强调色对比度 ≥ 4:1（accent、非正文；护眼底上要做到不
     const c: number = contrast(p.accent, p.bg);
     assert.ok(c >= 4, `${t}.accent 只有 ${c.toFixed(2)}:1`);
   }
+});
+
+/**
+ * P0-0（2026-11-08 视觉重设计闸门）：文字必须落在**确定不透明面**上。
+ *
+ * 三层空间模型里，渐变（haloTop）只铺空白底层、卡片/浮层承载文字。
+ * 这里把三种面 × 四套主题 × 文字层级逐个算一遍（半透明色先 flatten），
+ * 而不是只看页面底 —— 半透明卡面最容易把 4.5:1 悄悄吃掉。
+ *
+ * ⚠️ 两条刻意的口径，别误改成"全部 4.5"：
+ *   ① `accentOnCard` 是**非正文**（链接/图标级），沿用现有 accent ≥4:1 分级；
+ *      深色 accent 原值压在 #303030 卡上只有 3.30:1 ⇒ 单独给 #6BA0FF（5.09:1）。
+ *   ② 护眼两套的 `text2` 压在卡上是 **4.49 / 4.47:1**，现状贴线、不是本轮引入；
+ *      这里守 4.4 的"不许更差"回归线，不假装它已过 4.5。真要改就改 token，
+ *      别改断言阈值。
+ */
+test('P0-0 文字落确定面：card / overlay / 渐变端点逐面算对比度', () => {
+  for (const t of THEMES) {
+    const p = paletteOf(t);
+    const min: number = minTextContrast(p);
+    const s: Record<string, number[]> = surfaces(p);
+    for (const name of Object.keys(s)) {
+      const base: number[] = s[name];
+      const cText: number = contrastOn(p.text, base);
+      assert.ok(cText >= 7, `${t}.text 压在 ${name} 上只有 ${cText.toFixed(2)}:1（正文应 ≥7:1）`);
+      const c3: number = contrastOn(p.text3, base);
+      assert.ok(c3 >= min, `${t}.text3 压在 ${name} 上只有 ${c3.toFixed(2)}:1（应 ≥${min}:1）`);
+      if (name === 'card' || name === 'overlay') {
+        const cAccent: number = contrastOn(p.accentOnCard, base);
+        assert.ok(cAccent >= 4, `${t}.accentOnCard 压在 ${name} 上只有 ${cAccent.toFixed(2)}:1（应 ≥4:1）`);
+      }
+      if (name === 'overlay') {
+        const c2: number = contrastOn(p.text2, base);
+        assert.ok(c2 >= min, `${t}.text2 压在浮层上只有 ${c2.toFixed(2)}:1（应 ≥${min}:1）`);
+      }
+      if (name === 'card') {
+        const c2: number = contrastOn(p.text2, base);
+        assert.ok(c2 >= 4.4, `${t}.text2 压在卡上只有 ${c2.toFixed(2)}:1（护眼现状贴线，不许更差）`);
+      }
+    }
+    // 光层起点要与页面底分得开，否则等于没铺渐变
+    const cSep: number = contrastRgb(s['halo'], hexToRgb(p.bg));
+    assert.ok(cSep >= 1.05, `${t}.haloTop 与 bg 只差 ${cSep.toFixed(2)}:1，渐变层立不起来`);
+  }
+});
+
+test('paletteFor：system 跟随系统深浅，显式主题 / 自动昼夜不被覆盖', () => {
+  assert.equal(paletteFor(THEME_SYSTEM, 12, false).bg, paletteOf(THEME_LIGHT).bg);
+  assert.equal(paletteFor(THEME_SYSTEM, 12, true).bg, paletteOf(THEME_DARK).bg);
+  assert.equal(paletteFor(THEME_SEPIA, 12, true).bg, paletteOf(THEME_SEPIA).bg);
+  assert.equal(paletteFor(THEME_GREEN, 12, true).bg, paletteOf(THEME_GREEN).bg);
+  assert.equal(paletteFor(THEME_AUTO, 20, false).bg, paletteOf(THEME_DARK).bg);
+  assert.equal(paletteFor(THEME_AUTO, 10, true).bg, paletteOf(THEME_LIGHT).bg);
 });
 
 /**
@@ -183,14 +265,15 @@ test('hero 色块：文字 ≥4.5:1、与页面底分得开、深色下不许变
   }
 });
 
-test('normalizeTheme：认识四个主题，未知值一律回落深色', () => {
+test('normalizeTheme：认识六个档位，未知值一律回落「跟随系统」（P0-1 新默认）', () => {
   assert.equal(normalizeTheme(THEME_SEPIA), THEME_SEPIA);
   assert.equal(normalizeTheme(THEME_GREEN), THEME_GREEN);
   assert.equal(normalizeTheme(THEME_LIGHT), THEME_LIGHT);
   assert.equal(normalizeTheme(THEME_DARK), THEME_DARK);
   assert.equal(normalizeTheme(THEME_AUTO), THEME_AUTO);
-  assert.equal(normalizeTheme('不存在的主题'), THEME_DARK);
-  assert.equal(normalizeTheme(''), THEME_DARK);
+  assert.equal(normalizeTheme(THEME_SYSTEM), THEME_SYSTEM);
+  assert.equal(normalizeTheme('不存在的主题'), THEME_SYSTEM);
+  assert.equal(normalizeTheme(''), THEME_SYSTEM);
 });
 
 // A2（2026-10-25 党哥批次 A）：自动昼夜。边界 6:30 亮 / 18:30 黑，
@@ -212,11 +295,13 @@ test('自动昼夜：isNightHour / themeForHour 边界（6:30 亮、18:30 黑）
   assert.equal(themeForHour(19), THEME_DARK);
 });
 
-test('resolveTheme：auto 按小时算，固定主题原样返回（色板只认解析后的值）', () => {
+test('resolveTheme：system 跟系统 / auto 按小时 / 固定主题原样返回', () => {
   assert.equal(resolveTheme(THEME_AUTO, 20), THEME_DARK);
   assert.equal(resolveTheme(THEME_AUTO, 10), THEME_LIGHT);
-  assert.equal(resolveTheme(THEME_SEPIA, 20), THEME_SEPIA);
-  assert.equal(resolveTheme(THEME_DARK, 10), THEME_DARK);
+  assert.equal(resolveTheme(THEME_SYSTEM, 10, false), THEME_LIGHT);
+  assert.equal(resolveTheme(THEME_SYSTEM, 10, true), THEME_DARK);
+  assert.equal(resolveTheme(THEME_SEPIA, 20, true), THEME_SEPIA);
+  assert.equal(resolveTheme(THEME_DARK, 10, false), THEME_DARK);
   assert.equal(isAutoTheme(THEME_AUTO), true);
   assert.equal(isAutoTheme(THEME_LIGHT), false);
 });

@@ -71,8 +71,9 @@ import {
   ScrollToggle
 } from '../data/AutoScroll';
 import { surveyShouldContinue, surveyShouldYield } from '../data/Survey';
-import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, ThemeName, resolveTheme, isLightTheme } from '../common/Theme';
+import { Palette, paletteOf, themeLabel, THEME_AUTO, THEME_DARK, THEME_GREEN, THEME_LIGHT, THEME_SEPIA, THEME_SYSTEM, ThemeName, isLightTheme } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
+import { currentEffectiveTheme } from '../common/ThemeRuntime';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_SP_6XL, RR_SP_VOID, RR_SP_TOP, RR_RADIUS_COVER } from '../theme/RrTokens';
 
 interface ReaderParams {
@@ -221,7 +222,10 @@ const SETTINGS_STRIP_VP: number = 88;
 @Entry
 @Component
 struct Reader {
-  @State palette: Palette = paletteOf(THEME_DARK);
+  /** 首帧取浅色；aboutToAppear 会同步按系统深浅 / 本书覆盖覆盖，不会先黑一帧 */
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板，阅读位置与页面栈不动 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   @State title: string = '';
   @State chapterTitle: string = '';
   @State chapterIndex: number = 0;
@@ -302,12 +306,13 @@ struct Reader {
   private tocScroller: Scroller = new Scroller();
   /** 目录数据源（懒加载）；`tocFiltered` 仍保留，只用来判空 */
   private tocSource: ChapterDataSource = new ChapterDataSource();
-  private theme: ThemeName = THEME_DARK;
+  private theme: ThemeName = THEME_SYSTEM;
   /**
-   * A2（2026-10-25）：**生效主题**。用户选 'auto' 时按小时在晴昼/子夜间解析，
+   * **生效主题**。用户选 'system' 时跟系统深浅、'auto' 时按小时在晴昼/子夜间解析，
    * 色板与系统状态栏一律读这个，不读 this.theme（抽屉选中态才看 this.theme）。
+   * 2026-11-08 P0-1：新增 system 档并设为默认，auto 降为可选定时（功能不删）。
    */
-  private activeTheme: ThemeName = THEME_DARK;
+  private activeTheme: ThemeName = THEME_LIGHT;
   /** A1：这本书有没有排版覆盖（抽屉「恢复全局」入口的显隐） */
   @State private hasOverride: boolean = false;
   /** A3：本章剩余阅读文案（'本章还剩约 12 分钟'；空 = 不显示） */
@@ -791,17 +796,23 @@ struct Reader {
    * 两处共用同一段逻辑，避免"抽屉改了不生效 / 两边行为不一致"。
    */
   /**
-   * A2（2026-10-25）：把「用户选的主题」解析成「当前生效的主题」落到色板/系统栏。
-   * auto 档按小时在晴昼/子夜间切 —— 阅读页每翻一页（showPage）顺带调一次，
-   * 夜里读到跨 18:30 自动转夜，不用读者手动切。开销：一次 if + 偶尔一次换色板。
+   * 把「用户选的主题」解析成「当前生效的主题」落到色板/系统栏。
+   * system 档跟系统深浅（控制中心切换时由 @Watch 重算）、auto 档按小时在晴昼/子夜间切
+   * —— 阅读页每翻一页（showPage）顺带调一次。开销：一次解析 + 偶尔一次换色板。
+   * ⚠️ 不调运行时 setColorMode：那会重建 UIContent、丢阅读位置。
    */
   private syncTheme(): void {
-    const effective: ThemeName = resolveTheme(this.theme, new Date().getHours());
+    const effective: ThemeName = currentEffectiveTheme(this.theme);
     if (effective !== this.activeTheme) {
       this.activeTheme = effective;
       this.palette = paletteOf(effective);
       applyThemeToSystem(this.getUIContext().getHostContext() as Context, effective);
     }
+  }
+
+  /** 控制中心切系统深浅 → 重算色板，阅读位置 / 页面栈 / 抽屉状态全保留（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.syncTheme();
   }
 
   private applyPrefsToLayout(): void {
@@ -2617,14 +2628,17 @@ struct Reader {
           .onClick(() => {
             this.openToc();
           })
-        Text('A a')
-          .fontSize(RR_FS_LABEL)
+        // P0-2：与书架「设置」区分作用域 —— 这一项只改**当前这本书**的排版。
+        // 原来写 `A a`，和书架顶栏的 `Aa` 是同一个符号、两个意思，用户必然找错。
+        Text('本书排版')
+          .fontSize(RR_FS_META)
           .fontColor(this.palette.text)
           .height(34)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
+          .maxLines(1)
           .stateStyles({ pressed: { opacity: 0.6 } })
-          .accessibilityText('排版设置')
+          .accessibilityText('本书排版，只对这本书生效')
           .responseRegion({ x: 0, y: -5, width: '100%', height: 44 })
           .onClick(() => {
             this.openSettings();
@@ -3642,7 +3656,8 @@ struct Reader {
   settingsPanel() {
     Column() {
       Row() {
-        Text('排版')
+        // P0-2：标题点明作用域；下方「排版仅对《书名》生效」再把范围说死
+        Text('本书排版')
           .fontSize(RR_FS_META)
           .fontFamily('monospace')
           .fontColor(this.palette.text2)
@@ -3782,7 +3797,8 @@ struct Reader {
         // 四个主题横滚（与下面的字体行一致）：放不下的情况不会挤成一团
         Scroll() {
           Row({ space: 8 }) {
-            // A2：自动放最前（档位循环同款：第一项是默认推荐）
+            // P0-1：跟随系统是新默认，放最前；自动昼夜降为可选定时（功能不删）
+            this.themeChip(THEME_SYSTEM)
             this.themeChip(THEME_AUTO)
             this.themeChip(THEME_DARK)
             this.themeChip(THEME_LIGHT)

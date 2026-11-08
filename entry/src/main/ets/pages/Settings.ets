@@ -11,7 +11,8 @@
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ReaderPrefs } from '../data/ReaderPrefs';
-import { Palette, paletteOf, THEME_DARK, ThemeName } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT, THEME_SYSTEM, ThemeName } from '../common/Theme';
+import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { FontStore } from '../data/FontStore';
 import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
@@ -28,8 +29,10 @@ const MAX_FONT_ITEMS: number = 40;
 @Entry
 @Component
 struct Settings {
-  @State palette: Palette = paletteOf(THEME_DARK);
-  @State theme: ThemeName = THEME_DARK;
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
+  @State theme: ThemeName = THEME_SYSTEM;
   /** TXT 正文净化（去广告） */
   @State purifyOn: boolean = true;
   /** 简繁：'off' | 's2t' | 't2s' */
@@ -52,6 +55,11 @@ struct Settings {
   private prefs: ReaderPrefs = new ReaderPrefs();
   private fontStore: FontStore | null = null;
 
+  /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.palette = currentPalette(this.theme);
+  }
+
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
     this.fontStore = new FontStore(this.getUIContext().getHostContext() as Context);
@@ -59,7 +67,7 @@ struct Settings {
     this.fontFamily = this.prefs.getFontFamily();
     this.purifyOn = this.prefs.isPurifyOn();
     this.convertMode = this.prefs.getConvertMode();
-    this.palette = paletteOf(this.theme);
+    this.palette = currentPalette(this.theme);
     this.refreshFontState();
     this.registerLocalFonts();
     this.loadSystemFonts();
@@ -71,8 +79,9 @@ struct Settings {
     const theme: ThemeName = this.prefs.getTheme();
     if (theme !== this.theme) {
       this.theme = theme;
-      this.palette = paletteOf(theme);
     }
+    // 系统深浅可能在后台变了（P0-1）⇒ 无条件重算，不能只在 theme 变化时算
+    this.palette = currentPalette(theme);
     this.fontFamily = this.prefs.getFontFamily();
     this.loadSystemFonts();
   }
@@ -453,6 +462,14 @@ struct Settings {
       .alignItems(VerticalAlign.Center)
       .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
+
+      // P0-2（2026-11-08）：作用域写在标题下 —— 与阅读页抽屉的「本书排版」
+      // 一眼分得开。这里是全局默认，对所有书生效；那一处只对当前这本书生效。
+      Text('全局默认 · 对所有书生效')
+        .fontSize(RR_FS_META)
+        .fontColor(this.palette.text3)
+        .width('100%')
+        .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_SM, bottom: RR_SP_SM })
 
       // 内容可能超过一屏（尤其加了字体下载区之后）→ 整段可滚动
       Scroll() {

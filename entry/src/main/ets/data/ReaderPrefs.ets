@@ -8,7 +8,7 @@
 import { preferences } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { clampLevel, clampWeightLevel, DEFAULT_LEVELS, LayoutLevels } from '../common/LayoutStyle';
-import { normalizeTheme, THEME_DARK, ThemeName } from '../common/Theme';
+import { normalizeTheme, THEME_SYSTEM, ThemeName } from '../common/Theme';
 import { normalizeScrollSpeed, SCROLL_SPEED_DEFAULT } from './AutoScroll';
 import { BRIGHTNESS_DEFAULT_INDEX, brightnessLabelOf, brightnessValueOf, nextBrightnessIndex } from '../engine/reader/ScreenSettings';
 
@@ -109,7 +109,8 @@ export class ReaderPrefs {
     marginLevel: DEFAULT_LEVELS.marginLevel,
     fontWeightLevel: DEFAULT_LEVELS.fontWeightLevel
   };
-  private theme: ThemeName = THEME_DARK;
+  // 2026-11-08 P0-1：默认跟随系统。已存过显式主题的老用户原样保留（不做偏好迁移）。
+  private theme: ThemeName = THEME_SYSTEM;
   private fontFamily: string = '';
   private purifyOn: boolean = true;
   private convertMode: string = CONVERT_OFF;
@@ -133,7 +134,7 @@ export class ReaderPrefs {
       const store: preferences.Preferences = preferences.getPreferencesSync(ctx, { name: STORE_NAME });
       this.store = store;
       this.levels = this.readLevels(store);
-      this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
+      this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_SYSTEM));
       this.fontFamily = this.readText(store, KEY_FAMILY, '');
       this.purifyOn = this.readBool(store, KEY_PURIFY, true);
       this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);
@@ -244,7 +245,7 @@ export class ReaderPrefs {
     }
     const store: preferences.Preferences = this.store;
     this.levels = this.readLevels(store);
-    this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_DARK));
+    this.theme = normalizeTheme(this.readText(store, KEY_THEME, THEME_SYSTEM));
     this.fontFamily = this.readText(store, KEY_FAMILY, '');
     this.purifyOn = this.readBool(store, KEY_PURIFY, true);
     this.convertMode = this.readText(store, KEY_CONVERT, CONVERT_OFF);

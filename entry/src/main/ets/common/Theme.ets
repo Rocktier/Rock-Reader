@@ -3,9 +3,14 @@
  * 设计依据：docs/v1-design.md §8（2026-10-10 起基调改为鸿蒙原生，见 task_plan Phase 21）
  *
  * 为什么色板写在 TS 里、而不是 color.json：
- *   主题由用户在应用内选择（昼/夜），**与系统深浅色解耦**，必须能在运行时切换；
+ *   主题由用户在应用内选择（四套纸色 / 自动昼夜），必须能在运行时切换；
  *   资源限定符（resources/dark/）只能跟随系统，做不到"用户自己挑"。
  *   因此 window 背景等系统级颜色仍用资源（见 color.json），页面内容一律读这里的 Palette。
+ *
+ * ⚠️ 2026-11-08 P0-1 改：**不再是"与系统深浅色解耦"**。新增 THEME_SYSTEM 作为默认档，
+ *   app 层 colorMode 回落 NOT_SET，系统深浅由 EntryAbility 写进 AppStorage('systemDark')，
+ *   页面经 `paletteFor()` / `resolveTheme()` 解出生效主题（详见 common/Appearance.ets）。
+ *   用户显式选了纸色 / 深色的，仍不受系统深浅影响。
  *
  * ⚠️ 2026-10-10 基调变更（党哥拍板）：抛弃第一版 Nothing OS 表述，一切往鸿蒙原生靠。
  *   本文件按华为官方《色彩-视觉风格》对齐：
@@ -27,7 +32,19 @@
  */
 export const THEME_AUTO: string = 'auto';
 
-/** 'dark' | 'light'（不用字面量联合类型，保证 ArkTS 各版本都能编译） */
+/**
+ * 跟随系统深浅色（2026-11-08 视觉重设计 P0-1，**新默认**）。
+ *
+ * 原来主题默认 THEME_DARK，把系统深浅色解耦并钉死 —— 系统白天、应用全黑，
+ * 党哥 11-08 实测抱怨「点开阅读器整页黑」。现在这一档只记"用户没显式选过"，
+ * 生效主题由 resolveTheme() 结合系统深浅解出 LIGHT / DARK。
+ *
+ * 四套纸色（晴昼 / 子夜 / 旧纸 / 新苔）与 auto 全部**保留**：
+ * 它们是用户显式选择的内容层偏好，系统切深浅不该覆盖；auto 降为可选定时。
+ */
+export const THEME_SYSTEM: string = 'system';
+
+/** 'system' | 'auto' | 'dark' | 'light' | 'sepia' | 'green'（不用字面量联合类型，保证 ArkTS 各版本都能编译） */
 export type ThemeName = string;
 
 export const THEME_DARK: string = 'dark';
@@ -102,13 +119,27 @@ export interface Palette {
    * 浅色系三套 accent 都是深蓝 `#0A59F7` ⇒ 白字 5.47:1。四套均 ≥5:1，由单测守。
    */
   onAccent: string;
+  /**
+   * 渐变光层起点（165° 同色相明度渐变的亮端）。**只铺空白底层，不承载文字**。
+   * 2026-11-08 P0-3 新增，与 all2md 0cb3b61 同一套结构语言。
+   */
+  haloTop: string;
+  /** 卡片 / 浮层 1px 描边色。卡与底色差只有 1.06–1.19:1 ⇒ 层次靠它，不靠色差。 */
+  glassEdge: string;
+  /**
+   * **卡上蓝字**。深色 `accent #317AF7` 压在 `#303030` 卡上只有 3.30:1（不达标），
+   * 故深色另给 `#6BA0FF`（5.09:1）；`accent` 原值保留给进度条 / 图标（3:1 够）。
+   */
+  accentOnCard: string;
 }
 
 const DARK: Palette = {
   bg: '#000000',
   text: '#DBFFFFFF',
   text2: '#99FFFFFF',
-  text3: '#80FFFFFF',
+  // 2026-11-08：50% → 56%。50% 白压在 #303030 卡上是 5.02:1，只比 HDS 深色
+  // 5:1 多 0.02；提到 56% 后 5.30:1，留余量。改的是 token，不是调用点。
+  text3: '#8FFFFFFF',
   line: '#24FFFFFF',
   lineSoft: '#12FFFFFF',
   accent: '#317AF7',
@@ -119,7 +150,10 @@ const DARK: Palette = {
   heroBg: '#303030',
   heroText: '#DBFFFFFF',
   // 亮蓝底上用黑字：5.26:1（白字只有 4.08:1，不达标）
-  onAccent: '#000000'
+  onAccent: '#000000',
+  haloTop: '#16233A',
+  glassEdge: '#4A5A70',
+  accentOnCard: '#6BA0FF'
 };
 
 const LIGHT: Palette = {
@@ -139,7 +173,12 @@ const LIGHT: Palette = {
   heroBg: '#E6000000',
   heroText: '#FFFFFF',
   // 深蓝底上白字 5.47:1
-  onAccent: '#FFFFFF'
+  onAccent: '#FFFFFF',
+  haloTop: '#DCE8FA',
+  // ⚠️ 不用 all2md 的纯白描边：本仓浅色页面底就是 #FFFFFF、卡是 #F1F3F5，
+  //    白描边在白底上等于没有。用能看见的浅灰（卡差 1.11:1 ⇒ 边界全靠描边）。
+  glassEdge: '#D6DEE6',
+  accentOnCard: '#0A59F7'
 };
 
 /**
@@ -163,7 +202,11 @@ const SEPIA: Palette = {
   heroBg: '#3C3226',
   heroText: '#F4EFE4',
   // 白字 5.47:1（纸色字只有 4.84:1，虽过线但没余量）
-  onAccent: '#FFFFFF'
+  onAccent: '#FFFFFF',
+  // 暖色系独立，不跟阅读蓝统一：渐变起点是比纸底略深的米色
+  haloTop: '#E8DDC4',
+  glassEdge: '#D8CCB4',
+  accentOnCard: '#0A59F7'
 };
 
 /** 绿（豆沙绿）。正文 10.5:1 ／ text2 ≈4.6:1 ／ text3 ≈5.3:1；强调色 #0A59F7（绿底 ≈4.34:1） */
@@ -182,7 +225,10 @@ const GREEN: Palette = {
   heroBg: '#22331F',
   heroText: '#C7EDCC',
   // ⚠️ 这里原来用 palette.bg（豆沙绿）当字色，蓝底上只有 4.34:1 —— 改白字 5.47:1
-  onAccent: '#FFFFFF'
+  onAccent: '#FFFFFF',
+  haloTop: '#B0E0B8',
+  glassEdge: '#A8CFAE',
+  accentOnCard: '#0A59F7'
 };
 
 export function paletteOf(theme: ThemeName): Palette {
@@ -198,12 +244,28 @@ export function paletteOf(theme: ThemeName): Palette {
   return DARK;
 }
 
-/** 未知值一律回落深色（老数据 / 脏值不会渲染出 undefined 色板） */
+/**
+ * 未知值一律回落**跟随系统**（2026-11-08 改）。
+ *
+ * 老数据兜底：已经显式选过 dark / light / sepia / green / auto 的用户原样保留，
+ * 只有"从没选过"和"脏值"才落到跟随系统 —— 不做偏好迁移。
+ */
 export function normalizeTheme(value: string): ThemeName {
-  if (value === THEME_AUTO || value === THEME_LIGHT || value === THEME_SEPIA || value === THEME_GREEN) {
+  if (value === THEME_AUTO || value === THEME_LIGHT || value === THEME_SEPIA ||
+    value === THEME_GREEN || value === THEME_DARK || value === THEME_SYSTEM) {
     return value;
   }
-  return THEME_DARK;
+  return THEME_SYSTEM;
+}
+
+/**
+ * 页面统一取色板入口（P0-1）：先把「用户意图」解析成**生效主题**，再取色板。
+ *
+ * ⚠️ 不要直接 `paletteOf(this.theme)` —— system / auto 是意图不是生效主题，
+ *    直接取会恒回落 DARK，白天又是全黑。所有页面走这里。
+ */
+export function paletteFor(theme: ThemeName, hour: number, systemDark: boolean): Palette {
+  return paletteOf(resolveTheme(theme, hour, systemDark));
 }
 
 /* ---------------- 自动昼夜（A2，2026-10-25）----------------
@@ -227,10 +289,17 @@ export function themeForHour(hour: number): ThemeName {
 }
 
 /**
- * 把用户选择解析成**生效主题**：auto 按小时算，其余原样返回。
+ * 把用户选择解析成**生效主题**：system 按系统深浅、auto 按小时算，其余原样返回。
  * 色板、系统状态栏、抽屉选中态一律用它的返回值，不要直接用用户选择值。
+ *
+ * 2026-11-08 P0-1 加第三参 `systemDark`：由 EntryAbility 写进 AppStorage，
+ * 页面用 @StorageProp 读，系统切深浅时 @Watch 重算 —— **不调运行时 setColorMode**
+ * （那会重建 UIContent、丢页面栈，私记 2026-10-16 实测）。
  */
-export function resolveTheme(theme: ThemeName, hour: number): ThemeName {
+export function resolveTheme(theme: ThemeName, hour: number, systemDark: boolean = false): ThemeName {
+  if (theme === THEME_SYSTEM) {
+    return systemDark ? THEME_DARK : THEME_LIGHT;
+  }
   return theme === THEME_AUTO ? themeForHour(hour) : theme;
 }
 
@@ -258,6 +327,9 @@ export function isLightTheme(theme: ThemeName): boolean {
  * 深色 子夜 ／ 浅色 晴昼 ／ 纸 旧纸 ／ 绿 新苔 ／ 自动 自动（党哥 2026-09-20 选；自动 2026-10-25 加）
  */
 export function themeLabel(theme: ThemeName): string {
+  if (theme === THEME_SYSTEM) {
+    return '跟随系统';
+  }
   if (theme === THEME_SEPIA) {
     return '旧纸';
   }

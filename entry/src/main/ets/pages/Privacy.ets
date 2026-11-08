@@ -16,7 +16,8 @@
  *
  * 文案改动必须同步回那篇文章 —— 两处不一致，上架时就是"政策与实现不符"的拒审理由。
  */
-import { Palette, paletteOf, THEME_DARK } from '../common/Theme';
+import { Palette, paletteOf, THEME_LIGHT } from '../common/Theme';
+import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { ReaderPrefs } from '../data/ReaderPrefs';
 import { RR_FS_TITLE, RR_FS_LABEL, RR_FS_META, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_6XL } from '../theme/RrTokens';
@@ -99,7 +100,9 @@ const PRIVACY_LINES: Array<string> = [
 @Entry
 @Component
 struct Privacy {
-  @State palette: Palette = paletteOf(THEME_DARK);
+  @State palette: Palette = paletteOf(THEME_LIGHT);
+  /** 系统深浅（P0-1）：EntryAbility 写 AppStorage，@Watch 重算色板 */
+  @StorageProp('systemDark') @Watch('onSystemDarkChanged') systemDark: boolean = false;
   /**
    * 版心单侧补丁（vp）：P0-5 大屏适配。宽屏上政策正文拉满 1000+vp 一行
    * 五六十个字，根本读不动 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
@@ -108,14 +111,19 @@ struct Privacy {
   @State private padX: number = 0;
   private prefs: ReaderPrefs = new ReaderPrefs();
 
+  /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
+  private onSystemDarkChanged(): void {
+    this.palette = currentPalette(this.prefs.getTheme());
+  }
+
   aboutToAppear(): void {
     this.prefs.open(this.getUIContext().getHostContext() as Context);
-    this.palette = paletteOf(this.prefs.getTheme());
+    this.palette = currentPalette(this.prefs.getTheme());
   }
 
   onPageShow(): void {
     this.prefs.reload();
-    this.palette = paletteOf(this.prefs.getTheme());
+    this.palette = currentPalette(this.prefs.getTheme());
   }
 
   @Builder
