@@ -262,6 +262,12 @@ struct Reader {
   @State bookPercent: number = 0;
   @State pageText: string = '';
   @State showMenu: boolean = false;
+  /**
+   * 三区分屏点击去重：正文 Text 开了 copyOption / textSelectable 会自己吃掉点击，
+   * 给它补挂 onClick 后，同一次物理点击可能父子两层各回调一次。
+   * 用 ClickEvent.timestamp（ns）挡掉重复，保证一次点击只处理一次。
+   */
+  private lastContentTapNs: number = -1;
   @State showToc: boolean = false;
   /** 设置抽屉（P11-2：就地改排版、正文实时跟着变）；与目录抽屉互斥 */
   @State showSettings: boolean = false;
@@ -2449,6 +2455,57 @@ struct Reader {
     });
   }
 
+  /**
+   * 三区分屏点击：**正文 Column 与正文 Text 共用这一套**（2026-11-08 修）。
+   *
+   * ⚠️ 缺陷实证：党哥在《呼兰河传》里找不到返回书架的按钮。
+   *   返回按钮只画在中央菜单的 topBar 里，而唤出菜单的唯一动作是「点屏幕中间」；
+   *   正文 Text 开了 copyOption / textSelectable(SELECTABLE_FOCUSABLE)，
+   *   点在文字上会被可选中文本**整个吞掉** ⇒ 父 Column 的 onClick 根本不触发。
+   *   ⇒ 用户点正文中间没反应，菜单永远出不来，返回按钮也就永远看不到。
+   *   以前只把这条记成「uitest 要点空白边距」的工具坑，没意识到对真人同样是死路。
+   *
+   * 修法：给正文 Text 也挂 onClick，坐标换算回 Column 坐标系后走同一逻辑。
+   * 坐标：Text 左边界 = Column 的 padding.left = marginVp，故 xColumn = event.x + marginVp。
+   * 去重：父子 onClick 都触发时用 timestamp 挡掉第二次（阈值 1ms，物理点击不可能这么快）。
+   * 这不是新功能 —— accessibilityText 里早就写着「点左边缘上一页，右边缘下一页，中间唤出菜单」，
+   * 只是这条设计意图一直只在不占文字的空白区才成立。
+   */
+  private handleContentTap(xInColumnVp: number, timestamp: number): void {
+    if (Math.abs(timestamp - this.lastContentTapNs) < 1000000) {
+      return;
+    }
+    this.lastContentTapNs = timestamp;
+    const third: number = this.viewWidthVp / 3;
+    if (this.showToc) {
+      this.showToc = false;
+      return;
+    }
+    if (this.showSettings) {
+      this.showSettings = false;
+      return;
+    }
+    if (this.showMenu) {
+      this.showMenu = false;
+      return;
+    }
+    if (this.hint.length > 0) {
+      // 错误态出路（审查报告 B7）：点击 = 重试本章。不给出路的话，
+      // "这一章读取失败" = 菜单/目录/返回全部开不出来，整本书读不了。
+      if (this.chapterCount > 0 && this.book !== null) {
+        this.openChapter(this.chapterIndex, 0);
+      }
+      return;
+    }
+    if (xInColumnVp < third) {
+      this.turnPage(-1);
+    } else if (xInColumnVp > third * 2) {
+      this.turnPage(1);
+    } else {
+      this.showMenu = true;
+    }
+  }
+
   // ------------------------------------------------------------------
   // UI
   // ------------------------------------------------------------------
@@ -2456,13 +2513,15 @@ struct Reader {
   @Builder
   topBar() {
     Row() {
-      Text('‹')
-        .fontSize(RR_FS_TITLE)
+      // 2026-11-08 修可发现性：原来只有一个 34vp 的「‹」字形，还压在半透明顶栏上
+      // 与背后正文叠画 ⇒ 党哥在《呼兰河传》里「没见返回书架的按钮」。
+      // 按 HIG 补上一级页面名「书架」（返回控件不该只靠一个符号让人猜），热区保持 ≥44vp。
+      Text('‹ 书架')
+        .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text)
-        .width(34)
         .height(34)
         .textAlign(TextAlign.Center)
-        .responseRegion({ x: -5, y: -5, width: 44, height: 44 })
+        .responseRegion({ x: -5, y: -5, width: '100%', height: 44 })
         .accessibilityText('返回书架')
         .onClick(() => this.getUIContext().getRouter().back())
       Text(this.title)
@@ -2517,7 +2576,9 @@ struct Reader {
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
-    .backgroundColor(this.palette.overlay)
+    // 2026-11-08 修：顶栏原来用 92% overlay，背后正文直接透上来与标题/按钮叠画，
+    // 违反 HIG「文字必落不透明面」。顶栏是操作栏，不是玻璃浮层 ⇒ 用不透明 bg。
+    .backgroundColor(this.palette.bg)
     .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
     // 中央菜单唤起时自上滑入（复评整改：原瞬现）
     .transition(TransitionEffect.OPACITY
@@ -4069,6 +4130,15 @@ struct Reader {
             //   ⇒ 长按必须**完整让给系统**：Text 自带选区 + 系统菜单，
             //     我们只在系统菜单里加一项「加入摘录」（见上）。
             //   整页快照的老路径降级为中央菜单里的「摘录」按钮（见 topBar）。
+            //
+            // ⚠️ 2026-11-08 修：上面这套选区能力会让 Text 吞掉点击，
+            //   父 Column 的三区分屏 onClick 收不到 ⇒ 点正文唤不出菜单（也就找不到返回）。
+            //   这里补挂一层 onClick，坐标 +marginVp 还原到 Column 坐标系；
+            //   handleContentTap 内部用 timestamp 去重，父子都触发时只算一次。
+            //   单击与长按选词是两套手势，不影响「长按 → 系统菜单 → 加入摘录」。
+            .onClick((event: ClickEvent) => {
+              this.handleContentTap(event.x + this.marginVp, event.timestamp);
+            })
         }
       }
       .width('100%')
@@ -4132,34 +4202,8 @@ struct Reader {
       // 翻页的无障碍替代路径 = 目录/标记/搜索跳转，均为带标签的真按钮）
       .accessibilityText('正文：点左边缘上一页，右边缘下一页，中间唤出菜单；也可用目录、标记、搜索跳转位置')
       .onClick((event: ClickEvent) => {
-        const third: number = this.viewWidthVp / 3;
-        if (this.showToc) {
-          this.showToc = false;
-          return;
-        }
-        if (this.showSettings) {
-          this.showSettings = false;
-          return;
-        }
-        if (this.showMenu) {
-          this.showMenu = false;
-          return;
-        }
-        if (this.hint.length > 0) {
-          // 错误态出路（审查报告 B7）：点击 = 重试本章。不给出路的话，
-          // "这一章读取失败" = 菜单/目录/返回全部开不出来，整本书读不了。
-          if (this.chapterCount > 0 && this.book !== null) {
-            this.openChapter(this.chapterIndex, 0);
-          }
-          return;
-        }
-        if (event.x < third) {
-          this.turnPage(-1);
-        } else if (event.x > third * 2) {
-          this.turnPage(1);
-        } else {
-          this.showMenu = true;
-        }
+        // 与正文 Text 共用一套三区分屏逻辑（去重见 handleContentTap 注释）
+        this.handleContentTap(event.x, event.timestamp);
       })
       .gesture(
         PanGesture({ direction: PanDirection.Horizontal, distance: 12 })
