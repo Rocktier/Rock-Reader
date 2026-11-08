@@ -40,6 +40,10 @@
         "icon": "$media:layered_image",
         "label": "$string:EntryAbility_label",
         "startWindowIcon": "$media:startIcon",
+        // 启动窗口背景在 resources/base 与 resources/dark 各一份，由**系统**深浅色自动选。
+        // 2026-11-08 P0-1：原来只有 base 且写死 #000000 ⇒ 系统浅色冷启动先黑一帧
+        // 再跳浅色书架。⚠️ 启动窗口读不到应用内偏好，显式选「子夜」+ 系统浅色时
+        // 仍会白→黑闪一下，这是启动页的固有边界，别再试图用运行时 setColorMode 修。
         "startWindowBackground": "$color:start_window_background",
         // 显式写启动模式：默认是 singleton，但写明白能避免后人误判"没配=多实例"
         "launchType": "singleton",
