@@ -181,3 +181,26 @@ Reader CI 自引入 `@kit.CoreSpeechKit` 起连续红：CI 用**公开 OpenHarmo
   `git diff 81b421f..HEAD` 只动 `app.json5` 注释 / 记忆 / 删 1.x 文档，**无 `entry/src` 或资源改动**。
   1.x 清理后交付物完好（包 + 6 张商店图 + 3 份文档）；AGC 图标原件
   `桌面\AGC应用图标-2026-11\AGC图标-阅读-1024.png` 仍在，本版沿用不换。
+
+---
+
+### Rock私记 2.0.0（code 1000015，2026-11-10 00:10 出包，00:41 已提交 AGC / 审核中）
+
+- 内容：视觉同步（165° 光层 / `haloTop` + `glassEdge` / 1px 描边）＋首页聚焦重构
+  （单页四态，32 项功能守恒、**删除 0 项**）＋首页字族统一
+  （撤 18 处 `monospace` / `serif` / `letterSpacing`，回系统默认黑体）。
+- 包：`桌面\Rock私记-2.0.0-上架\Rock私记-2.0.0-上架.app`（1043 KB）
+  - md5 `E91037C66399177506F1C6180F7625DE`
+  - sha256 `89D3C3A8E9AF0CABE840F0259FE2E1D2EB21CC6E5E131C406F8B0EDD5C173046`
+- 闸门两道全 PASS：自动（出包脚本内）+ **桌面待传包**人工闸门
+  `-ExpectVersionCode 1000015 -ExpectVersionName 2.0.0`；Profile `type=release`、
+  bundle `com.rocktier.rockjournal`、包内 Profile 与本地逐字节一致、证书未过期、无 debug-info。
+- 构建 `BUILD SUCCESSFUL in 34 s 354 ms`，**未触发 safe-delete 拦删**（无需改 cache 目录名）。
+- 商店图 4 张全为 2.0.0 新 UI + 字族统一后实拍（1080×1920 PNG）；旧 `new-2026-11/` 1.x 图不沿用。
+- 单测 305/305；⚠️ 未端到端验证：那年今日全量（设备无往年同日数据）、
+  搜索结果（模拟器 IME 限制）、深色新首页、横滑手势。
+- **状态：2026-11-10 00:41 已提交 AGC、审核中**（党哥本人确认应用后上传；包指纹未变）。
+  本版未新增权限 ⇒ 隐私双写不动。
+  ⚠️ 私记有**麦克风一项权限**（仅本机离线语音转文字），文案不得写「权限清单为空」。
+- 代码 `7c11fce` 已推 `harmony-journal/main`；阅读 `2.0.0/1000016` 同时在审
+  ⇒ **两版同时在审**，不盯不催不重传不动包，审核窗口只做文案。
