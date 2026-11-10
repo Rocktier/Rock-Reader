@@ -2,20 +2,21 @@
 
 > ⛔ **本文件不再存放家族知识。**
 > 2026-11-11 党哥立规：`.workbuddy/memory/` 会被多个任务并发读写 ⇒ 会被覆盖、会被别的项目污染。
-> **家族一切重要内容的真源 = `F:\AI\HarmonyOS\harmony-docs`（私有仓，已推远端）。**
-> 规矩原文写在 `harmony-docs\.planning\findings.md` 的「常驻规范三 §0」。
+> **家族一切重要内容的真源 = `F:\AI\HarmonyOS`**
+> （这个根目录**本身就是**台账仓 `Rocktier/harmony-docs` 的本地副本，已推远端）。
+> 规矩原文写在 `F:\AI\HarmonyOS\.planning\findings.md` 的「常驻规范三 §0」。
 
 ## 去哪找
 
 | 要找什么 | 去哪 |
 |---|---|
-| 跨应用口径 / 铁律 / 判据 | `harmony-docs\.planning\findings.md` 常驻规范一 / 二 / **三** |
-| 深度分册（HIG、签名、发版、ArkUI 坑、图标、ASR…） | `harmony-docs\.planning\reference\`（11 份，索引见常驻规范三 §7） |
-| 某应用的定位与取舍 | `harmony-docs\apps\<App>\task_plan.md` |
-| 某应用的调研与踩坑 | `harmony-docs\apps\<App>\findings.md` |
-| 某次做了什么、结果如何 | `harmony-docs\apps\<App>\progress.md` / `.planning\progress.md` |
-| 现在什么在架、什么在审 | `harmony-docs\docs\release-status.md` |
-| 交给别人在 AGC 提交 | `harmony-docs\docs\agc-handoff.md` + `apps\<App>\docs\store-copy.md` |
+| 跨应用口径 / 铁律 / 判据 | `F:\AI\HarmonyOS\.planning\findings.md` 常驻规范一 / 二 / **三** |
+| 深度分册（HIG、签名、发版、ArkUI 坑、图标、ASR…） | `F:\AI\HarmonyOS\.planning\reference\`（11 份，索引见常驻规范三 §7） |
+| 某应用的定位与取舍 | `F:\AI\HarmonyOS\apps\<App>\task_plan.md` |
+| 某应用的调研与踩坑 | `F:\AI\HarmonyOS\apps\<App>\findings.md` |
+| 某次做了什么、结果如何 | `F:\AI\HarmonyOS\apps\<App>\progress.md` / `.planning\progress.md` |
+| 现在什么在架、什么在审 | `F:\AI\HarmonyOS\docs\release-status.md` |
+| 交给别人在 AGC 提交 | `F:\AI\HarmonyOS\docs\agc-handoff.md` + `apps\<App>\docs\store-copy.md` |
 | 当日流水（过程，不是结论） | 同目录 `YYYY-MM-DD.md` |
 
 远端 <https://github.com/Rocktier/harmony-docs>（private，main）。
