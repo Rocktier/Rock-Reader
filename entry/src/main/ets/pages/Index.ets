@@ -1192,9 +1192,10 @@ struct Index {
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
                 }
-              // 键必须含 percent 与 author：返回书架 load() 后这些字段变了但键没变 → 节点复用，
-              // 格子进度/副标题停在旧值（审查报告 B26，与审核驳回第 3 条同病灶；author 是 P0-5 新增变化位）
-              }, (item: ShelfItem) => item.book.id + '|' + item.percent + '|' + item.book.author)
+              // 键必须含所有会变且显示在格子上的字段：返回书架 load() 后这些字段变了但键没变
+              // → 节点复用、itemGenerator 不重跑、显示停在旧值（审查报告 B26：percent/author；
+              // AGC 云调试 2.0.0 提示：长按重命名后书名不刷新、切分类才更新 ⇒ title 也算变化位）。
+              }, (item: ShelfItem) => item.book.id + '|' + item.percent + '|' + item.book.author + '|' + item.book.title)
             }
             .columnsTemplate(this.colsTemplateOf(this.shelfCols))
             .columnsGap(14)
