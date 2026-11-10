@@ -1,108 +1,34 @@
-# Rock 家族长期记忆（v7 · 2026-11-09）
+# Rock 家族 — 记忆入口（v8 · 2026-11-11）
 
-> 只记**可执行**知识（命令、判据、禁令）；过程细节进当日日志 `YYYY-MM-DD.md`。
-> 范围：Rock阅读 + Rock私记 + all2md。深度分册（同目录 `reference-*.md`）：hig / asr / signing /
-> releases / performance / arkui-pitfalls / simulator / clouddebug / roadmap / icon。
-> ⚠️ **上限 4000 字符**（超了注入会截断）⇒ 增一条挪一条进分册。
+> ⛔ **本文件不再存放家族知识。**
+> 2026-11-11 党哥立规：`.workbuddy/memory/` 会被多个任务并发读写 ⇒ 会被覆盖、会被别的项目污染。
+> **家族一切重要内容的真源 = `F:\AI\HarmonyOS\harmony-docs`（私有仓，已推远端）。**
+> 规矩原文写在 `harmony-docs\.planning\findings.md` 的「常驻规范三 §0」。
 
-## 一、产品口径：非主动联网（2026-10-18 拍板）
+## 去哪找
 
-「用户可以自己联网下载字体或音色，但**我们自己不会主动联网，主要功能也不联网**。」
+| 要找什么 | 去哪 |
+|---|---|
+| 跨应用口径 / 铁律 / 判据 | `harmony-docs\.planning\findings.md` 常驻规范一 / 二 / **三** |
+| 深度分册（HIG、签名、发版、ArkUI 坑、图标、ASR…） | `harmony-docs\.planning\reference\`（11 份，索引见常驻规范三 §7） |
+| 某应用的定位与取舍 | `harmony-docs\apps\<App>\task_plan.md` |
+| 某应用的调研与踩坑 | `harmony-docs\apps\<App>\findings.md` |
+| 某次做了什么、结果如何 | `harmony-docs\apps\<App>\progress.md` / `.planning\progress.md` |
+| 现在什么在架、什么在审 | `harmony-docs\docs\release-status.md` |
+| 交给别人在 AGC 提交 | `harmony-docs\docs\agc-handoff.md` + `apps\<App>\docs\store-copy.md` |
+| 当日流水（过程，不是结论） | 同目录 `YYYY-MM-DD.md` |
 
-- ✅ 用户点「下载」才联网、之后离线用；入口明示「联网下载」+ 体积/进度/重试/无网提示。
-- ❌ 主要功能联网（云 TTS / 书城 / 云同步）；❌ 自发联网（检查更新 / 静默下载 / 遥测）。
-  麦克风是本地传感器，不算联网。**新增系统能力前先对照此表。**
+远端 <https://github.com/Rocktier/harmony-docs>（private，main）。
+该仓有「**允许及时 push**」例外 ⇒ **改完台账就推**，别攒。
 
-## 二、上架说明口径（**不许软化**）
+## 两条最容易犯的错
 
-1. **全家族必写**：**隐私完全不出设备、不出互联网** —— 不是"重视隐私"，是**技术上做不到外传**。
-2. ⛔ **AI 只属于 all2md**（2026-11-11 党哥纠正，已犯错一次）：
-   **阅读 / 私记与 AI 目前没有任何关系**。它们的商店文案、上架说明、隐私页、更新说明
-   **一律不许出现「AI / 语料 / 为 AI 备料 / 为人服务」**等字样。
-   上一版把「一切以更好地让 AI 为人服务」写成"全家族必写两句"之一 ⇒ 被抄进阅读 2.0.1、
-   私记 2.0.0 的文案，党哥已在 AGC 手改。**改文案前先问：这是哪个应用的？**
+- ⛔ **AI 只属于 all2md**。Rock阅读 / Rock私记的文案、上架说明、隐私页、
+  更新说明一律不许出现「AI / 语料 / 为 AI 备料 / 为人服务」。
+- ⛔ **别往回写**：不要把口径、版本状态、工程判据又抄回本文件 ——
+  抄回来就等于给自己挖第二次坑。本文件只留「入口 + 会过期的当前待办」。
 
-## 三、签名与出包（细则 ⇒ `reference-signing.md`）
+## 当前待办（会过期；真源在 `release-status.md`）
 
-- `assembleApp -p product=release -p buildMode=release --no-daemon`；上传前
-  `pwsh scripts/verify-upload.ps1`，**闸门跑在桌面待传包上**。
-- **第 0 步只能靠人**：先确认 AGC 当前应用。**包侧全绿仍 993 ⇒ 问题在包之外**
-  （抠 Profile `"type"`：debug = 用错 product；release 但包名不符 = 拿错 Profile）。
-- **code = 累计序号，与 versionName 解耦**（name 只是展示值，可跳大版本）。
-  **私记两处同改** `app.json5` + `AppMeta.ets`；**阅读只改 `app.json5`**（无 AppMeta）。
-
-## 四、法律文件：一个链接覆盖全家族
-
-<https://www.91hym.cn/devs/756.html> 三章 + `#privacy`/`#agreement`/`#rights`，两应用共用。
-博客在党哥自己站上 ⇒ 改动要给他「照抄文本」；双写纪律：博客 == 两仓 `pages/Privacy.ets` 逐字一致。
-⚠️ **新增权限 ⇒ 同一提交改完两仓 + 交博客文本**；例外：`backgroundModes` 不是权限，政策不改。
-
-## 五、工程铁律（展开 ⇒ `reference-arkui-pitfalls.md`）
-
-- ⭐ **数据变了 UI 不更新**：V1 `if` 分支按首次求值定型、@Builder 值参数不重跑 ⇒ 条件里就地读 @State、
-  表达式内联回 build()；按序查 ① ForEach key ② 条件藏 getter ③ 高度被 layoutWeight 压成 0。
-- **超一屏必套 `Scroll`**：标题栏固定，正文 `Scroll{Column{}}.layoutWeight(1)`；
-  Scroll 内 Column 禁 `height('100%')`（隐私政策被挤出屏幕且滑不动 = 审核级事故）。
-- **回后台 ≠ 用户暂停**：后台停表不改状态、回前台自动续；浮层别同步两套状态 ⇒ 到点才判断；
-  按钮多态时「按了会发生什么」必须写在按钮上。
-- **日期只用本地时区**、`-keep` 护落盘字段与按名反射契约、`safe-delete` 拦删就改缓存目录名
-  ⇒ pitfalls 第四节；锁库三铁律 ⇒ 第八节。
-- 📁 桌面包用**中文应用名** `Rock阅读-x.y.z-上架.app`，否则与旧存档认错包。
-- **点坐标只取 `dumpLayout` bounds** ⇒ `reference-simulator.md`；**桌面图标取 ability `icon`**、
-  **AGC 图标单独上传**（216/1024 方形、禁圆角/透明）⇒ `reference-icon.md`。
-- ⚠️ **记忆台账进版本库**：Reader 全追踪；Journal `.workbuddy/*` + `!.workbuddy/memory/` ⇒ `git ls-files` 验。
-
-## 六、性能层（⇒ `reference-performance.md`）
-
-重活让帧（`setTimeout(0)`，非微任务）、点击后先给反馈、后台 O(N) 可取消、同步 SDK 调用是秒级嫌疑。
-
-## 七、发版状态（2026-11-10 20:06）
-
-**在架**：阅读 `2.0.0`/`1000016`（已过审）；私记仍 `1.0.13`/`1000014`。
-**待上传（包/图/文案/闸门全备）**：私记 `2.0.0`/`1000016`（重出包＝字族全清＋拆门槛）、
-阅读 `2.0.1`/`1000017`（修重命名刷新）；指纹 ⇒ `reference-releases.md`。
-私记 1000015 被拒因 AGC 名称多填副标题 ⇒ **应用名称只填 `Rock私记`**（`reference-agc-naming.md`）；
-本版无新权限但密钥口径变了 ⇒ 博客按桌面照抄文本同步。华为商户已过审。
-**拆门槛已落地**：设备密钥＋可选界面锁＋一次性迁移＋密钥排除系统备份；老库零改写
-（真实老库端到端实证）。写作提醒成下版主题；46 处字族已全清（hig 十·一结案）。
-
-- 🔎 过审后验新图标在设备生效（ability `icon` = `$media:layered_image`）。
-- ⭐ 判包变没变别用 md5（签名含时间戳）⇒ 解包数 `ets/modules.abc` 符号次数。
-- **异步任务只触发不监控**：下个任务开头再看 `gh run list` / AGC。
-
-## 八、产品对标（全文 ⇒ `reference-roadmap.md`）
-
-11-06 十一问定案：判据「有陌生人在用并留存」→ 鸿蒙普通记录者 → **只做商店页**（阅读打长尾）
-→ 私记拆门槛（设备密钥 + 可选界面锁 + 本机自动备份，零 `@kit.*` 测试兜底）→ 先传现有包、
-审核窗口再改 → 下版主题**写作提醒**。位置标签后置 / PDF 导出不做。
-⚠️ 不收集统计 ⇒ **只做"确定有用"的功能**；MD 双向已完成。**坚决不做**：云同步 / 云端 AI。
-
-## 九、all2md → 台账已迁出
-
-台账真源 `F:\AI\HarmonyOS\apps\all2md\`（`task_plan`/`findings`/`progress`）；
-**代码仓 `F:\AI\HarmonyOS\all2md\` 是不同 repo**。⚠️ 包名 `rock.all.2.md`、APP ID
-`6917620824955651111` **与 `com.rocktier.*` 不同体系，别顺手统一**。
-⭐ **验不了机器就验数据**：纯逻辑抽到零 `@kit.*` 内核层，用真实文件喂它。
-
-## 十、ASR（Core Speech Kit）
-
-细节 ⇒ `reference-asr.md`。两条不可协商：键名 **`recognitionMode`**（不是 `recognizeMode`），
-值 **0** = 引擎自己开麦 —— 拼错就"引擎起了、界面在听、永远没声且无错误码"；
-云测报「语音不生效」看 HiLog 有无 `asr: onResult`，不能当结论也不能当噪音。
-
-## 十一、ArkTS 类型三坑
-
-`null`≠`undefined`（签名写 `T | null | undefined`）、禁 `!` 且自写守卫不收窄（只能内联判空）、
-`arr[k].field` 收窄失效（先 `const x = arr[k]`）⇒ 详见 pitfalls 第九节。
-
-## 十二、设计基准：Apple HIG + 鸿蒙 HDS
-
-**唯一基准 <https://developer.apple.com/cn/design/>**；鸿蒙 HDS 只作平台对照（`reference-hig.md`）。
-**UI 类 skill 只起优化作用不能起决定作用**，冲突以 HIG 为准。全家族 + 以后所有应用。
-四条硬指标：点击目标 **44pt（绝对最小 28）**、字号 **最小 11fp**、对比度 **4.5:1**、**不许只用颜色传达信息**。
-不达标**先改 token 不改调用点**；主按钮字色 `onAccent` 不是 `bg`；说明/slogan 靠留白 + `muted`，
-**文案一字不改**；热区 44 让位于「不压邻居」。
-⭐ **渐变只铺空白底层、文字必落不透明面**；跟随系统照抄 Journal `Appearance.ets`
-（禁 `setColorMode`）⇒ hig 八。
-⭐ **一屏一个字族**；私记 46 处等宽数字已全清（2026-11-10，全仓 `fontFamily`/`letterSpacing` 为 0）
-⇒ hig 十·一；**数字对齐靠 `width('100%') + textAlign(Center)`，不许靠换字族补位**。
+- all2md `1.0.0` 首版待提交（¥1.99），包与材料已备在桌面 `all2md-1.0.0-上架.zip`
+- 阅读 `2.0.1` / 私记 `2.0.0` 审核中 ⇒ 不动包、不盯、不催
