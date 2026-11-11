@@ -4370,6 +4370,9 @@ struct Reader {
           Column()
             .layoutWeight(1)
             .height('100%')
+            // 目录抽屉**没有别的关闭键**（面板自身的 onClick 只吞点击、不给出口），
+            // 这块右侧空白是读屏用户唯一的关闭途径 ⇒ 必须有名字，不能标 no
+            .accessibilityText('关闭目录')
             .onClick(() => {
               this.showToc = false;
             })
@@ -4386,6 +4389,9 @@ struct Reader {
           Column()
             .width('100%')
             .height(SETTINGS_STRIP_VP)
+            // 面板顶端已有显式 ×（accessibilityText『关闭设置』）⇒ 这条关闭带对读屏无意义，
+            // 标 no 避免读屏在两个节点上重复念『关闭』
+            .accessibilityLevel('no')
             .onClick(() => {
               this.showSettings = false;
             })
@@ -4418,18 +4424,22 @@ struct Reader {
           Column()
             .width('100%')
             .layoutWeight(1)
+            // 摘录面板内有『取消』按钮 ⇒ 遮罩只是视觉出口，读屏用按钮，标 no
+            .accessibilityLevel('no')
             .onClick(() => {
               this.closeHighlightPanel();
             })
           Column() {
             Column()
               .layoutWeight(1)
+              .accessibilityLevel('no')
               .onClick(() => {
                 this.closeHighlightPanel();
               })
             this.highlightEditor()
             Column()
               .layoutWeight(1)
+              .accessibilityLevel('no')
               .onClick(() => {
                 this.closeHighlightPanel();
               })

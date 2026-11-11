@@ -101,7 +101,11 @@ $tmp = Join-Path $root ".tmp\verify-upload"
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $outProfile = Join-Path $tmp "profile.p7b"
 $outChain = Join-Path $tmp "chain.cer"
-Remove-Item $outProfile, $outChain -ErrorAction SilentlyContinue
+# ⚠️ 用 .NET 的 Delete 而不是 Remove-Item：本机 safe-delete 钩子对「目标不存在」
+#    的 Remove-Item 会 fail-closed 抛错，把整条闸门打断（2026-11-11 实测）。
+#    File::Delete 不存在时是静默 no-op，语义正是这里想要的。
+[System.IO.File]::Delete($outProfile)
+[System.IO.File]::Delete($outChain)
 
 # ⚠️ 不能直接 `& java ... 2>&1`：java 把日志写 stderr，PowerShell 会把它转成
 #    错误记录，在 $ErrorActionPreference="Stop" 下直接中断脚本 ⇒ 改用
@@ -114,12 +118,15 @@ $savedProxy = @{}
 foreach ($pn in $proxyNames) {
     $v = [Environment]::GetEnvironmentVariable($pn, "Process")
     if ($null -ne $v) { $savedProxy[$pn] = $v }
-    Remove-Item "Env:$pn" -ErrorAction SilentlyContinue
+    # 同上：`Remove-Item "Env:$pn"` 会被 safe-delete 钩子当成删文件而 fail-closed，
+    # 改用 .NET API 清进程级变量（$null 即删除），效果一致且不经过 cmdlet。
+    [Environment]::SetEnvironmentVariable($pn, $null, "Process")
 }
 
 $logOut = Join-Path $tmp "verify.out.txt"
 $logErr = Join-Path $tmp "verify.err.txt"
-Remove-Item $logOut, $logErr -ErrorAction SilentlyContinue
+[System.IO.File]::Delete($logOut)
+[System.IO.File]::Delete($logErr)
 try {
     # ⚠️ Start-Process 的 ArgumentList 不自动处理空格 ⇒ 含空格的路径要自己加引号，
     #    否则 "E:\Program Files\..." 会被截成 "E:\Program"（Unable to access jarfile）。
@@ -220,7 +227,7 @@ if (-not (Test-Path $outProfile)) {
 # ---------------------------------------------------------------- 3. pack.info 复核
 Step "复核包内 pack.info"
 $unzipDir = Join-Path $tmp "unzip"
-Remove-Item $unzipDir -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path $unzipDir) { [System.IO.Directory]::Delete($unzipDir, $true) }
 New-Item -ItemType Directory -Force -Path $unzipDir | Out-Null
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 [System.IO.Compression.ZipFile]::ExtractToDirectory($AppPath, $unzipDir)

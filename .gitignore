@@ -55,3 +55,8 @@ agc-app-icon.png
 /tmp-build-*.txt
 /tmp-build-*.out
 /tmp-build-*.err
+
+# 出包/闸门临时日志（每次跑都会重生成，不进库）
+build-out.txt
+verify-out.txt
+/seed-out/
