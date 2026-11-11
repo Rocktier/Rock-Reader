@@ -94,7 +94,12 @@
             //   | file:// 无/有 host + type                     | ❌            |
             //   uris 先后试过：scheme:file±type / 纯 type / 纯 scheme / 不写 uris / ±utd —— 带 uri 的 want 一次都没命中。
             //   列表里出现的文件预览/日历都是**系统 default-app 机制**进的（日历 skills 全空也能进），不是隐式匹配。
-            //   → 结论：这台**模拟器镜像**上「其他应用打开」不收录三方 debug 应用的隐式匹配（或 ERMS 过滤）；
+            //   ⚠️ **2026-11-11 更正（all2md 接入时复验）**：上面"模拟器不收录三方 debug 应用"的结论是**错的**，
+            //     真实原因只是 skills 缓存 —— 当时只做了覆盖安装。all2md 实测：覆盖安装后隐式启动报
+            //     `Failed to find a matching application`，`hdc uninstall` + `install` 之后同一条命令
+            //     直接 `start ability successfully`，带 uri 的隐式 want 也能命中。
+            //     ⇒ 以后验这条链路，**先卸载重装**。（详见家族 findings「用其他应用打开」末条）
+            //   → 旧结论（已作废）：这台**模拟器镜像**上「其他应用打开」不收录三方 debug 应用的隐式匹配（或 ERMS 过滤）；
             //     **纯 type 场景（微信/QQ 分享文件）我们能进列表**，这条链路已验证可用。
             //   → 最终采用**官方文档配方**（scheme:file + type），真机上微信读书等三方应用能出现在
             //     文件管理器，说明真机行为不同；留待真机复核（device-test.md）。
