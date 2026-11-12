@@ -15,6 +15,12 @@ import { BookRecord, BookmarkRow, ChapterRow, HighlightRow, ReadingProgress } fr
 import { ReadSession } from '../engine/stats/ReadStats';
 import { normalizeColor } from '../engine/marks/HighlightPalette';
 
+/** 整库备份用：列名 + 取值方式（S=TEXT / I=INTEGER / F=REAL）。与下方 CREATE TABLE 逐字对应 */
+export interface RrColumnDef {
+  name: string;
+  kind: string;
+}
+
 const DB_NAME = 'rockreader.db';
 
 const SQL_BOOKS = 'CREATE TABLE IF NOT EXISTS books(' +
@@ -475,5 +481,62 @@ export class BookDb {
 
   async deleteHighlight(id: number): Promise<void> {
     await this.ready().executeSql('DELETE FROM highlights WHERE id = ?', [id]);
+  }
+
+  // ------------------------------------------------------------------
+  // 整库备份（2026-11-12 P1）
+  //
+  // 为什么不直接复制 `rockreader.db` 文件：relationalStore 的连接还开着，
+  // 覆盖文件等于拿一个正在被写的库去赌 WAL 状态；重装后也可能撞上不同的页大小。
+  // 改成「按表按行倒出来 → 导入时逐行插回去」：全是本文件已经在用的 getter / insert，
+  // 不引入新的 Kit、不猜 ResultSet 列类型、不碰表结构，也不申请任何权限。
+  // ------------------------------------------------------------------
+
+  /** 把一张表按行倒成纯值（null 已归一：文本→''，数值→0） */
+  async rrDump(table: string, cols: RrColumnDef[]): Promise<Array<Record<string, string | number>>> {
+    const names: string[] = cols.map((c: RrColumnDef): string => c.name);
+    const rs = await this.ready().querySql('SELECT ' + names.join(',') + ' FROM ' + table);
+    const out: Array<Record<string, string | number>> = [];
+    while (rs.goToNextRow()) {
+      const row: Record<string, string | number> = {};
+      for (let i: number = 0; i < cols.length; i++) {
+        const idx: number = rs.getColumnIndex(cols[i].name);
+        if (cols[i].kind === 'I') {
+          row[cols[i].name] = rs.getLong(idx);
+        } else if (cols[i].kind === 'F') {
+          const f: number = rs.getDouble(idx);
+          row[cols[i].name] = Number.isNaN(f) ? 0 : f;
+        } else {
+          const s: string = rs.getString(idx);
+          row[cols[i].name] = s === null || s === undefined ? '' : s;
+        }
+      }
+      out.push(row);
+    }
+    rs.close();
+    return out;
+  }
+
+  /** 导入前清空一张表（整库覆盖语义，调用方需在 UI 说清） */
+  async rrClear(table: string): Promise<void> {
+    await this.ready().executeSql('DELETE FROM ' + table);
+  }
+
+  /** 把倒出来的行逐行插回（batchInsert 与 addChapters 同一套写法） */
+  async rrRestore(table: string, cols: RrColumnDef[],
+    rows: Array<Record<string, string | number>>): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
+    const buckets: relationalStore.ValuesBucket[] = [];
+    for (let i: number = 0; i < rows.length; i++) {
+      const bucket: relationalStore.ValuesBucket = {};
+      for (let j: number = 0; j < cols.length; j++) {
+        const v: string | number = rows[i][cols[j].name];
+        bucket[cols[j].name] = v;
+      }
+      buckets.push(bucket);
+    }
+    await this.ready().batchInsert(table, buckets);
   }
 }

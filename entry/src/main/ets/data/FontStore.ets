@@ -1,22 +1,19 @@
 /**
- * 字体下载与本地管理
+ * 内置字体的本地管理（零联网）
  *
- * 2026-09-25 起：**1 款内置（宋体）+ 其余按需下载**。
- * 内置的那一款首次启动从包内（rawfile）复制到沙箱，之后与下载款走完全相同的路径。
+ * 2026-11-12：删净字体下载通道（HTTP 下载调用 / CDN URL / 校验那一段）。
+ * 权限早已去掉、下载 UI 也长期隐藏 —— 留着只会让静态扫描看到联网代码，
+ * 与「隐私完全不出设备、不出互联网」的公开口径相撞。
  *
- * 三条硬规则（改这个文件时必须保住）：
- *  1. **先写 .part 再 rename** —— 任何中断都不会留下"看起来已下载"的半截文件；
- *  2. **下载完必须校验字节数 + SHA256** 才算成功，否则删掉重来；
- *     拿一个半截/损坏的字体去注册，会渲染出错乱字形，且极难定位；
- *  3. **失败一律静默**：无网络 / 超时 / 校验不过都只返回 false，由界面显示状态，
- *     绝不弹错打断阅读（也绝不因此让应用不可用）。
+ * 现在只做两件事：把包内 rawfile 复制到沙箱、给出 `file://` uri 供渲染与测量共用。
+ * 硬规则：先写 `.part` 再 rename —— 中断不会留下"看起来已就绪"的半截字体。
  *
- * 联网用途：仅"用户主动下载字体包"。已在家族 `findings.md` §8（网络权限申请记录）登记。
+ * ⚠️ 将来若要恢复下载字体：必须**四处联动**（module.json5 权限 / 本文件下载管线 /
+ *    博客与应用内隐私正文 / AGC 隐私标签与商店文案），别在代码里偷跑。
  */
-import { http } from '@kit.NetworkKit';
-import { fileIo as fs, hash } from '@kit.CoreFileKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { FONT_CATALOG, FontEntry, fontUrlsOf } from '../common/FontCatalog';
+import { FONT_CATALOG, FontEntry } from '../common/FontCatalog';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'RockReader';
@@ -141,107 +138,6 @@ export class FontStore {
       }
     }
     return '';
-  }
-
-  /**
-   * 下载并落盘（含校验）。成功返回 true。
-   * **逐个尝试多个源**（CDN → Release → raw），任一成功即止；每个源都要过同一套校验。
-   * 只做"下载 + 校验"，**不注册**（注册需要 UIContext，由页面在启动时统一做）。
-   */
-  async download(entry: FontEntry): Promise<boolean> {
-    const urls: string[] = fontUrlsOf(entry);
-    for (let i: number = 0; i < urls.length; i++) {
-      const ok: boolean = await this.tryDownload(entry, urls[i]);
-      if (ok) {
-        return true;
-      }
-      hilog.warn(DOMAIN, TAG, 'font source failed, try next: %{public}s', urls[i]);
-    }
-    return false;
-  }
-
-  private async tryDownload(entry: FontEntry, url: string): Promise<boolean> {
-    const finalPath: string = this.pathOf(entry);
-    const tmpPath: string = finalPath + '.part';
-    try {
-      if (!fs.accessSync(this.dir())) {
-        fs.mkdirSync(this.dir(), true);
-      }
-      if (fs.accessSync(tmpPath)) {
-        fs.unlinkSync(tmpPath);
-      }
-
-      const request: http.HttpRequest = http.createHttp();
-      let written: boolean = false;
-      try {
-        const response: http.HttpResponse = await request.request(url, {
-          method: http.RequestMethod.GET,
-          expectDataType: http.HttpDataType.ARRAY_BUFFER,
-          connectTimeout: 15000,
-          readTimeout: 180000
-        });
-        if (response.responseCode !== 200) {
-          hilog.error(DOMAIN, TAG, 'font download http %{public}d', response.responseCode);
-          return false;
-        }
-        const body: Object = response.result as Object;
-        if (!(body instanceof ArrayBuffer)) {
-          hilog.error(DOMAIN, TAG, 'font download: unexpected body type');
-          return false;
-        }
-        this.writeBytes(tmpPath, body);
-        written = true;
-      } finally {
-        request.destroy();
-      }
-      if (!written) {
-        return false;
-      }
-
-      // ① 字节数
-      const stat = fs.statSync(tmpPath);
-      if (stat.size !== entry.sizeBytes) {
-        hilog.error(DOMAIN, TAG, 'font size mismatch %{public}d vs %{public}d', stat.size, entry.sizeBytes);
-        fs.unlinkSync(tmpPath);
-        return false;
-      }
-
-      // ② SHA256（字体文件来自网络，这是唯一的完整性防线）
-      const actual: string = await hash.hash(tmpPath, 'sha256');
-      if (actual.toLowerCase() !== entry.sha256.toLowerCase()) {
-        hilog.error(DOMAIN, TAG, 'font sha256 mismatch');
-        fs.unlinkSync(tmpPath);
-        return false;
-      }
-
-      // ③ 校验通过才正式"上位"（rename）
-      if (fs.accessSync(finalPath)) {
-        fs.unlinkSync(finalPath);
-      }
-      fs.renameSync(tmpPath, finalPath);
-      return true;
-    } catch (e) {
-      hilog.error(DOMAIN, TAG, 'font download failed: %{public}s', JSON.stringify(e));
-      // 失败就清干净，不留 .part 占空间
-      try {
-        if (fs.accessSync(tmpPath)) {
-          fs.unlinkSync(tmpPath);
-        }
-      } catch (inner) {
-        hilog.warn(DOMAIN, TAG, 'cleanup failed');
-      }
-      return false;
-    }
-  }
-
-  private writeBytes(path: string, bytes: ArrayBuffer): void {
-    // 注：枚举是 OpenMode.TRUNC（不是 TRUNCATE）
-    const file: fs.File = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-    try {
-      fs.writeSync(file.fd, bytes);
-    } finally {
-      fs.closeSync(file);
-    }
   }
 
   /** 移除已下载字体（用户主动释放空间） */

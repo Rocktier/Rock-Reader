@@ -4029,7 +4029,7 @@ struct Reader {
         .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
       }
 
-      Text('更多设置（字体下载 / 隐私）›')
+      Text('更多设置（字体 / 隐私）›')
         .fontSize(RR_FS_LABEL)
         .fontColor(this.palette.text2)
         .width('100%')

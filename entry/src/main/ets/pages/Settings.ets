@@ -18,7 +18,10 @@ import {
 import { currentPalette } from '../common/ThemeRuntime';
 import { formPadOf } from '../common/LayoutStyle';
 import { FontStore } from '../data/FontStore';
-import { FONT_CATALOG, FontEntry, sizeTextOf } from '../common/FontCatalog';
+import { BookDb } from '../data/BookDb';
+import { rrExportBackup, rrImportBackup } from '../data/RrBackup';
+import { common } from '@kit.AbilityKit';
+import { FONT_CATALOG, FontEntry } from '../common/FontCatalog';
 import { RR_FS_TITLE, RR_FS_HEADING, RR_FS_BODY, RR_FS_LABEL, RR_FS_META, RR_FS_DIGIT, RR_FS_MICRO, RR_SP_XS, RR_SP_SM, RR_SP_MD, RR_SP_LG, RR_SP_XL, RR_SP_2XL, RR_SP_3XL, RR_SP_4XL, RR_SP_5XL, RR_RADIUS_COVER } from '../theme/RrTokens';
 
 const DOMAIN: number = 0x0000;
@@ -47,11 +50,12 @@ struct Settings {
   /** '' = 系统默认 */
   @State fontFamily: string = '';
   @State fontFamilies: string[] = [];
-  /** 已下载的字体 id */
+  /** 已就位的内置字体 id */
   @State downloadedIds: string[] = [];
-  /** 正在下载的字体 id（'' = 空闲） */
-  @State busyFontId: string = '';
-  @State fontNote: string = '';
+  /** 整库备份：结果说明 / 防重复点击 / 导入二次确认 */
+  @State backupNote: string = '';
+  @State backupBusy: boolean = false;
+  @State importArmed: boolean = false;
   /**
    * 版心单侧补丁（vp）：P0-5 大屏适配。设置项在宽屏上拉满一行五六十个字，
    * 扫视困难且整页摊成扁带 —— 封顶 560vp 居中（formPadOf，CI 有单测）。
@@ -61,6 +65,7 @@ struct Settings {
 
   private prefs: ReaderPrefs = new ReaderPrefs();
   private fontStore: FontStore | null = null;
+  private db: BookDb = new BookDb();
 
   /** 系统深浅变了（控制中心切换）→ 只换色板，不动页面栈 / 滚动位置（P0-1） */
   private onSystemDarkChanged(): void {
@@ -171,42 +176,46 @@ struct Settings {
   private pickFont(family: string): void {
     this.fontFamily = family;
     this.prefs.saveFontFamily(family);
-    this.fontNote = '';
   }
 
-  /**
-   * 下载一款字体（**用户主动点击**才联网）。
-   * 失败一律静默：只把状态写在字体区里，不弹窗、不拦路。
-   */
-  private async downloadFont(entry: FontEntry): Promise<void> {
-    if (this.fontStore === null || this.busyFontId.length > 0) {
+  /** 整库备份：交给系统文件选择器挑位置，取消不算失败（不弹提示） */
+  private async runExport(): Promise<void> {
+    if (this.backupBusy) {
       return;
     }
-    this.busyFontId = entry.id;
-    this.fontNote = `正在下载 ${entry.displayName}（${sizeTextOf(entry.sizeBytes)}）…`;
-    const store: FontStore = this.fontStore;
-    const ok: boolean = await store.download(entry);
-    if (ok) {
-      this.refreshFontState();
-      this.registerLocalFonts();
-      this.pickFont(entry.familyName);
-      this.fontNote = `${entry.displayName} 已就绪`;
-    } else {
-      this.fontNote = '下载未完成，可稍后再试';
+    this.backupBusy = true;
+    const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    try {
+      await this.db.open(ctx);
+      const r = await rrExportBackup(ctx, this.db);
+      this.backupNote = r.text;
+    } catch (e) {
+      this.backupNote = '导出失败：' + JSON.stringify(e);
     }
-    this.busyFontId = '';
+    this.backupBusy = false;
   }
 
-  private removeFont(entry: FontEntry): void {
-    if (this.fontStore === null) {
+  /** 导入会整库覆盖 ⇒ 两次点击才执行，不用弹窗、不引新 Kit */
+  private async runImport(): Promise<void> {
+    if (this.backupBusy) {
       return;
     }
-    this.fontStore.remove(entry);
-    if (this.fontFamily === entry.familyName) {
-      this.pickFont('');
+    if (!this.importArmed) {
+      this.importArmed = true;
+      this.backupNote = '导入会替换当前书架上的全部书与记录。确认请再点一次。';
+      return;
     }
-    this.refreshFontState();
-    this.fontNote = '';
+    this.importArmed = false;
+    this.backupBusy = true;
+    const ctx: common.UIAbilityContext = this.getUIContext().getHostContext() as common.UIAbilityContext;
+    try {
+      await this.db.open(ctx);
+      const r = await rrImportBackup(ctx, this.db);
+      this.backupNote = r.text.length > 0 ? r.text : '';
+    } catch (e) {
+      this.backupNote = '导入失败：' + JSON.stringify(e);
+    }
+    this.backupBusy = false;
   }
 
   private isDownloaded(id: string): boolean {
@@ -350,114 +359,71 @@ struct Settings {
       .scrollBar(BarState.Off)
       .width('100%')
 
-      // ---- 更多字体（按需下载，不占安装包体积）----
-      Column() {
-        if (this.hasDownloadable()) {
-          Text('更多字体 · 下载后存本机')
-            .fontSize(RR_FS_DIGIT)
-            .fontFamily('monospace')
-            .fontColor(this.palette.text3)
-            .margin({ top: RR_SP_3XL, bottom: RR_SP_SM })
-        }
-
-        ForEach(FONT_CATALOG, (entry: FontEntry) => {
-          // 内置款已在上方芯片区可选，不重复出现在"下载"区
-          if (!entry.builtin) {
-          Row() {
-            Column() {
-              Text(entry.displayName)
-                .fontSize(RR_FS_LABEL)
-                .fontColor(this.palette.text)
-              Text(entry.desc)
-                .fontSize(RR_FS_DIGIT)
-                .fontColor(this.palette.text3)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(`${sizeTextOf(entry.sizeBytes)} · ${entry.license}`)
-                .fontSize(RR_FS_MICRO)
-                .fontFamily('monospace')
-                .fontColor(this.palette.text3)
-                .margin({ top: RR_SP_SM })
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-
-            Text(this.fontActionText(entry))
-              .fontSize(RR_FS_META)
-              .fontColor(this.isDownloaded(entry.id) ? this.palette.text3 : this.palette.text)
-              .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
-              .height(30)
-              .border({ width: 1, color: this.palette.line })
-              .accessibilityText(this.fontActionText(entry) + ' ' + entry.displayName)
-              // 视觉 30vp 保持轻量（描边小按钮），热区补到 44 —— 上下各借 7vp，
-              // 行内 padding 12+12 足够，不会压到相邻行（HIG 点击目标下限）。
-              .responseRegion({ x: 0, y: -7, width: '100%', height: 44 })
-              .onClick(() => {
-                if (entry.builtin) {
-                  return;
-                }
-                if (this.isDownloaded(entry.id)) {
-                  this.removeFont(entry);
-                } else {
-                  this.downloadFont(entry);
-                }
-              })
-          }
-          .width('100%')
-          .padding({ top: RR_SP_2XL, bottom: RR_SP_2XL })
-          .border({ width: { top: 1 }, color: this.palette.lineSoft })
-
-          if (this.fontNote.length > 0 && this.busyFontId === entry.id) {
-            Text(this.fontNote)
-              .fontSize(RR_FS_DIGIT)
-              .fontColor(this.palette.text3)
-              .margin({ bottom: RR_SP_LG })
-          }
-          }
-        }, (entry: FontEntry) => 'dl' + entry.id)
-
-        if (this.fontNote.length > 0 && this.busyFontId.length === 0) {
-          Text(this.fontNote)
-            .fontSize(RR_FS_DIGIT)
-            .fontColor(this.palette.text3)
-            .margin({ top: RR_SP_LG })
-        }
-
-        // 首版只内置宋体一款（小而美、零联网）；后续版本会继续增加字体 —— 这里给用户留个预期
-        // 显式断行，理由同上：11fp 下这句会折，而自动折点落在「更多字体」中间，
-        // 末行只剩三个字（2026-11-06 实测）。断在句号处，两行都完整。
-        Text('宋体已内置在应用里，无需下载、断网可用。\n后续版本会增加更多字体。')
-          .fontSize(RR_FS_MICRO)
-          .fontColor(this.palette.text3)
-          .margin({ top: RR_SP_XL })
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
+      // 字体全部内置在 HAP 里：没有下载通道、没有联网代码（2026-11-12 清理）
+      Text('字体已内置在应用里，断网可用。\n换字体不需要下载，也不需要联网。')
+        .fontSize(RR_FS_MICRO)
+        .fontColor(this.palette.text3)
+        .margin({ top: RR_SP_XL })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding({ top: RR_SP_3XL, bottom: RR_SP_3XL })
   }
 
-  /** 有没有"需要下载"的字体（首版零联网 → 没有 → 下载区整段不显示） */
-  private hasDownloadable(): boolean {
-    for (let i: number = 0; i < FONT_CATALOG.length; i++) {
-      if (!FONT_CATALOG[i].builtin) {
-        return true;
-      }
-    }
-    return false;
-  }
+  /** 书库备份：把「书 + 进度 + 书签 + 摘录」搬走，断网可用、零权限 */
+  @Builder
+  backupSection() {
+    Column() {
+      Text('书库备份')
+        .fontSize(RR_FS_BODY)
+        .fontColor(this.palette.text)
+        .width('100%')
+        .margin({ bottom: RR_SP_LG })
 
-  private fontActionText(entry: FontEntry): string {
-    // 内置款：既不用下载，也不可移除（它是包的一部分）
-    if (entry.builtin) {
-      return '内置';
+      Text('把书、阅读进度、书签和摘录打包成一个文件，由你选地方保存。\n' +
+        '重装或换机后导入即可还原；导入会替换当前书架。')
+        .fontSize(RR_FS_DIGIT)
+        .fontColor(this.palette.text3)
+        .width('100%')
+        .margin({ bottom: RR_SP_XL })
+
+      Row({ space: 8 }) {
+        Text(this.backupBusy ? '正在处理…' : '导出整库备份')
+          .fontSize(RR_FS_META)
+          .fontColor(this.palette.text)
+          .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
+          .height(34)
+          .border({ width: 1, color: this.palette.line })
+          .accessibilityText('导出整库备份')
+          .onClick(() => this.runExport())
+        Text(this.importArmed ? '确认导入（替换当前书架）' : '从备份导入')
+          .fontSize(RR_FS_META)
+          .fontColor(this.palette.text)
+          .padding({ left: RR_SP_2XL, right: RR_SP_2XL })
+          .height(34)
+          .border({ width: 1, color: this.palette.line })
+          .accessibilityText(this.importArmed ? '确认导入，替换当前书架' : '从备份导入')
+          .onClick(() => this.runImport())
+      }
+      .width('100%')
+      .margin({ bottom: RR_SP_XL })
+
+      if (this.backupNote.length > 0) {
+        Text(this.backupNote)
+          .fontSize(RR_FS_DIGIT)
+          .fontColor(this.palette.text2)
+          .width('100%')
+          .margin({ bottom: RR_SP_XL })
+      }
+
+      Text('备份不含阅读设置（字号、主题留在本机）。全程不联网，不申请任何权限。')
+        .fontSize(RR_FS_MICRO)
+        .fontColor(this.palette.text3)
+        .width('100%')
     }
-    if (this.busyFontId === entry.id) {
-      return '下载中…';
-    }
-    return this.isDownloaded(entry.id) ? '移除' : '下载';
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({ top: RR_SP_3XL, bottom: RR_SP_3XL })
   }
 
   build() {
@@ -493,7 +459,7 @@ struct Settings {
         .width('100%')
         .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_SM, bottom: RR_SP_SM })
 
-      // 内容可能超过一屏（尤其加了字体下载区之后）→ 整段可滚动
+      // 内容可能超过一屏（加上书库备份区）→ 整段可滚动
       Scroll() {
         Column() {
           // 排版档位已移到**阅读页的抽屉**：那里改一下正文立刻跟着变（能边看边调），
@@ -549,6 +515,8 @@ struct Settings {
           this.textSection()
 
           this.fontSection()
+
+          this.backupSection()
 
           // 「关于」入口：隐私政策在里面（上架要求应用内可查看），
           // 入口名写"关于"而不是"隐私政策" —— 用户找的是"这是什么应用"，顺路才看政策。
