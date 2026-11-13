@@ -33,7 +33,7 @@ import {
 import { shelfSubtitle } from '../engine/shelf/ShelfAuthor';
 import { isPdfFormat } from '../engine/pdf/PdfPages';
 import { BookRecord, ProgressSnapshot, ShelfItem } from '../common/Types';
-import { shelfColsOf } from '../common/LayoutStyle';
+import { FORM_MAX_VP, shelfColsOf } from '../common/LayoutStyle';
 import { Palette, paletteOf, THEME_LIGHT, THEME_SYSTEM, ThemeName } from '../common/Theme';
 import { applyThemeToSystem } from '../common/SystemBar';
 import { currentEffectiveTheme } from '../common/ThemeRuntime';
@@ -887,6 +887,8 @@ struct Index {
         }
       }
       .width('86%')
+      // 同上（PC/2in1）：书籍编辑弹窗在宽屏窗口里同样会被拉到 900+vp，封顶表单版心
+      .constraintSize({ maxWidth: FORM_MAX_VP })
       .padding(18)
       .borderRadius(RR_RADIUS_CARD)
       // 用 overlay（≈92% 主题底色，**不透明**）而不是 card（3%，几乎全透明）：
@@ -1454,6 +1456,14 @@ struct Index {
         .margin({ top: RR_SP_LG })
       }
       .width('86%')
+      /**
+       * PC / 2in1 版心（2026-11-13，模拟器实拍发现）。
+       *
+       * 86% 在手机上约 310vp 恰好，但 2in1 窗口约 1095vp 时是 **942vp** ——
+       * 实拍里四条要点一行排开、两个按钮被拉成两根长条，像没有排版。
+       * 封顶 FORM_MAX_VP(560)，与设置页/关于页同一套版心。
+       */
+      .constraintSize({ maxWidth: FORM_MAX_VP })
       .padding({ left: RR_SP_4XL, right: RR_SP_4XL, top: RR_SP_5XL, bottom: RR_SP_4XL })
       // 审查报告 B25：card 色 alpha≈3%，压在黑遮罩上等于没有底色 —— 用不透明的 bg 色
       .backgroundColor(this.palette.bg)
