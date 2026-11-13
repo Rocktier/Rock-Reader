@@ -35,6 +35,7 @@ import { BookSource, createBookSource } from '../engine/parser/BookSource';
 import { parseTxtSync, TxtParseResult } from '../engine/parser/TxtParser';
 import { encodingHint, encodingLabel, normalizeEncoding } from '../engine/text/Encoding';
 import {
+  chromePadOf,
   fontSizeFpOf,
   fontWeightOf,
   layoutKey,
@@ -208,6 +209,15 @@ const DRAG_OUT_MS: number = 130;
 const DRAG_IN_MS: number = 150;
 /** 目录抽屉宽度（占屏宽比例）：不铺满，右侧留白透出正文，便于边看边选章 */
 const TOC_PANEL_WIDTH: string = '72%';
+/**
+ * 目录抽屉宽度上限（vp）。
+ *
+ * 72% 在手机上（约 260vp）刚好，但在 1440vp 的平板上会变成 1037vp —— 面板宽到
+ * 章名与右侧计数隔着半个屏幕，反而不如窄侧栏好扫（2026-11-13 实拍）。
+ * 封顶后平板是 420vp 侧栏、右侧大片留白透出正文，与 iPadOS / macOS 的侧栏同形。
+ * 手机宽度算出来远小于 420 ⇒ 不受影响。
+ */
+const TOC_MAX_VP: number = 420;
 /** 抽屉滑入的起始位移（vp）与动画时长（ms）；两个抽屉（目录/设置）共用同一套时长 */
 const TOC_SLIDE_VP: number = 320;
 const SETTINGS_SLIDE_VP: number = 460;
@@ -298,6 +308,20 @@ struct Reader {
   @State marginVp: number = 20;
   /** '' = 系统默认字体；非空时渲染与测量都必须用同一个族名 */
   @State fontFamily: string = '';
+
+  /**
+   * 宽屏下顶栏 / 底栏要额外向左内缩多少 vp，才能与**正文左缘**对齐。
+   *
+   * 为什么需要它：正文有版心（`readingMarginOf` 把行宽封在 35 字内），
+   * 但顶栏和中央菜单用的是固定 token 边距（12/16vp）⇒ 平板 1440vp 上正文从 405vp 起、
+   * 顶栏「‹ 书架」却贴在 12vp，菜单六项横跨整屏、按钮间距 240vp（2026-11-13 实拍）。
+   *
+   * 为什么存成 @State 而**不是**在 padding 里调方法算：
+   * ArkUI V1 的依赖插桩只认「代码里直接出现的 `this.xxx` 访问」，
+   * 把读取藏进方法体后 Builder 不随 `viewWidthVp` 重跑（同 `scrollMenuLabel` 那个坑）。
+   * padding 表达式里读这个 @State ⇒ 追踪可靠。
+   */
+  @State private chromePadVp: number = 0;
 
   private db: BookDb = new BookDb();
   private prefs: ReaderPrefs = new ReaderPrefs();
@@ -1264,6 +1288,17 @@ struct Reader {
     }
   }
 
+  /**
+   * 重算顶栏 / 底栏的对齐补白（见 `chromePadVp` 的说明）。
+   *
+   * 判据与算式在 `chromePadOf`（纯逻辑，CI 有单测锁「手机上恒为 0」）——
+   * 这里只负责把结果搬进 @State，让 padding 表达式能直接读到它。
+   */
+  private syncChromePad(): void {
+    this.chromePadVp = chromePadOf(
+      this.viewWidthVp, this.fontSizeFp, marginVpOf(this.levels.marginLevel), RR_SP_2XL);
+  }
+
   /** 第 i 章已确认字数；越界或脏值（负数/NaN）一律按「没量过」处理 */
   private charAt(i: number): number {
     if (i < 0 || i >= this.charCounts.length) {
@@ -1313,6 +1348,8 @@ struct Reader {
     this.lineHeightVp = this.getUIContext().px2vp(box.lineHeightPx);
     // 等效边距从 box 取（版心封顶时 = (视口−封顶)/2），与测量断行同源不分叉
     this.marginVp = box.marginVp;
+    // 字号 / 边距换档后顶栏底栏要跟着重新对齐正文左缘
+    this.syncChromePad();
 
     // 净化/简繁开关会改变 text 内容（BookSource.chapterText 按开关重算），**必须进缓存键** ——
     // 否则切开关后命中旧键：页表是"净化后短文本"算的、正文已是"未净化长文本"，
@@ -2581,7 +2618,11 @@ struct Reader {
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
-    .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
+    // 大屏：补白让「‹ 书架 / 标题 / 页码」与正文左缘对齐（手机上 chromePadVp 恒为 0）
+    .padding({
+      left: RR_SP_2XL + this.chromePadVp, right: RR_SP_3XL + this.chromePadVp,
+      top: RR_SP_XL, bottom: RR_SP_2XL
+    })
     // 2026-11-08 修：顶栏原来用 92% overlay，背后正文直接透上来与标题/按钮叠画，
     // 违反 HIG「文字必落不透明面」。顶栏是操作栏，不是玻璃浮层 ⇒ 用不透明 bg。
     .backgroundColor(this.palette.bg)
@@ -2763,7 +2804,11 @@ struct Reader {
       .margin({ top: RR_SP_LG })
     }
     .width('100%')
-    .padding({ left: RR_SP_3XL, right: RR_SP_3XL, top: RR_SP_3XL, bottom: RR_SP_5XL })
+    // 大屏：菜单六项原来横跨整屏（1440vp 上按钮间距 240vp），补白后收进正文版心内
+    .padding({
+      left: RR_SP_3XL + this.chromePadVp, right: RR_SP_3XL + this.chromePadVp,
+      top: RR_SP_3XL, bottom: RR_SP_5XL
+    })
     .backgroundColor(this.palette.bg)
     .border({ width: { top: 1 }, color: this.palette.lineSoft })
     // 中央菜单唤起时自下滑入（复评整改：原瞬现）
@@ -2878,6 +2923,7 @@ struct Reader {
       }
     }
     .width(TOC_PANEL_WIDTH)
+    .constraintSize({ maxWidth: TOC_MAX_VP })
     .height('100%')
     .backgroundColor(this.palette.bg)
     // 左抽屉：圆角与描边只做贴着屏幕右缘的那侧（左侧贴着屏边，不需要）
@@ -4055,6 +4101,9 @@ struct Reader {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
+    // 大屏：整块内容收进正文版心。不改则 1440vp 上每个设置行的标签在 16vp、
+    // 值在 1400vp，中间近千像素全空（2026-11-13 实拍）。手机上 chromePadVp=0 ⇒ 零变化。
+    .padding({ left: this.chromePadVp, right: this.chromePadVp })
     .borderRadius({ topLeft: 12, topRight: 12 })
     .border({ width: { top: 1, left: 1, right: 1 }, color: this.palette.line })
     .transition(TransitionEffect.translate({ y: SETTINGS_SLIDE_VP })
@@ -4168,6 +4217,8 @@ struct Reader {
         const height: number = newValue.height as number;
         this.viewWidthVp = width;
         this.viewHeightVp = height;
+        // 窗口宽度变了（旋转 / 平板横竖屏 / PC 拖窗口）⇒ 顶栏底栏的版心补白要重算
+        this.syncChromePad();
         if (width <= 0 || height <= 0) {
           return;
         }

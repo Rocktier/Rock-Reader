@@ -64,6 +64,13 @@ const MODE_DELETE: string = 'delete';
 /** 进度条格数（与「继续阅读」卡片一致） */
 const CELLS: number = 10;
 
+/**
+ * 续读卡进度条的宽度上限（vp）。
+ * 卡片本身通栏是对的（它是横幅），但 10 格条拉满 1440vp 时单格 130vp，
+ * 看起来像装饰刻度而不是"读了多少"（2026-11-13 平板实拍）。
+ */
+const HERO_BAR_MAX_VP: number = 420;
+
 // reasonText 已抽到 engine/importer/ImportReason.ets：
 // 它是纯映射（不碰 fileIo / UI），挪出去才能进 CI 单测 ——
 // 那个"default 谎报导入失败"的 bug 就是靠测试守住的（见那边的文件说明）。
@@ -661,7 +668,13 @@ struct Index {
             .opacity(0.72)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-          this.heroBar(this.resume.percent)
+          // 10 格进度条：宽屏下原来拉满整张卡（1440vp 上单格 130vp），
+          // 与左侧两行小字完全不成比例。外套一层封顶 —— 手机 360vp 远小于 420，不受影响。
+          Column() {
+            this.heroBar(this.resume.percent)
+          }
+          .width('100%')
+          .constraintSize({ maxWidth: HERO_BAR_MAX_VP })
           Text(percentText(this.resume.percent))
             .fontSize(RR_FS_MIN)
             .fontFamily('monospace')

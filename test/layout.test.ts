@@ -11,6 +11,7 @@ import {
   BP_LARGE_VP,
   BP_SMALL_VP,
   BP_XL_VP,
+  chromePadOf,
   clampLevel,
   clampWeightLevel,
   fontSizeFpOf,
@@ -165,4 +166,40 @@ test('表单页补丁：窄窗口不会把补丁算成负数', () => {
   assert.equal(formPadOf(570, BASE_PAD), 0);
   assert.equal(formPadOf(580, BASE_PAD), 0);
   assert.equal(formPadOf(600, BASE_PAD), 0);
+});
+
+// ── 宽屏顶栏/底栏对齐补白（2026-11-13 平板实拍后加）────────────────
+
+test('chromePadOf：手机竖屏与未测量一律 0（顶栏底栏行为与旧版逐字一致）', () => {
+  assert.equal(chromePadOf(0, 18, 20, 12), 0, '未测量');
+  assert.equal(chromePadOf(360, 18, 20, 12), 0, '手机竖屏');
+  assert.equal(chromePadOf(412, 18, 20, 12), 0, '大屏手机');
+  // 手机横屏（约 780vp）：仍未到 35 字版心 ⇒ 依旧是 0，不因横屏就乱缩进
+  // 手机横屏（约 780vp）：正文虽会封顶，但顶栏底栏保持既有观感不动
+  assert.equal(chromePadOf(780, 18, 20, 12), 0);
+  assert.equal(chromePadOf(BP_LARGE_VP - 1, 18, 20, 12), 0, '刚好差 1vp 到平板档');
+});
+
+test('chromePadOf：宽屏补到正文左缘（补白 + 基础 = (视口 − 版心)/2）', () => {
+  const w = 1440;
+  const maxVp = 18 * MAX_LINE_CHARS;   // 630
+  const base = 12;
+  const pad = chromePadOf(w, 18, 20, base);
+  assert.equal(pad, Math.round((w - maxVp) / 2) - base, '平板横屏 1440');
+  assert.equal(pad + base, (w - maxVp) / 2, '补白后正好落在正文左缘');
+});
+
+test('chromePadOf：字号越大版心越宽、补白越小（两者必须同源）', () => {
+  const w = 1440;
+  const small = chromePadOf(w, 14, 20, 12);
+  const big = chromePadOf(w, 22, 20, 12);
+  assert.ok(big < small, `22fp 的补白应小于 14fp：${big} vs ${small}`);
+});
+
+test('chromePadOf：临界与脏值不产生负 padding', () => {
+  // 刚好不封顶 ⇒ 0；再窄一点必须还是 0（负 padding 会让内容被裁）
+  assert.equal(chromePadOf(670, 18, 20, 12), 0, '630 + 20×2 = 670，正好封顶');
+  assert.equal(chromePadOf(669, 18, 20, 12), 0);
+  assert.equal(chromePadOf(-1, 18, 20, 12), 0, '脏值');
+  assert.equal(chromePadOf(1440, 0, 20, 12), 0, '字号未就绪');
 });

@@ -150,9 +150,37 @@ export function readingMarginOf(viewWidthVp: number, marginVp: number, fontSizeF
   return eff > marginVp ? eff : marginVp;
 }
 
+/**
+ * 顶栏 / 底栏的对齐补白（vp）：宽屏下让它们与**正文左缘**对齐。
+ *
+ * 阅读页正文有版心（`readingMarginOf` 把行宽封在 35 字内），而顶栏与中央菜单
+ * 一直用固定 token 边距 ⇒ 平板 1440vp 上正文从 405vp 起、顶栏「‹ 书架」贴在 12vp，
+ * 菜单六项横跨整屏、相邻按钮间距 240vp（2026-11-13 实拍）。
+ *
+ * 返回值**加在**各处自身的边距上：`left: RR_SP_2XL + chromePadOf(...)`。
+ *
+ * ⚠️ 判据必须用**档位边距**（`baseMarginVp`）而不是渲染时的等效边距：
+ *    版心一旦封顶，等效边距就等于 `(视口−封顶)/2`，拿它回推"有没有封顶"会恒真。
+ * ⚠️ 手机竖屏（360vp、18fp、边距 20）：`360 − 40 = 320 ≤ 630` ⇒ **0**，
+ *    顶栏底栏行为与旧版逐字一致 —— 这条由单测锁死。
+ * ⚠️ 另加 `BP_LARGE_VP`（840）下限：手机横屏约 780vp 虽然也会让正文封顶，
+ *    但那是既有观感，本轮只对平板/PC 动 —— 免得老用户升级后觉得"横屏界面变了"。
+ */
+export function chromePadOf(viewWidthVp: number, fontSizeFp: number,
+  baseMarginVp: number, basePadVp: number): number {
+  if (viewWidthVp < BP_LARGE_VP || fontSizeFp <= 0) {
+    return 0;
+  }
+  const maxVp: number = fontSizeFp * MAX_LINE_CHARS;
+  if (viewWidthVp - baseMarginVp * 2 <= maxVp) {
+    return 0;
+  }
+  const extra: number = Math.round((viewWidthVp - maxVp) / 2) - basePadVp;
+  return extra > 0 ? extra : 0;
+}
+
 /** 字重值（FontWeight 用的数字）。索引 = 档位 - 1 */
 const FONT_WEIGHT: number[] = [400, 500, 700];
-
 /** 夹到 [1,3]；NaN 回落默认档 1（常规）—— 否则会拿到 undefined 字重 */
 export function clampWeightLevel(level: number): number {
   if (Number.isNaN(level)) {
