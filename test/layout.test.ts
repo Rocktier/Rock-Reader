@@ -133,24 +133,36 @@ test('阅读版心：超大字号+窄屏绝不给负边距（宁可行长超限�
 
 // ── P0-5 次级页版心（设置/关于/统计/隐私；纯逻辑守门）──────────────────
 
+/** UI 层的基础边距（= RrTokens.RR_SP_4XL）。断言必须带上它，否则又会和调用点对不上。 */
+const BASE_PAD = 20;
+
 test('表单页补丁：手机竖屏与未测量一律 0（行为与旧版逐字一致）', () => {
-  assert.equal(formPadOf(0), 0, '未测量：UI 层回落 100% 宽');
-  assert.equal(formPadOf(360), 0);
-  assert.equal(formPadOf(419), 0, '本模拟器宽度档');
-  assert.equal(formPadOf(FORM_MAX_VP), 0, '正好封顶值：不用补');
-  assert.equal(formPadOf(FORM_MAX_VP - 1), 0);
+  assert.equal(formPadOf(0, BASE_PAD), 0, '未测量：UI 层回落 100% 宽');
+  assert.equal(formPadOf(360, BASE_PAD), 0);
+  assert.equal(formPadOf(419, BASE_PAD), 0, '本模拟器宽度档');
+  assert.equal(formPadOf(FORM_MAX_VP, BASE_PAD), 0, '正好封顶值：不用补');
+  assert.equal(formPadOf(FORM_MAX_VP - 1, BASE_PAD), 0);
 });
 
 test('表单页补丁：宽屏居中（补丁后版心 = FORM_MAX_VP）', () => {
-  assert.equal(formPadOf(800), 120, '平板竖屏：两侧各补 120');
-  assert.equal(formPadOf(1280), 360, '平板横屏');
+  assert.equal(formPadOf(800, BASE_PAD), 100, '平板竖屏：基础 20 + 补 100 = 单侧 120');
+  assert.equal(formPadOf(1280, BASE_PAD), 340, '平板横屏');
+  // ⚠️ 版心 = 宽 - 2 × (基础 + 补丁)。2026-11-13 前这里只减补丁，
+  //    单测绿但 2in1 实拍内容区只有 520vp（比封顶值窄 40vp）。
   const w = 1280;
-  assert.equal(w - formPadOf(w) * 2, FORM_MAX_VP, '版心必须正好等于封顶值');
+  assert.equal(w - (formPadOf(w, BASE_PAD) + BASE_PAD) * 2, FORM_MAX_VP, '版心必须正好等于封顶值');
 });
 
 test('表单页补丁：奇数额取整不丢像素（左右对称，版心误差 ≤1vp）', () => {
   // 奇数宽：两边取整后版心与封顶值最多差 1vp，绝不允许偏 contents
   const w = 1001;
-  const content = w - formPadOf(w) * 2;
+  const content = w - (formPadOf(w, BASE_PAD) + BASE_PAD) * 2;
   assert.ok(Math.abs(content - FORM_MAX_VP) <= 1, `版心偏差过大：${content}`);
+});
+
+test('表单页补丁：窄窗口不会把补丁算成负数', () => {
+  // 560 < w < 600 时 (w-560)/2 可能小于基础边距 → 必须夹到 0，否则 padding 变负、内容溢出
+  assert.equal(formPadOf(570, BASE_PAD), 0);
+  assert.equal(formPadOf(580, BASE_PAD), 0);
+  assert.equal(formPadOf(600, BASE_PAD), 0);
 });

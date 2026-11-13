@@ -448,7 +448,11 @@ struct Settings {
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
+      // 大屏：顶栏必须跟内容区对齐（否则标题飘在窗口最左、内容却在版心里，错位 200+vp）
+      .padding({
+        left: RR_SP_2XL + this.padX, right: RR_SP_3XL + this.padX,
+        top: RR_SP_XL, bottom: RR_SP_2XL
+      })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       // P0-2（2026-11-08）：作用域写在标题下 —— 与阅读页抽屉的「本书排版」
@@ -457,7 +461,10 @@ struct Settings {
         .fontSize(RR_FS_META)
         .fontColor(this.palette.text3)
         .width('100%')
-        .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_SM, bottom: RR_SP_SM })
+        .padding({
+          left: RR_SP_2XL + this.padX, right: RR_SP_3XL + this.padX,
+          top: RR_SP_SM, bottom: RR_SP_SM
+        })
 
       // 内容可能超过一屏（加上书库备份区）→ 整段可滚动
       Scroll() {
@@ -567,7 +574,7 @@ struct Settings {
     .backgroundColor(this.palette.bg)
     // 视口宽（vp）→ 版心补丁；旋转 / 分屏自动重算
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.padX = formPadOf(newValue.width as number);
+      this.padX = formPadOf(newValue.width as number, RR_SP_4XL);
     })
   }
 }

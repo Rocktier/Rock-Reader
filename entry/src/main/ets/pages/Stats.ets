@@ -463,7 +463,7 @@ struct Stats {
     .padding({ left: RR_SP_4XL + this.padX, right: RR_SP_4XL + this.padX })
     // 视口宽（vp）→ 版心补丁；旋转 / 分屏自动重算
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.padX = formPadOf(newValue.width as number);
+      this.padX = formPadOf(newValue.width as number, RR_SP_4XL);
     })
   }
 }

@@ -179,7 +179,10 @@ struct Privacy {
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      .padding({ left: RR_SP_2XL, right: RR_SP_3XL, top: RR_SP_XL, bottom: RR_SP_2XL })
+      .padding({
+        left: RR_SP_2XL + this.padX, right: RR_SP_3XL + this.padX,
+        top: RR_SP_XL, bottom: RR_SP_2XL
+      })
       .border({ width: { bottom: 1 }, color: this.palette.lineSoft })
 
       Scroll() {
@@ -203,7 +206,7 @@ struct Privacy {
     .backgroundColor(this.palette.bg)
     // 视口宽（vp）→ 版心补丁；旋转 / 分屏会自动重算（与 Reader.ets 同款 onAreaChange）
     .onAreaChange((oldValue: Area, newValue: Area) => {
-      this.padX = formPadOf(newValue.width as number);
+      this.padX = formPadOf(newValue.width as number, RR_SP_4XL);
     })
   }
 }
