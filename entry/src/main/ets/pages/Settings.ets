@@ -237,30 +237,39 @@ struct Settings {
   textSection() {
     Column() {
       // 净化开关
-      Row() {
-        Column() {
+      //
+      // ⚠️ 「开 / 关」是这一项的**状态**（读法是「正文去广告：开」），不是操作区，
+      //    所以紧跟标签、不钉行尾。理由（第一性原理，2026-11-13）：
+      //    行宽 560vp 是「连续文字」的可读宽度，键值行的自然宽度只有 ~320vp。
+      //    把状态钉在行尾 ⇒ 中间那段空白是 `560 − 标签 − 状态` 的**减法余数**，
+      //    不是被设计的间距（实测 PC 446vp / 平板 443vp）。
+      //    余数应当落在**行尾**（那里空着只是"这一行到这儿为止"），
+      //    落在键与值**中间**就会被读成断裂。手机 320vp 行宽下两者恰好重合，
+      //    所以旧写法在手机上一直是对的 —— 这是"只在宽屏才暴露"的缺陷。
+      Column() {
+        Row({ space: RR_SP_LG }) {
           Text('正文去广告')
             .fontSize(RR_FS_BODY)
             .fontColor(this.palette.text)
-          Text('自动删除 TXT 里的站点水印、公众号推广与网址')
-            .fontSize(RR_FS_DIGIT)
-            .fontColor(this.palette.text3)
-            .margin({ top: RR_SP_XS })
+          Text(this.purifyOn ? '开' : '关')
+            .fontSize(RR_FS_META)
+            .fontFamily('monospace')
+            .fontColor(this.purifyOn ? this.palette.bg : this.palette.text2)
+            .backgroundColor(this.purifyOn ? this.palette.text : this.palette.card)
+            .border({ width: 1, color: this.purifyOn ? this.palette.text : this.palette.line })
+            .borderRadius(RR_RADIUS_COVER)
+            .height(CHIP_HEIGHT)
+            .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
+            .accessibilityText('正文去广告：' + (this.purifyOn ? '开' : '关'))
+            .onClick(() => this.pickPurify(!this.purifyOn))
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Text(this.purifyOn ? '开' : '关')
-          .fontSize(RR_FS_META)
-          .fontFamily('monospace')
-          .fontColor(this.purifyOn ? this.palette.bg : this.palette.text2)
-          .backgroundColor(this.purifyOn ? this.palette.text : this.palette.card)
-          .border({ width: 1, color: this.purifyOn ? this.palette.text : this.palette.line })
-          .borderRadius(RR_RADIUS_COVER)
-          .height(CHIP_HEIGHT)
-          .padding({ left: RR_SP_3XL, right: RR_SP_3XL })
-          .accessibilityText('正文去广告：' + (this.purifyOn ? '开' : '关'))
-          .onClick(() => this.pickPurify(!this.purifyOn))
+        .alignItems(VerticalAlign.Center)
+        Text('自动删除 TXT 里的站点水印、公众号推广与网址')
+          .fontSize(RR_FS_DIGIT)
+          .fontColor(this.palette.text3)
+          .margin({ top: RR_SP_XS })
       }
+      .alignItems(HorizontalAlign.Start)
       .width('100%')
       .padding({ top: RR_SP_2XL, bottom: RR_SP_2XL })
 
@@ -318,11 +327,12 @@ struct Settings {
   @Builder
   fontSection() {
     Column() {
-      Row() {
+      // 字体：值（「N 款可选」/「系统默认」）是标签的补语，紧跟标签。
+      // 同「正文去广告」：宽屏下 `Blank()` 会把它推到 440vp 之外。
+      Row({ space: RR_SP_LG }) {
         Text('字体')
           .fontSize(RR_FS_BODY)
           .fontColor(this.palette.text)
-        Blank()
         Text(this.fontFamily.length > 0 ? `${this.fontFamilies.length} 款可选` : '系统默认')
           .fontSize(RR_FS_MICRO)
           .fontFamily('monospace')
