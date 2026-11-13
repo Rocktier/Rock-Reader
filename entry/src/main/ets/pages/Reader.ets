@@ -18,6 +18,9 @@ import { curves, promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
+// 键盘键值（2026-11-13 PC/2in1）：只取 KeyCode，不取 InputKit 的 KeyEvent
+// —— ArkUI 有一份同名的全局 KeyEvent，导进来会打架
+import { KeyCode } from '@kit.InputKit';
 import { BookDb } from '../data/BookDb';
 import { BackLayer, topmostLayer } from '../common/BackStack';
 import { pushCardUpdate, saveCardLeftHint } from '../data/CardData';
@@ -4455,5 +4458,42 @@ struct Reader {
     .width('100%')
     .height('100%')
     .backgroundColor(this.palette.bg)
+    /**
+     * ── 键盘翻页（2026-11-13，为 PC / 2in1 加的）─────────────────────────
+     *
+     * 2in1 上没有"点屏幕左右边缘"这个动作 —— 不给键盘，用户只能每页把鼠标
+     * 移到边缘点一下（或拖拽），这是唯一被 PC 用户立刻判定"这不是桌面应用"的点。
+     *
+     * 键位：→ / PageDown 下一页，← / PageUp 上一页。
+     * 空格**不抢**：那是系统滚动语义，抢了会让习惯空格翻页的人以为卡住。
+     *
+     * ⚠️ 浮层打开时一律不响应（菜单 / 目录 / 设置 / 摘录）：目录里要用上下键选章节，
+     *    根容器若继续吃方向键，"切目录"会变成"边翻页边挪"。
+     * ⚠️ **必须 `focusable(true)`**：鸿蒙的按键事件只发给可聚焦的组件，
+     *    根容器默认不可聚焦 ⇒ 少了这句，这段代码是死的（屏幕上毫无反应，也不报错）。
+     * ⚠️ `canTurn` 先判再翻：到头了不消费按键，让事件继续冒泡（不制造"按了没反应"）。
+     */
+    .focusable(true)
+    .onKeyEvent((event: KeyEvent) => {
+      if (event.type !== KeyType.Down) {
+        return;
+      }
+      if (this.showMenu || this.showToc || this.showSettings || this.showHighlight
+        || this.hint.length > 0) {
+        return;
+      }
+      const code: number = event.keyCode;
+      let dir: number = 0;
+      if (code === KeyCode.KEYCODE_DPAD_RIGHT || code === KeyCode.KEYCODE_PAGE_DOWN) {
+        dir = 1;
+      } else if (code === KeyCode.KEYCODE_DPAD_LEFT || code === KeyCode.KEYCODE_PAGE_UP) {
+        dir = -1;
+      }
+      if (dir === 0 || !this.canTurn(dir)) {
+        return;
+      }
+      this.turnPage(dir);
+      event.stopPropagation();
+    })
   }
 }

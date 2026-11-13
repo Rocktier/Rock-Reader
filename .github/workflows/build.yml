@@ -98,7 +98,10 @@ jobs:
       - name: CI 专用：deviceTypes 临时换回 default
         run: |
           sed -i 's/"phone"/"default"/' entry/src/main/module.json5
-          grep -A3 'deviceTypes' entry/src/main/module.json5
+          # OpenHarmony SDK 的 deviceTypes 枚举**没有 2in1**（只有 default/phone/tablet/
+          # tv/wearable/car）⇒ 必须把这一行一并删掉，否则同样是 00303060。
+          sed -i '/"2in1"/d' entry/src/main/module.json5
+          grep -A4 'deviceTypes' entry/src/main/module.json5
 
       - name: 用 API 15 编译（product=compat15）
         run: |
@@ -166,7 +169,10 @@ jobs:
       - name: CI 专用：deviceTypes 临时换回 default
         run: |
           sed -i 's/"phone"/"default"/' entry/src/main/module.json5
-          grep -A3 'deviceTypes' entry/src/main/module.json5
+          # OpenHarmony SDK 的 deviceTypes 枚举**没有 2in1**（只有 default/phone/tablet/
+          # tv/wearable/car）⇒ 必须把这一行一并删掉，否则同样是 00303060。
+          sed -i '/"2in1"/d' entry/src/main/module.json5
+          grep -A4 'deviceTypes' entry/src/main/module.json5
 
       - name: 构建 HAP（product=ci）
         run: |

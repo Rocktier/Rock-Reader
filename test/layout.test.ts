@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   BP_LARGE_VP,
   BP_SMALL_VP,
+  BP_XL_VP,
   clampLevel,
   clampWeightLevel,
   fontSizeFpOf,
@@ -90,6 +91,15 @@ test('书架断点：手机 3 列 / 平板竖屏 4 列 / 平板横屏 6 列', ()
   assert.equal(shelfColsOf(800), 4, '平板竖屏');
   assert.equal(shelfColsOf(BP_LARGE_VP), 6, '断点值本身算大屏');
   assert.equal(shelfColsOf(1280), 6, '平板横屏/折叠屏展开');
+});
+
+test('书架断点：PC 超宽档切 8 列（2026-11-13 加 2in1）', () => {
+  assert.equal(BP_XL_VP, 1400);
+  assert.equal(shelfColsOf(BP_XL_VP - 1), 6, '断点前一格仍是 6 列（1280 平板不变）');
+  assert.equal(shelfColsOf(BP_XL_VP), 8, '断点值本身算超宽');
+  assert.equal(shelfColsOf(1440), 8, 'MatePad Pro 13 横屏（2880px ÷ 320dpi × 160）');
+  assert.equal(shelfColsOf(1642), 8, 'MateBook Pro（3120px ÷ 304dpi × 160）');
+  assert.equal(shelfColsOf(2560), 8, '4K 显示器也不再加列（再窄就看不清封面了）');
 });
 
 test('阅读版心：手机竖屏不封顶（边距原样，行为与旧版一致）', () => {

@@ -1188,9 +1188,27 @@ struct Index {
                   // 无障碍：屏幕阅读器要能读出书名（AGC 审核会查可交互组件的朗读标签）
                   // 审查报告 B28：管理操作只有长按手势，读屏用户不可达 —— 文案里明确告知
                   .stateStyles({ pressed: { opacity: 0.72 } })
+                  // 鼠标悬停反馈（2026-11-13，PC/2in1）：触屏没有"悬停"这个状态，
+                  // 但在 PC 上鼠标划过一整屏封面却毫无反应，会让人觉得"界面是死的"。
+                  // Highlight = 系统半透明叠加，深浅色主题各自自适应，不额外加色板。
+                  .hoverEffect(HoverEffect.Highlight)
                   .accessibilityText(item.book.title + '，长按可重命名、分组或移除')
                   .onClick(() => this.openBook(item.book))
                   .gesture(LongPressGesture().onAction(() => this.openEditor(MODE_MENU, item)))
+                  /**
+                   * 右键 = 同一个管理面板（2026-11-13，PC / 2in1）。
+                   *
+                   * 长按是触屏语言；PC 用户对"这本书还能改点什么"的本能动作是右键。
+                   * 走 openEditor(MODE_MENU) 而不是另做一个菜单：管理动作只有一份实现，
+                   * 两个入口共用，避免"手机上能改名、PC 上改不了"这类分叉。
+                   * ⚠️ 只认 Right + Press：Release 会再触发一次（面板被开两次），
+                   *    Move 会在鼠标划过时连环弹（一边挪鼠标一边开面板）。
+                   */
+                  .onMouse((event: MouseEvent) => {
+                    if (event.button === MouseButton.Right && event.action === MouseAction.Press) {
+                      this.openEditor(MODE_MENU, item);
+                    }
+                  })
                 }
               // 键必须含所有会变且显示在格子上的字段：返回书架 load() 后这些字段变了但键没变
               // → 节点复用、itemGenerator 不重跑、显示停在旧值（审查报告 B26：percent/author；

@@ -79,6 +79,16 @@ export function marginVpOf(level: number): number {
 /** 断点档位（vp）：华为官方 breakpoint 标准档位 */
 export const BP_SMALL_VP: number = 600;
 export const BP_LARGE_VP: number = 840;
+/**
+ * 超宽档（vp）—— 2026-11-13 为 PC（2in1）加的第三档。
+ *
+ * 前两档是给平板设计的：840vp 以上 6 列，在 1280 平板横屏上每列约 200vp 正好。
+ * 但 PC 是 1642vp（MateBook Pro 3120px ÷ 304dpi × 160），6 列会变成每列 260vp ——
+ * 封面高近 350vp，一屏放不下两行，书架退化成"每个封面一张大图"。
+ * 1400 而不是 1200：1280 的平板横屏/折叠屏展开仍是 6 列（不改平板观感），
+ * 只有真正到 PC 宽度才切 8 列（每列约 195vp）。
+ */
+export const BP_XL_VP: number = 1400;
 /** 每行的最大字数（中文）：超过后逐行扫视易丢行 */
 export const MAX_LINE_CHARS: number = 35;
 
@@ -105,8 +115,11 @@ export function formPadOf(viewWidthVp: number): number {
   return Math.round((viewWidthVp - FORM_MAX_VP) / 2);
 }
 
-/** 书架网格列数：<600 = 3 列（手机竖屏）/ 600~839 = 4 列 / ≥840 = 6 列（平板横屏） */
+/** 书架网格列数：<600 = 3 列（手机竖屏）/ 600~839 = 4 列 / 840~1399 = 6 列（平板横屏）/ ≥1400 = 8 列（PC） */
 export function shelfColsOf(widthVp: number): number {
+  if (widthVp >= BP_XL_VP) {
+    return 8;
+  }
   if (widthVp >= BP_LARGE_VP) {
     return 6;
   }

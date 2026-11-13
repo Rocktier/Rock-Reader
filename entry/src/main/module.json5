@@ -11,9 +11,21 @@
     //   （CI 的 ci/compat15 product）的行为：它没有 phone 这个设备类型的 syscap 集合。
     //   **HarmonyOS SDK（正式包 default/release product）用 phone 是正常的**。
     //   → 正式包必须写 phone；CI 侧若因 OpenHarmony SDK 报错，见 .github/workflows 里的处理。
+    //
+    // ── 2026-11-13 加入 "2in1"（PC / 二合一）────────────────────────────────
+    // 加它的含义不是"允许在 PC 上装"，而是**退出 PC 的兼容运行模式**：
+    //   不声明 2in1 时，系统把手机/平板应用按兼容方式跑（9:18 竖屏窗口，像放大的手机）；
+    //   声明后系统按真实窗口铺满，用户可拖到任意尺寸
+    //   ⇒ 布局必须扛住 MateBook Pro 的 1642vp（3120px ÷ 304dpi × 160）。
+    // 已有基础：LayoutStyle 的断点（600/840）+ 正文 35 字行长封顶 + 次级页 560 版心，
+    //   这些在 1440vp 平板横屏上已生效，PC 上只需复核书架列数上限（见 pages/Index.ets）。
+    // ⚠️ AGC「支持设备」勾了 PC/2in1 之后，升级版本**无法删除**该设备
+    //   ⇒ 勾选前必须在 2in1 模拟器/真机验过。
+    // ⚠️ OpenHarmony SDK 的 deviceTypes 枚举没有 2in1，CI 必须删掉这一行（见 workflows 的 sed）。
     "deviceTypes": [
       "phone",
-      "tablet"
+      "tablet",
+      "2in1"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
